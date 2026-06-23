@@ -92,7 +92,14 @@
         choice = pickWeighted(scored, rand, prof.sharpness);
       }
 
-      squad.push(choice);
+      // Wrap the pick with its club/year metadata (same shape the human's
+      // picks use) so the results screen can show where each player came from.
+      var entry = {
+        n: choice.n, pos: choice.pos, r: choice.r,
+        club: spin.club, short: spin.short, color: spin.color,
+        year: spin.year, label: spin.label,
+      };
+      squad.push(entry);
       drafted[choice.n] = true;
       openSlots[choice.pos]--;
     }
