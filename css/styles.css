@@ -69,12 +69,11 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 }
 .brand { text-align: center; margin-bottom: 30px; }
 .brand-mark {
-  width: 94px; height: 94px; margin: 0 auto 14px;
+  width: 116px; height: 116px; margin: 0 auto 8px;
   display: grid; place-items: center;
-  border-radius: 24px; box-shadow: 0 16px 40px rgba(0,0,0,.5);
-  overflow: hidden; border: 1px solid var(--line);
+  filter: drop-shadow(0 14px 28px rgba(0,0,0,.55));
 }
-.brand-mark img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.brand-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .brand-ball { font-size: 40px; }
 .brand-title {
   font-size: clamp(40px, 9vw, 74px); font-weight: 900; line-height: .92;
