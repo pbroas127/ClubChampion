@@ -53,6 +53,15 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 /* ============================================================ HOME ===== */
+.screen--home {
+  background-image:
+    linear-gradient(180deg, rgba(7,20,13,.74) 0%, rgba(7,20,13,.90) 58%, rgba(7,20,13,.98) 100%),
+    url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260623_221540_c65b1e9d-69c2-43a3-bcfb-f57eedda40d6.png");
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
 .home-wrap {
   max-width: var(--maxw);
   margin: 0 auto;
@@ -60,13 +69,13 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 }
 .brand { text-align: center; margin-bottom: 30px; }
 .brand-mark {
-  width: 76px; height: 76px; margin: 0 auto 14px;
+  width: 94px; height: 94px; margin: 0 auto 14px;
   display: grid; place-items: center;
-  background: radial-gradient(circle at 30% 30%, var(--green), var(--green-2));
-  border-radius: 22px; box-shadow: 0 10px 30px rgba(46,232,127,.35);
-  transform: rotate(-6deg);
+  border-radius: 24px; box-shadow: 0 16px 40px rgba(0,0,0,.5);
+  overflow: hidden; border: 1px solid var(--line);
 }
-.brand-ball { font-size: 40px; transform: rotate(6deg); }
+.brand-mark img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.brand-ball { font-size: 40px; }
 .brand-title {
   font-size: clamp(40px, 9vw, 74px); font-weight: 900; line-height: .92;
   background: linear-gradient(180deg, #fff, #b6e9cd);
