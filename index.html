@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a1f14" />
+  <meta name="description" content="Club Champion — build a 7-player squad from football's greatest sides across 1990–2026 and chase an unbeaten season. Play solo or against the CPU." />
+  <title>Club Champion — Can your squad go unbeaten?</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- ===================================================== HOME ===== -->
+    <section class="screen screen--home is-active" id="screen-home">
+      <div class="home-wrap">
+        <header class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span class="brand-ball">⚽</span>
+          </div>
+          <h1 class="brand-title">CLUB<span>CHAMPION</span></h1>
+          <p class="brand-tag">Spin a club &amp; a year. Draft the legend. <b>Can your squad go unbeaten?</b></p>
+        </header>
+
+        <div class="panel">
+          <h2 class="panel-label">1 · Choose your game</h2>
+          <div class="mode-grid" id="mode-grid">
+            <button class="mode-card is-selected" data-mode="solo">
+              <span class="mode-icon">🏆</span>
+              <span class="mode-name">Chase 38-0</span>
+              <span class="mode-desc">Solo. Build the perfect unbeaten season.</span>
+            </button>
+            <button class="mode-card" data-mode="cpu">
+              <span class="mode-icon">🆚</span>
+              <span class="mode-name">Beat the CPU</span>
+              <span class="mode-desc">Out-draft a rival manager, then settle it in a final.</span>
+            </button>
+          </div>
+
+          <div class="difficulty-row" id="difficulty-row" hidden>
+            <span class="panel-label">CPU difficulty</span>
+            <div class="seg" id="difficulty-seg">
+              <button data-diff="easy">Easy</button>
+              <button data-diff="normal" class="is-selected">Normal</button>
+              <button data-diff="hard">Hard</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2 class="panel-label">2 · Pick a formation <span class="hint">— same 7 players, different shape &amp; trade-offs</span></h2>
+          <div class="formation-grid" id="formation-grid"><!-- injected --></div>
+        </div>
+
+        <div class="panel panel--row">
+          <label class="toggle">
+            <input type="checkbox" id="pro-toggle" />
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="toggle-label">
+              <b>Pro Mode</b>
+              <small>Hide ratings — draft on football knowledge alone.</small>
+            </span>
+          </label>
+        </div>
+
+        <button class="btn btn--kickoff" id="btn-kickoff">KICK OFF <span>→</span></button>
+        <button class="link-btn" id="btn-how">How to play</button>
+        <p class="foot-note">A for-fun tribute game · player ratings are subjective · inspired by the 82-0 challenge</p>
+      </div>
+    </section>
+
+    <!-- ==================================================== DRAFT ===== -->
+    <section class="screen screen--draft" id="screen-draft">
+      <header class="draft-top">
+        <button class="icon-btn" id="btn-quit" title="Quit to menu">✕</button>
+        <div class="progress">
+          <div class="progress-bar"><span id="progress-fill"></span></div>
+          <span class="progress-text" id="progress-text">Round 1 of 7</span>
+        </div>
+        <div class="skips">
+          <button class="skip-btn" id="btn-skip-year" title="Same club, new year">
+            ↻ Year <b id="skip-year-count">1</b>
+          </button>
+          <button class="skip-btn" id="btn-skip-club" title="Brand-new club">
+            ↻ Club <b id="skip-club-count">1</b>
+          </button>
+        </div>
+      </header>
+
+      <div class="draft-body">
+        <!-- Slot machine + player choices -->
+        <div class="draft-main">
+          <div class="slot" id="slot">
+            <div class="slot-reel">
+              <div class="reel reel--club"><span id="reel-club">—</span></div>
+              <div class="reel reel--year"><span id="reel-year">—</span></div>
+            </div>
+            <div class="slot-era" id="slot-era">&nbsp;</div>
+          </div>
+
+          <div class="need-line" id="need-line">Pick a player</div>
+          <div class="players" id="players"><!-- injected --></div>
+        </div>
+
+        <!-- Pitch with your picks -->
+        <aside class="pitch-wrap">
+          <div class="pitch" id="pitch"><!-- injected slots --></div>
+          <div class="squad-meta" id="squad-meta"></div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- =================================================== RESULTS ===== -->
+    <section class="screen screen--results" id="screen-results">
+      <div class="results-wrap" id="results-wrap"><!-- injected --></div>
+    </section>
+
+    <!-- ============================================ HOW-TO MODAL ===== -->
+    <div class="modal" id="modal-how" hidden>
+      <div class="modal-card">
+        <button class="icon-btn modal-close" id="btn-how-close">✕</button>
+        <h2>How to play</h2>
+        <ol class="how-list">
+          <li><b>Pick a formation.</b> Every shape fields the same 7 players (1 GK + 6 outfield) — but a back three defends better while three up top outscores everyone. Balance is king.</li>
+          <li><b>Spin the slot.</b> Each round locks in a random <b>club</b> and an <b>exact year</b> (1990–2026). You might land on Barcelona 2011… or Man City's third-tier 1999.</li>
+          <li><b>Draft a player</b> from that club &amp; year to fill an open position. You can't pick the same player twice.</li>
+          <li><b>Use your skips wisely.</b> One <b>Year</b> skip (same club, new year) and one <b>Club</b> skip (fresh club). A bad roll early is a hole you can't dig out of.</li>
+          <li><b>Simulate the season.</b> Your squad's five categories — Attack, Creativity, Defence, Physical, Goalkeeping — are summed and run through a non-linear engine. One weak area <b>caps</b> your whole season.</li>
+          <li><b>Go unbeaten.</b> Only a squad with no weak link can finish a 38-game season with <b>0 losses</b>. Beat the CPU by out-drafting them, then winning the final.</li>
+        </ol>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/cpu.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>
