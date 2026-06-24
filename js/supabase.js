@@ -15,7 +15,7 @@
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
   }) : null;
 
-  function need() { if (!client) throw new Error("Accounts aren’t set up yet — add your Supabase keys in js/config.js."); }
+  function need() { if (!client) throw new Error("Accounts aren't set up yet — add your Supabase keys in js/config.js."); }
 
   var auth = {
     signUpEmail: function (email, password) { need(); return client.auth.signUp({ email: email, password: password }); },
@@ -90,14 +90,28 @@
       need();
       return Promise.all([auth.getUser(), profile.byUsername(username)]).then(function (vals) {
         var me = vals[0], target = vals[1];
-        if (!target) throw new Error("No player found with username “" + username + "”.");
-        if (target.id === me.id) throw new Error("You can’t add yourself.");
-        return client.from("friendships").insert({ requester: me.id, addressee: target.id, status: "pending" });
+        if (!target) throw new Error("No player found with username "" + username + "".");
+        if (target.id === me.id) throw new Error("You can't add yourself.");
+        // Check for any existing relationship to give a clearer error
+        return client.from("friendships").select("id,status,requester,addressee")
+          .or("and(requester.eq." + me.id + ",addressee.eq." + target.id + "),and(requester.eq." + target.id + ",addressee.eq." + me.id + ")")
+          .maybeSingle().then(function (existing) {
+            if (existing && existing.data) {
+              var row = existing.data;
+              if (row.status === "accepted") throw new Error("You're already friends with " + username + ".");
+              if (row.status === "pending") {
+                if (row.requester === me.id) throw new Error("You already sent " + username + " a request.");
+                throw new Error(username + " already sent you a request — check your Requests.");
+              }
+            }
+            return client.from("friendships").insert({ requester: me.id, addressee: target.id, status: "pending" });
+          });
       });
     },
     accept: function (id) { need(); return client.from("friendships").update({ status: "accepted" }).eq("id", id); },
     decline: function (id) { need(); return client.from("friendships").delete().eq("id", id); },
     remove: function (id) { need(); return client.from("friendships").delete().eq("id", id); },
+    cancelRequest: function (id) { need(); return client.from("friendships").delete().eq("id", id); },
     incoming: function () {
       if (!client) return Promise.resolve([]);
       return auth.getUser().then(function (u) {
@@ -106,6 +120,18 @@
           var rows = r.data || [];
           return profilesByIds(rows.map(function (x) { return x.requester; })).then(function (m) {
             return rows.map(function (x) { return { id: x.id, username: m[x.requester] || "player", userId: x.requester }; });
+          });
+        });
+      });
+    },
+    outgoing: function () {
+      if (!client) return Promise.resolve([]);
+      return auth.getUser().then(function (u) {
+        if (!u) return [];
+        return client.from("friendships").select("*").eq("requester", u.id).eq("status", "pending").then(function (r) {
+          var rows = r.data || [];
+          return profilesByIds(rows.map(function (x) { return x.addressee; })).then(function (m) {
+            return rows.map(function (x) { return { id: x.id, username: m[x.addressee] || "player", userId: x.addressee }; });
           });
         });
       });
@@ -126,6 +152,21 @@
             });
           });
       });
+    },
+    // Realtime: fires `callback()` whenever a friendship row changes that
+    // involves the current user. Returns the channel so callers can unsubscribe.
+    subscribe: function (callback) {
+      if (!client) return null;
+      var channel = client.channel("friendships-" + Date.now());
+      channel
+        .on("postgres_changes", { event: "*", schema: "public", table: "friendships" }, function () {
+          try { callback(); } catch (e) {}
+        })
+        .subscribe();
+      return channel;
+    },
+    unsubscribe: function (channel) {
+      if (client && channel) try { client.removeChannel(channel); } catch (e) {}
     },
   };
 
