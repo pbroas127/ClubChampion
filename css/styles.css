@@ -105,9 +105,9 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 
 .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .mode-card {
-  text-align: left; padding: 16px; border-radius: var(--radius-sm);
+  text-align: left; padding: 12px 12px 13px; border-radius: var(--radius-sm);
   background: var(--panel-2); border: 1.5px solid var(--line-soft);
-  display: flex; flex-direction: column; gap: 4px; transition: .18s;
+  display: flex; flex-direction: column; gap: 3px; transition: .18s;
 }
 .mode-card:hover { border-color: var(--line); transform: translateY(-2px); }
 .mode-card.is-selected {
@@ -115,9 +115,9 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   box-shadow: 0 0 0 3px rgba(46,232,127,.15), 0 8px 24px rgba(0,0,0,.3);
   background: linear-gradient(180deg, #143a25, #0e2a1b);
 }
-.mode-icon { font-size: 26px; }
-.mode-name { font-family: "Archivo"; font-weight: 800; font-size: 18px; }
-.mode-desc { color: var(--muted); font-size: 13px; }
+.mode-icon { font-size: 20px; }
+.mode-name { font-family: "Archivo"; font-weight: 800; font-size: 15px; line-height: 1.1; }
+.mode-desc { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
 
 .difficulty-row { margin-top: 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .difficulty-row .panel-label { margin: 0; }
@@ -530,7 +530,7 @@ body[data-screen="draft"] .topnav, body[data-screen="sim"] .topnav, body[data-sc
 .ranked-cta { color: var(--blue); font-weight: 700; margin-top: 8px; }
 
 /* ===================================================== MODES (5-up) ===== */
-.mode-grid--5 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.mode-grid--5 { grid-template-columns: repeat(auto-fit, minmax(138px, 1fr)); gap: 9px; }
 .mode-card .tag-lim, .mode-card .tag-soon { font-size: 8.5px; padding: 2px 6px; vertical-align: middle; }
 .tag-lim { background: rgba(255,210,74,.16); color: var(--gold); border: 1px solid rgba(255,210,74,.4); border-radius: 999px; letter-spacing: .06em; margin-left: 4px; }
 .mode-card--soon { opacity: .82; }
@@ -592,18 +592,42 @@ body[data-screen="draft"] .topnav, body[data-screen="sim"] .topnav, body[data-sc
 .run-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
 .run-round { font-family: "Archivo"; font-weight: 900; font-size: 20px; color: var(--gold); }
 .run-meta { font-size: 12.5px; color: var(--muted); }
+.stats-seg { display: flex; width: 100%; margin-bottom: 14px; flex-wrap: wrap; gap: 2px; }
+.stats-seg button { flex: 1; min-width: 84px; padding: 8px 6px; font-size: 13px; }
+
+/* lineup action buttons (Watch / Sim) */
+.lineup-actions { display: flex; gap: 12px; margin-top: 4px; }
+.lineup-actions .btn { margin: 0; }
 
 /* --------------------------------------------------------- Responsive -- */
 @media (max-width: 760px) {
-  .sim-stage { aspect-ratio: 4 / 3; }
-  .draft-body { grid-template-columns: 1fr; }
-  .pitch-wrap { position: static; order: -1; max-width: 320px; margin: 0 auto; width: 100%; }
+  /* portrait stage → matchsim renders its vertical (mobile) pitch */
+  .sim-stage { aspect-ratio: 2 / 3; max-height: 80vh; }
+
+  /* draft: a compact pitch up top so the players are only a short scroll away */
+  .draft-body { grid-template-columns: 1fr; gap: 12px; }
+  .pitch-wrap { position: static; order: -1; max-width: 210px; margin: 0 auto; width: 100%; }
+  .slot { padding: 10px; margin-bottom: 10px; }
+  .reel { height: 50px; }
+  .need-line { font-size: 13px; margin: 2px 2px 8px; }
+  .pcard { padding: 9px; gap: 10px; }
+
   .res-grid { grid-template-columns: 1fr; }
-  .lineup-sheets { grid-template-columns: 1fr; }
+
+  /* lineup: keep BOTH team sheets visible side-by-side, just compact */
+  .lineup-sheets { grid-template-columns: 1fr 1fr; gap: 8px; }
   .lineup-vs { display: none; }
+  .lineup-head h2 { font-size: 22px; }
+  .teamsheet { padding: 10px; }
+  .ts-head { gap: 8px; }
+  .ts-name-big { font-size: 14px; flex-basis: 100%; }
+  .ts-name small { display: none; }        /* drop club·year on phone to save height */
+  .ts-row { grid-template-columns: 22px 1fr auto; gap: 6px; }
+  .ts-name { font-size: 12px; }
+  .ts-rtg { font-size: 14px; }
 }
 @media (max-width: 480px) {
-  .mode-grid { grid-template-columns: 1fr; }
+  .mode-grid { grid-template-columns: 1fr 1fr; }
   .mode-grid--5 { grid-template-columns: 1fr 1fr; }
   .formation-grid { grid-template-columns: 1fr 1fr; }
   .skip-btn { padding: 7px 9px; }
@@ -614,5 +638,7 @@ body[data-screen="draft"] .topnav, body[data-screen="sim"] .topnav, body[data-sc
   .nav-tab { padding: 6px 11px; font-size: 13px; }
   .nav-account { padding: 7px 13px; }
   .topnav { gap: 8px; padding: 8px 12px; }
-  .ts-cat { min-width: 34px; padding: 4px 5px; }
+  .ts-cat { min-width: 30px; padding: 3px 4px; }
+  .ts-ovr b { font-size: 24px; }
+  .lineup-actions { gap: 8px; }
 }

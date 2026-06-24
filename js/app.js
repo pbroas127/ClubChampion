@@ -241,42 +241,48 @@
   }
 
   /* -------------------------------------------------------- STATS tab --- */
-  // Four separate sections so each mode is tracked on its own:
-  // Season (solo), vs CPU, UCL Climb, World Cup.
+  // Four modes, each tracked on its own — shown one at a time via sub-tabs so
+  // the page never becomes a long scroll on phone or desktop.
+  var statsSub = "solo", statsData = null;
+  var STATS_TABS = [["solo", "🏆 Season"], ["cpu", "🆚 vs CPU"], ["ucl", "⭐ UCL"], ["wc", "🌍 World Cup"]];
+
   function renderStats() {
     var wrap = $("screen-stats"); if (!wrap) return;
     var head = '<div class="page-head"><h2>Your Stats</h2><p>' +
       (state.user ? "Tracked per mode, saved to your account." : "Sign in to save and track your stats.") + "</p></div>";
-    if (!state.user) { wrap.innerHTML = head + signInCard("Sign in to save &amp; track your stats."); wireSignInCard(); return; }
-    wrap.innerHTML = head + '<div class="muted-line">Loading…</div>';
+    if (!state.user) { statsData = null; wrap.innerHTML = head + signInCard("Sign in to save &amp; track your stats."); wireSignInCard(); return; }
+    wrap.innerHTML = head + statsTabBar() + '<div id="stats-body" class="muted-line">Loading…</div>';
+    wireStatsTabs();
     BE.data.mySeasons().then(function (seasons) {
-      var byMode = { solo: [], cpu: [], ucl: [], wc: [] };
-      seasons.forEach(function (s) { if (byMode[s.mode]) byMode[s.mode].push(s); });
-      wrap.innerHTML = head +
-        seasonSection("Season", "🏆", byMode.solo, "season") +
-        seasonSection("vs CPU", "🆚", byMode.cpu, "cpu") +
-        tourSection("UCL Climb", "⭐", byMode.ucl, "ucl") +
-        tourSection("World Cup", "🌍", byMode.wc, "wc");
+      statsData = { solo: [], cpu: [], ucl: [], wc: [] };
+      seasons.forEach(function (s) { if (statsData[s.mode]) statsData[s.mode].push(s); });
+      renderStatsBody();
     });
   }
-
-  function statsBlock(title, icon, count, inner) {
-    return '<div class="stats-section"><div class="stats-sec-head"><h3>' + icon + " " + esc(title) + "</h3>" +
-      '<span class="stats-count">' + count + " played</span></div>" + inner + "</div>";
+  function statsTabBar() {
+    return '<div class="seg stats-seg">' + STATS_TABS.map(function (t) {
+      return '<button data-stab="' + t[0] + '"' + (t[0] === statsSub ? ' class="is-selected"' : "") + ">" + t[1] + "</button>";
+    }).join("") + "</div>";
+  }
+  function wireStatsTabs() {
+    document.querySelectorAll(".stats-seg button").forEach(function (b) {
+      b.onclick = function () {
+        statsSub = b.dataset.stab;
+        document.querySelectorAll(".stats-seg button").forEach(function (x) { x.classList.toggle("is-selected", x.dataset.stab === statsSub); });
+        renderStatsBody();
+      };
+    });
+  }
+  function renderStatsBody() {
+    var body = $("stats-body"); if (!body || !statsData) return;
+    var list = statsData[statsSub] || [];
+    var n = '<div class="muted-line">' + list.length + " played</div>";
+    if (statsSub === "solo") body.innerHTML = list.length ? bestSeasonCard(bestSeason(list), "Best season") + n : emptyMini("🏆", "No seasons yet — chase 38-0.");
+    else if (statsSub === "cpu") body.innerHTML = list.length ? bestSeasonCard(bestSeason(list), "Best vs-CPU squad") + n : emptyMini("🆚", "No CPU games yet — beat a rival manager.");
+    else body.innerHTML = list.length ? runCard(bestRun(list)) + n : emptyMini(statsSub === "ucl" ? "⭐" : "🌍", "No runs yet — keep one squad and climb.");
   }
   function emptyMini(icon, msg) {
-    return '<div class="card empty-card" style="padding:22px"><div class="empty-emoji">' + icon + "</div><p>" + esc(msg) + "</p></div>";
-  }
-  function seasonSection(title, icon, list, kind) {
-    var best = bestSeason(list);
-    var inner = best ? bestSeasonCard(best, kind === "cpu" ? "Best vs-CPU squad" : "Best season")
-      : emptyMini(icon, kind === "cpu" ? "No CPU games yet — beat a rival manager." : "No seasons yet — chase 38-0.");
-    return statsBlock(title, icon, list.length, inner);
-  }
-  function tourSection(title, icon, list, mode) {
-    var best = bestRun(list);
-    var inner = best ? runCard(best) : emptyMini(icon, "No runs yet — keep one squad and climb.");
-    return statsBlock(title, icon, list.length, inner);
+    return '<div class="card empty-card" style="padding:34px 22px"><div class="empty-emoji">' + icon + "</div><p>" + esc(msg) + "</p></div>";
   }
 
   // Headline a run by the farthest round reached (no W-L record per design).

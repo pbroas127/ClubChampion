@@ -305,7 +305,8 @@
       '<div class="ts-list">' + rows + "</div></div>";
   }
 
-  // cfg: { mode, title, sub, round, roundIndex, totalRounds, record, you, opp, goLabel, onGo }
+  // cfg: { mode, title, sub, round, roundIndex, totalRounds, record, you, opp,
+  //        goLabel, onGo } for solo; or { onWatch, onSim } for a real match.
   function showLineup(cfg) {
     var wrap = $("lineup-wrap");
     var head = '<div class="lineup-head">' +
@@ -318,11 +319,21 @@
     var sheets = cfg.opp
       ? '<div class="lineup-sheets">' + teamSheet(cfg.you, "you") + '<div class="lineup-vs">VS</div>' + teamSheet(cfg.opp, "opp") + "</div>"
       : '<div class="lineup-sheets solo">' + teamSheet(cfg.you, "you") + "</div>";
-    wrap.innerHTML = head + sheets +
-      '<button class="btn btn--kickoff" id="lineup-go">' + (cfg.goLabel || "KICK OFF") + ' <span>→</span></button>' +
+    var actions = cfg.onWatch
+      ? '<div class="lineup-actions">' +
+          '<button class="btn btn--ghost flex1" id="lineup-sim">⚡ Sim result</button>' +
+          '<button class="btn btn--kickoff flex1" id="lineup-watch">👀 Watch match <span>→</span></button>' +
+        "</div>"
+      : '<button class="btn btn--kickoff" id="lineup-go">' + (cfg.goLabel || "KICK OFF") + ' <span>→</span></button>';
+    wrap.innerHTML = head + sheets + actions +
       '<button class="link-btn" id="lineup-quit">Quit to menu</button>';
     showScreen("lineup");
-    $("lineup-go").onclick = function () { cfg.onGo(); };
+    if (cfg.onWatch) {
+      $("lineup-watch").onclick = function () { cfg.onWatch(); };
+      $("lineup-sim").onclick = function () { cfg.onSim(); };
+    } else {
+      $("lineup-go").onclick = function () { cfg.onGo(); };
+    }
     $("lineup-quit").onclick = function () { if (confirm("Quit and return to the menu?")) showScreen("home"); };
   }
 
@@ -342,6 +353,13 @@
     activeSim.start();
   }
 
+  // Skip the animation: generate the same seeded timeline and jump to results
+  // with full per-player stats (so "Sim result" matches a watched game exactly).
+  function simInstant(cfg) {
+    var tl = MATCHSIM.generate(cfg.squadA, cfg.squadB, cfg.result, cfg.seed || 1);
+    cfg.onDone({ stats: tl.stats, scorers: tl.scorers });
+  }
+
   /* ========================================================= SOLO ======== */
   function startSoloFlow() {
     lastResults = game.results();
@@ -358,21 +376,17 @@
   /* ========================================================== CPU ======== */
   function startCpuFlow() {
     lastResults = game.results();
+    var cpuSeed = (game.seed * 2654435761) >>> 0 || 1;
+    var done = function (out) { lastResults.matchStats = out.stats; lastResults.scorers = out.scorers; showCpuResults($("results-wrap"), lastResults); };
+    var simCfg = { squadA: game.squad, squadB: lastResults.cpuSquad, result: lastResults.match, seed: cpuSeed, onDone: done };
     showLineup({
       mode: "cpu",
       title: "Champions Cup Final",
       sub: "Team sheets — your XI vs the CPU. Ratings revealed before kickoff.",
       you: { squad: game.squad, ratings: game.yourRatings(), name: "Your XI" },
       opp: { squad: lastResults.cpuSquad, ratings: ENGINE.teamRatings(lastResults.cpuSquad), name: "CPU · " + cap(game.difficulty) },
-      goLabel: "KICK OFF",
-      onGo: function () {
-        runSim({
-          head: "Champions Cup Final · " + game.formation.name + " " + game.formation.tag,
-          squadA: game.squad, squadB: lastResults.cpuSquad, result: lastResults.match,
-          nameB: "CPU", seed: (game.seed * 2654435761) >>> 0 || 1,
-          onDone: function (out) { lastResults.matchStats = out.stats; lastResults.scorers = out.scorers; showCpuResults($("results-wrap"), lastResults); },
-        });
-      },
+      onWatch: function () { runSim(Object.assign({ head: "Champions Cup Final · " + game.formation.name + " " + game.formation.tag, nameB: "CPU" }, simCfg)); },
+      onSim: function () { simInstant(simCfg); },
     });
   }
 
@@ -382,6 +396,9 @@
   function startRound() {
     var opp = game.makeOpponent();
     var t = game.tour;
+    var seed = (game.seed * 2654435761 + (t.index + 1) * 40503) >>> 0 || 1;
+    var finish = function (out) { var r = game.applyRound(out); showRoundResult(r, out); };
+    var simCfg = { squadA: game.squad, squadB: t.opponent, result: null, seed: seed, onDone: finish };
     showLineup({
       mode: game.mode,
       round: opp.roundLabel, roundIndex: opp.roundIndex, totalRounds: opp.totalRounds,
@@ -390,23 +407,12 @@
       sub: "Win to reach the " + nextRoundName(game.mode, opp.roundIndex + 1) + ". One leg — no replays.",
       you: { squad: game.squad, ratings: game.yourRatings(), name: "Your XI" },
       opp: { squad: opp.squad, ratings: opp.ratings, name: opp.name + " · " + cap(opp.difficulty) },
-      goLabel: "KICK OFF",
-      onGo: runTournamentRound,
+      onWatch: function () { simCfg.result = game.playRound(); runSim(Object.assign({ head: tourName(game.mode) + " · " + t.rounds[t.index], nameB: t.opponentName }, simCfg)); },
+      onSim: function () { simCfg.result = game.playRound(); simInstant(simCfg); },
     });
   }
 
-  function runTournamentRound() {
-    var t = game.tour;
-    var res = game.playRound();
-    runSim({
-      head: tourName(game.mode) + " · " + t.rounds[t.index],
-      squadA: game.squad, squadB: t.opponent, result: res,
-      nameB: t.opponentName, seed: (game.seed * 2654435761 + (t.index + 1) * 40503) >>> 0 || 1,
-      onDone: function (out) { var r = game.applyRound(out); showRoundResult(r); },
-    });
-  }
-
-  function showRoundResult(r) {
+  function showRoundResult(r, simOut) {
     var t = game.tour, m = r.summary, youWin = m.win;
     var after = { W: t.record.W, L: t.record.L };
     var before = { W: after.W - (youWin ? 1 : 0), L: after.L - (youWin ? 0 : 1) };
@@ -427,6 +433,8 @@
       '<div class="scorers"><div class="scorers-col">' + scorerLines(m.scorers.A) + "</div>" +
         '<div class="scorers-ball">⚽</div>' +
         '<div class="scorers-col right">' + scorerLines(m.scorers.B) + "</div></div>" +
+      (simOut ? '<div class="res-grid">' + matchStatsCard(simOut.stats.A, "Your XI", simOut.scorers.A) +
+                  matchStatsCard(simOut.stats.B, esc(m.opponent), simOut.scorers.B) + "</div>" : "") +
       '<div class="res-actions">' + btn + "</div>";
     showScreen("results");
     if (youWin) party();
