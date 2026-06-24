@@ -1,7 +1,5 @@
 /* ============================================================================
  * CLUB CHAMPION — Backend (Supabase)
- * ----------------------------------------------------------------------------
- * Thin wrapper over the Supabase JS client (loaded from CDN as `supabase`).
  * ==========================================================================*/
 (function (root) {
   "use strict";
@@ -41,7 +39,7 @@
         if (!u || !u.id) {
           return client.auth.getSession().then(function (s) {
             var user = s && s.data && s.data.session ? s.data.session.user : null;
-            if (!user || !user.id) throw new Error("Not signed in — please sign in again.");
+            if (!user || !user.id) throw new Error("Not signed in.");
             return client.from("profiles").upsert({ id: user.id, username: name }).select().single();
           });
         }
@@ -174,7 +172,7 @@
               if (row.status === "accepted") throw new Error("You're already friends with " + username + ".");
               if (row.status === "pending") {
                 if (row.requester === me.id) throw new Error("You already sent " + username + " a request.");
-                throw new Error(username + " already sent you a request - check your Requests.");
+                throw new Error(username + " already sent you a request.");
               }
             }
             return client.from("friendships").insert({ requester: me.id, addressee: target.id, status: "pending" });
@@ -258,8 +256,8 @@
     subscribe: function (callback) {
       if (!client) return null;
       var channel = client.channel("friendships-" + Date.now());
-      channel.on("postgres_changes", { event: "*", schema: "public", table: "friendships" }, function () {
-        try { callback(); } catch (e) {}
+      channel.on("postgres_changes", { event: "*", schema: "public", table: "friendships" }, function (payload) {
+        try { callback(payload); } catch (e) {}
       }).subscribe();
       return channel;
     },
@@ -306,13 +304,14 @@
     subscribe: function (cb) {
       if (!client) return null;
       var ch = client.channel("invites-" + Date.now());
-      ch.on("postgres_changes", { event: "*", schema: "public", table: "game_invites" }, function () { try { cb(); } catch (e) {} }).subscribe();
+      ch.on("postgres_changes", { event: "*", schema: "public", table: "game_invites" }, function (payload) {
+        try { cb(payload); } catch (e) {}
+      }).subscribe();
       return ch;
     },
     unsubscribe: function (ch) { if (client && ch) try { client.removeChannel(ch); } catch (e) {} },
   };
 
-  // ---- match lobby (Phase 6) -----------------------------------------------
   var lobby = {
     createFromInvite: function (invite) {
       need();
@@ -364,6 +363,23 @@
         return client.from("match_lobby").update({
           seed: seed, first_pick: firstPick, phase: "reveal",
         }).eq("id", lobbyId).select().single().then(function (rr) { return rr.data; });
+      });
+    },
+    // Phase 7: move from reveal → draft when both players have seen the countdown
+    advanceToDraft: function (lobbyId) {
+      need();
+      return client.from("match_lobby").select("phase,first_pick,seed").eq("id", lobbyId).single().then(function (r) {
+        if (!r.data || r.data.phase !== "reveal") return r.data;
+        return client.from("match_lobby").update({ phase: "draft" }).eq("id", lobbyId).select().single().then(function (rr) { return rr.data; });
+      });
+    },
+    // Phase 8: update the shared draft state (current spin, picks, turn)
+    updateDraft: function (lobbyId, draftPatch) {
+      need();
+      return client.from("match_lobby").select("draft").eq("id", lobbyId).single().then(function (r) {
+        var draft = (r.data && r.data.draft) || {};
+        Object.keys(draftPatch).forEach(function (k) { draft[k] = draftPatch[k]; });
+        return client.from("match_lobby").update({ draft: draft }).eq("id", lobbyId).select().single().then(function (rr) { return rr.data; });
       });
     },
     leave: function (lobbyId) {
