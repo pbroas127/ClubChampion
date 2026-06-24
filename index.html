@@ -30,6 +30,21 @@
 <body>
   <div id="app">
 
+    <!-- ===================================================== NAV ====== -->
+    <nav class="topnav">
+      <button class="nav-brand" id="nav-brand">
+        <img src="https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260623_223207_b869b403-8fbc-4fce-a8bb-a31f3b044376.png" alt="" width="26" height="26" />
+        <span>Club Champion</span>
+      </button>
+      <div class="nav-tabs">
+        <button class="nav-tab is-active" data-tab="play">Play</button>
+        <button class="nav-tab" data-tab="stats">Stats</button>
+        <button class="nav-tab" data-tab="friends">Friends</button>
+        <button class="nav-tab" data-tab="ranked">Ranked</button>
+      </div>
+      <button class="nav-account" id="nav-account">Sign in</button>
+    </nav>
+
     <!-- ===================================================== HOME ===== -->
     <section class="screen screen--home is-active" id="screen-home">
       <div class="home-wrap">
@@ -149,6 +164,11 @@
       <div class="results-wrap" id="results-wrap"><!-- injected --></div>
     </section>
 
+    <!-- ============================================ STATS / FRIENDS / RANKED -->
+    <section class="screen screen--page" id="screen-stats"><!-- injected by app.js --></section>
+    <section class="screen screen--page" id="screen-friends"><!-- injected by app.js --></section>
+    <section class="screen screen--page" id="screen-ranked"><!-- injected by app.js --></section>
+
     <!-- ============================================ HOW-TO MODAL ===== -->
     <div class="modal" id="modal-how" hidden>
       <div class="modal-card">
@@ -167,11 +187,17 @@
 
   </div>
 
-  <script src="js/data.js?v=3"></script>
-  <script src="js/engine.js?v=3"></script>
-  <script src="js/cpu.js?v=3"></script>
-  <script src="js/game.js?v=3"></script>
-  <script src="js/matchsim.js?v=3"></script>
-  <script src="js/ui.js?v=3"></script>
+  <!-- Supabase client (enables accounts/friends/stats once keys are set in js/config.js) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js?v=4"></script>
+  <script src="js/supabase.js?v=4"></script>
+
+  <script src="js/data.js?v=4"></script>
+  <script src="js/engine.js?v=4"></script>
+  <script src="js/cpu.js?v=4"></script>
+  <script src="js/game.js?v=4"></script>
+  <script src="js/matchsim.js?v=4"></script>
+  <script src="js/app.js?v=4"></script>
+  <script src="js/ui.js?v=4"></script>
 </body>
 </html>

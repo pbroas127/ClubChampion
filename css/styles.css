@@ -437,6 +437,79 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .st-name small { display: block; color: var(--muted); font-weight: 500; font-size: 11px; }
 .st-rtg { font-family: "Archivo"; font-weight: 900; font-size: 16px; }
 
+/* ============================================================ NAV ====== */
+.topnav {
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px;
+  padding: 9px 16px; background: rgba(7,20,13,.86); backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line-soft);
+}
+.nav-brand { display: flex; align-items: center; gap: 8px; font-family: "Archivo"; font-weight: 800; font-size: 15px; }
+.nav-brand img { border-radius: 6px; display: block; }
+.nav-brand span { background: linear-gradient(180deg, #fff, #b6e9cd); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.nav-tabs { display: flex; gap: 4px; margin-left: 6px; }
+.nav-tab { padding: 7px 14px; border-radius: 999px; font-weight: 600; font-size: 14px; color: var(--muted); transition: .15s; }
+.nav-tab:hover { color: var(--text); }
+.nav-tab.is-active { background: var(--panel-2); color: var(--green); }
+.nav-account { margin-left: auto; padding: 8px 16px; border-radius: 999px; background: var(--green); color: #052914; font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 7px; }
+.nav-account:hover { filter: brightness(1.05); }
+.acc-dot { width: 7px; height: 7px; border-radius: 50%; background: #052914; }
+.acc-menu { position: fixed; z-index: 60; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); min-width: 180px; overflow: hidden; }
+.acc-head { padding: 12px 14px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line-soft); }
+.acc-head b { color: var(--text); font-size: 14px; }
+.acc-item { display: block; width: 100%; text-align: left; padding: 11px 14px; font-size: 14px; color: var(--text); }
+.acc-item:hover { background: var(--panel-2); }
+body[data-screen="draft"] .topnav, body[data-screen="sim"] .topnav { display: none; }
+
+/* ========================================================= PAGES ======== */
+.screen--page { max-width: var(--maxw); margin: 0 auto; padding: 24px 16px 60px; }
+.page-head { margin-bottom: 16px; }
+.page-head h2 { font-size: 28px; }
+.page-head p { color: var(--muted); font-size: 14px; margin-top: 4px; }
+.muted-line { color: var(--muted-2); font-size: 12.5px; text-align: center; margin-top: 12px; }
+.dim { color: var(--muted-2); }
+.best-line { font-size: 15px; } .best-line b { color: var(--green); }
+.tag-gold { background: rgba(255,210,74,.15); color: var(--gold); border: 1px solid rgba(255,210,74,.4); border-radius: 999px; font-size: 10px; padding: 2px 8px; vertical-align: middle; margin-left: 6px; }
+.empty-card { text-align: center; padding: 40px 20px; }
+.empty-emoji { font-size: 40px; margin-bottom: 8px; }
+.empty-card p { color: var(--muted); margin-top: 6px; }
+.empty-card code { background: var(--bg); padding: 2px 6px; border-radius: 6px; color: var(--green); }
+.stat-list--full .st-row { grid-template-columns: 28px 1fr auto auto; }
+.st-sub { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+/* inputs */
+.inp { width: 100%; padding: 12px 14px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line-soft); color: var(--text); font-size: 14px; margin-bottom: 10px; }
+.inp:focus { outline: none; border-color: var(--green); }
+.inp::placeholder { color: var(--muted-2); }
+
+/* auth modal */
+.auth-card { max-width: 380px; width: 100%; }
+.auth-seg { display: flex; width: 100%; margin-bottom: 14px; } .auth-seg button { flex: 1; }
+.auth-google { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 10px; }
+.auth-google span { width: 18px; height: 18px; border-radius: 50%; background: #fff; color: #444; display: grid; place-items: center; font-weight: 800; font-size: 11px; }
+.auth-or { text-align: center; color: var(--muted-2); font-size: 12px; margin: 8px 0; }
+.auth-uname-status { font-size: 12px; color: var(--muted); margin: -4px 0 8px; }
+.auth-uname-status.ok { color: var(--green); } .auth-uname-status.bad { color: var(--red); }
+.auth-err { color: var(--red); font-size: 13px; min-height: 18px; margin-bottom: 6px; }
+
+/* friends */
+.friend-add { display: flex; gap: 8px; } .friend-add .inp { margin: 0; }
+.friend-add .btn { width: auto; padding: 0 18px; }
+.friend-msg { font-size: 13px; color: var(--muted); margin-top: 8px; min-height: 16px; }
+.friend-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-top: 1px solid var(--line-soft); font-size: 14px; }
+.friend-row span { display: flex; gap: 6px; align-items: center; }
+.mini-btn { padding: 5px 12px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line-soft); font-size: 12px; font-weight: 600; color: var(--text); }
+.mini-btn.ok { background: var(--green); color: #052914; border: none; }
+
+/* ranked */
+.tag-soon { background: rgba(74,168,255,.15); color: var(--blue); border: 1px solid rgba(74,168,255,.4); border-radius: 999px; font-size: 10px; padding: 3px 9px; vertical-align: middle; margin-left: 8px; letter-spacing: .08em; }
+.ranked-teaser { text-align: center; }
+.ranked-badge { font-size: 46px; }
+.ranked-teaser h3 { font-size: 22px; margin: 8px 0; }
+.ranked-teaser p { color: var(--muted); max-width: 520px; margin: 0 auto; }
+.ranked-list { list-style: none; display: inline-flex; flex-direction: column; gap: 6px; margin: 16px auto; text-align: left; color: var(--text); font-size: 14px; }
+.ranked-list li::before { content: "✓ "; color: var(--green); font-weight: 800; }
+.ranked-cta { color: var(--blue); font-weight: 700; margin-top: 8px; }
+
 /* --------------------------------------------------------- Responsive -- */
 @media (max-width: 760px) {
   .sim-stage { aspect-ratio: 4 / 3; }
@@ -451,4 +524,8 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   .skip-hint { display: none; }
   .skip-main { font-size: 11.5px; }
   .draft-top { gap: 8px; padding: 10px 12px; }
+  .nav-brand span { display: none; }
+  .nav-tab { padding: 6px 11px; font-size: 13px; }
+  .nav-account { padding: 7px 13px; }
+  .topnav { gap: 8px; padding: 8px 12px; }
 }

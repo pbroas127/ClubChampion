@@ -16,6 +16,8 @@
   function showScreen(name) {
     document.querySelectorAll(".screen").forEach(function (s) { s.classList.remove("is-active"); });
     $("screen-" + name).classList.add("is-active");
+    document.body.dataset.screen = name;               // lets the nav hide during draft/sim
+    if (window.CC_APP && window.CC_APP.onScreen) window.CC_APP.onScreen(name);
     window.scrollTo(0, 0);
   }
 
@@ -278,6 +280,7 @@
     showScreen("results");
     wireActions();
     if (v.party) party();
+    if (window.CC_APP) window.CC_APP.recordSeason(R);
   }
 
   // Run the canvas match animation, then reveal the head-to-head result.
@@ -318,6 +321,7 @@
     showScreen("results");
     wireActions();
     if (youWin) party();
+    if (window.CC_APP) { R.seasonStats = ENGINE.seasonStats(R.squad, R.you, game.seed); window.CC_APP.recordSeason(R); }
   }
 
   // Real-scoreboard style: TeamA  score ⚽ score  TeamB, with goalscorers below.
@@ -454,12 +458,22 @@
   function init() {
     buildFormationCards();
     wireHome();
-    // tiny startup log so coverage issues surface during development
     if (DATA.validateCoverage) {
       var probs = DATA.validateCoverage();
       if (probs.length) console.warn("Data coverage issues:", probs);
     }
+    if (window.CC_APP && window.CC_APP.init) window.CC_APP.init();   // nav / accounts / tabs
   }
+
+  // Exposed so the accounts/tabs layer (app.js) can drive navigation + read state.
+  window.CC_UI = {
+    showScreen: showScreen,
+    getGame: function () { return game; },
+    getResults: function () { return lastResults; },
+    seasonStatsFor: function (squad, season, seed) { return ENGINE.seasonStats(squad, season, seed); },
+  };
+  window.CC_TOAST = toast;
+
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
 })();

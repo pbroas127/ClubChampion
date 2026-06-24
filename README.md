@@ -4,7 +4,9 @@
 
 A football (soccer) take on the viral [82-0](https://www.82-0.com/) basketball builder. Instead of NBA teams and decades, you draft from the great club sides of **1990–2026** by their **exact year** — Maradona's *Napoli 1990*, the *Arsenal 2004* Invincibles, *Barcelona 2011*, *PSG 2025*… or a genuine dud like *Man City 1999* (third tier). Build a 7-player squad, then a non-linear engine simulates a 38-game season and tells you how you did.
 
-Play **solo** to chase a perfect unbeaten season, or **against the CPU** — out-draft a rival manager, then settle it in a one-off final.
+Play **solo** to chase a perfect unbeaten season, or **against the CPU** — out-draft a rival manager, then **watch the match play out** in a 2D simulation before the final whistle.
+
+Sign in (email or Google) to claim a **unique username**, save your **stats**, add **friends**, and compare best seasons. **Ranked** mode is coming soon.
 
 > A for-fun tribute project. Player ratings are subjective and made for play, not historical accuracy.
 
@@ -89,15 +91,40 @@ vercel --prod   # production deploy
 
 ---
 
+## Enabling accounts (Supabase)
+
+Accounts, friends, cloud-saved stats and (later) ranked are powered by **Supabase**.
+Until you add keys, the game runs in **offline mode** — fully playable, stats saved
+in the browser, friends/ranked disabled. To switch accounts on:
+
+1. Create a free project at [supabase.com](https://supabase.com).
+2. **SQL Editor → New query →** paste all of [`supabase/schema.sql`](supabase/schema.sql) and **Run**
+   (creates `profiles`, `seasons`, `friendships` + Row Level Security).
+3. **Project Settings → API**: copy the **Project URL** and **anon public key** into
+   [`js/config.js`](js/config.js).
+4. **Authentication → Providers → Google**: enable it and paste your Google OAuth
+   client ID/secret. Add your site URLs (e.g. `https://club-champion.vercel.app` and
+   `http://localhost:8000`) under **URL Configuration → Redirect URLs**.
+5. Commit & deploy. Sign-in, unique usernames, friends and cloud stats are now live.
+
+The anon key is safe to commit — it's a public client key, and RLS is what protects data.
+
+---
+
 ## Project structure
 ```
-index.html          # app shell + screens
+index.html          # app shell: nav + screens (home/draft/sim/results/stats/friends/ranked)
 css/styles.css      # all styling (dark pitch theme, responsive)
+js/config.js        # Supabase URL + anon key (blank = offline mode)
+js/supabase.js      # backend wrapper: auth, profiles, seasons, friends
+js/app.js           # nav/tabs, sign-in UI, Stats, Friends, Ranked
 js/data.js          # 1000+ players across 17 clubs, full 1990–2026 timeline
-js/engine.js        # category sums, gating, season sim, head-to-head match
+js/engine.js        # category sums, gating, season sim, per-player stats, match
 js/cpu.js           # CPU drafting AI (easy / normal / hard)
 js/game.js          # slot machine + draft state machine + results
-js/ui.js            # rendering & interaction
+js/matchsim.js      # 2D match simulation (timeline generator + canvas renderer)
+js/ui.js            # gameplay rendering & interaction
+supabase/schema.sql # database tables + RLS policies
 scripts/test-engine.js  # node dev harness
 vercel.json         # static deploy config
 ```
