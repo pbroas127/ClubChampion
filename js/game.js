@@ -27,32 +27,54 @@
   function randInt(rand, lo, hi) { return lo + Math.floor(rand() * (hi - lo + 1)); }
 
   // Build one playable spin given which slots remain open and who's taken.
-  // clubIndex optional (used by "skip year" to keep the same club).
-  function makeSpin(openSlots, drafted, rand, clubIndex) {
-    for (var attempt = 0; attempt < 60; attempt++) {
-      var ci = (clubIndex == null) ? randInt(rand, 0, DATA.CLUBS.length - 1) : clubIndex;
-      var club = DATA.CLUBS[ci];
-      var year = randInt(rand, DATA.START_YEAR, DATA.END_YEAR);
+  // opts: { clubIndex, year } — pin either axis (or neither). Used so that
+  //   "Swap Club" keeps the YEAR fixed and "Swap Year" keeps the CLUB fixed.
+  function makeSpin(openSlots, drafted, rand, opts) {
+    opts = opts || {};
+    var pinClub = (opts.clubIndex != null), pinYear = (opts.year != null);
+
+    function eligibleAt(ci, year) {
       var era = DATA.eraForYear(ci, year);
-      var eligible = era.players.filter(function (p) {
-        return openSlots[p.pos] > 0 && !drafted[p.n];
-      });
-      if (eligible.length > 0) {
-        return {
-          clubIndex: ci, club: club.club, short: club.short, color: club.color,
-          country: club.country, year: year, label: era.label, eligible: eligible,
-        };
-      }
-      // If we're locked to a club and it can't help, free the club lock.
-      if (clubIndex != null && attempt > 8) clubIndex = null;
+      var elig = era.players.filter(function (p) { return openSlots[p.pos] > 0 && !drafted[p.n]; });
+      return elig.length ? { era: era, elig: elig } : null;
     }
-    // Extremely unlikely fallback: any club/era with an open-slot player.
+    function spinObj(ci, year, hit) {
+      var club = DATA.CLUBS[ci];
+      return {
+        clubIndex: ci, club: club.club, short: club.short, color: club.color,
+        country: club.country, year: year, label: hit.era.label, eligible: hit.elig,
+      };
+    }
+
+    for (var attempt = 0; attempt < 80; attempt++) {
+      var ci = pinClub ? opts.clubIndex : randInt(rand, 0, DATA.CLUBS.length - 1);
+      var year = pinYear ? opts.year : randInt(rand, DATA.START_YEAR, DATA.END_YEAR);
+      if (opts.avoidClubIndex != null && ci === opts.avoidClubIndex) continue;  // ensure a different club
+      var hit = eligibleAt(ci, year);
+      if (!hit) continue;
+      if (opts.avoidLabel != null && hit.era.label === opts.avoidLabel) continue; // ensure a different squad/era
+      return spinObj(ci, year, hit);
+    }
+
+    // Deterministic fallback that still respects whichever axis is pinned.
+    if (pinYear && !pinClub) {
+      for (var c1 = 0; c1 < DATA.CLUBS.length; c1++) {
+        var h1 = eligibleAt(c1, opts.year);
+        if (h1) return spinObj(c1, opts.year, h1);
+      }
+    }
+    if (pinClub && !pinYear) {
+      for (var y = DATA.START_YEAR; y <= DATA.END_YEAR; y++) {
+        var h2 = eligibleAt(opts.clubIndex, y);
+        if (h2) return spinObj(opts.clubIndex, y, h2);
+      }
+    }
     for (var k = 0; k < DATA.COMBOS.length; k++) {
-      var c = DATA.COMBOS[k];
-      var elig = c.players.filter(function (p) { return openSlots[p.pos] > 0 && !drafted[p.n]; });
+      var cb = DATA.COMBOS[k];
+      var elig = cb.players.filter(function (p) { return openSlots[p.pos] > 0 && !drafted[p.n]; });
       if (elig.length) {
-        return { clubIndex: c.clubIndex, club: c.club, short: c.short, color: c.color,
-          country: c.country, year: randInt(rand, c.from, c.to), label: c.label, eligible: elig };
+        return { clubIndex: cb.clubIndex, club: cb.club, short: cb.short, color: cb.color,
+          country: cb.country, year: randInt(rand, cb.from, cb.to), label: cb.label, eligible: elig };
       }
     }
     return null;
@@ -86,8 +108,8 @@
     return this;
   };
 
-  Game.prototype.nextSpin = function (clubIndex) {
-    this.spin = makeSpin(this.openSlots, this.drafted, this.rand, clubIndex);
+  Game.prototype.nextSpin = function (opts) {
+    this.spin = makeSpin(this.openSlots, this.drafted, this.rand, opts);
     return this.spin;
   };
 
@@ -112,17 +134,19 @@
     return { done: false, spin: this.spin };
   };
 
+  // Swap Club: a DIFFERENT club, SAME year.
   Game.prototype.skipClub = function () {
-    if (this.skips.club <= 0) return false;
+    if (this.skips.club <= 0 || !this.spin) return false;
     this.skips.club--;
-    this.nextSpin();           // brand-new club + year
+    this.nextSpin({ year: this.spin.year, avoidClubIndex: this.spin.clubIndex });
     return true;
   };
 
+  // Swap Year: a DIFFERENT era/year, SAME club (so the squad actually changes).
   Game.prototype.skipYear = function () {
-    if (this.skips.year <= 0) return false;
+    if (this.skips.year <= 0 || !this.spin) return false;
     this.skips.year--;
-    this.nextSpin(this.spin ? this.spin.clubIndex : null);   // same club, new year/era
+    this.nextSpin({ clubIndex: this.spin.clubIndex, avoidLabel: this.spin.label });
     return true;
   };
 

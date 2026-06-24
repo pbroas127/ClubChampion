@@ -97,11 +97,15 @@
           <span class="progress-text" id="progress-text">Round 1 of 7</span>
         </div>
         <div class="skips">
-          <button class="skip-btn" id="btn-skip-year" title="Same club, new year">
-            ↻ Year <b id="skip-year-count">1</b>
+          <button class="skip-btn" id="btn-skip-club" title="Roll a different club — your year stays the same">
+            <span class="skip-main">🔄 Swap Club</span>
+            <span class="skip-hint">keeps the year</span>
+            <b class="skip-count" id="skip-club-count">1</b>
           </button>
-          <button class="skip-btn" id="btn-skip-club" title="Brand-new club">
-            ↻ Club <b id="skip-club-count">1</b>
+          <button class="skip-btn" id="btn-skip-year" title="Roll a different year — your club stays the same">
+            <span class="skip-main">🔄 Swap Year</span>
+            <span class="skip-hint">keeps the club</span>
+            <b class="skip-count" id="skip-year-count">1</b>
           </button>
         </div>
       </header>
@@ -129,6 +133,17 @@
       </div>
     </section>
 
+    <!-- =============================================== MATCH SIM ===== -->
+    <section class="screen screen--sim" id="screen-sim">
+      <div class="sim-wrap">
+        <div class="sim-head" id="sim-head">Champions Cup Final · simulating…</div>
+        <div class="sim-stage">
+          <canvas id="sim-canvas"></canvas>
+        </div>
+        <button class="btn btn--ghost btn--sm sim-skip" id="btn-skip-sim">Skip to result →</button>
+      </div>
+    </section>
+
     <!-- =================================================== RESULTS ===== -->
     <section class="screen screen--results" id="screen-results">
       <div class="results-wrap" id="results-wrap"><!-- injected --></div>
@@ -143,7 +158,7 @@
           <li><b>Pick a formation.</b> Every shape fields the same 7 players (1 GK + 6 outfield) — but a back three defends better while three up top outscores everyone. Balance is king.</li>
           <li><b>Spin the slot.</b> Each round locks in a random <b>club</b> and an <b>exact year</b> (1990–2026). You might land on Barcelona 2011… or Man City's third-tier 1999.</li>
           <li><b>Draft a player</b> from that club &amp; year to fill an open position. You can't pick the same player twice.</li>
-          <li><b>Use your skips wisely.</b> One <b>Year</b> skip (same club, new year) and one <b>Club</b> skip (fresh club). A bad roll early is a hole you can't dig out of.</li>
+          <li><b>Use your skips wisely.</b> One <b>Swap Year</b> (new year, same club) and one <b>Swap Club</b> (new club, same year). A bad roll early is a hole you can't dig out of.</li>
           <li><b>Simulate the season.</b> Your squad's five categories — Attack, Creativity, Defence, Physical, Goalkeeping — are summed and run through a non-linear engine. One weak area <b>caps</b> your whole season.</li>
           <li><b>Go unbeaten.</b> Only a squad with no weak link can finish a 38-game season with <b>0 losses</b>. Beat the CPU by out-drafting them, then winning the final.</li>
         </ol>
@@ -152,10 +167,11 @@
 
   </div>
 
-  <script src="js/data.js?v=2"></script>
-  <script src="js/engine.js?v=2"></script>
-  <script src="js/cpu.js?v=2"></script>
-  <script src="js/game.js?v=2"></script>
-  <script src="js/ui.js?v=2"></script>
+  <script src="js/data.js?v=3"></script>
+  <script src="js/engine.js?v=3"></script>
+  <script src="js/cpu.js?v=3"></script>
+  <script src="js/game.js?v=3"></script>
+  <script src="js/matchsim.js?v=3"></script>
+  <script src="js/ui.js?v=3"></script>
 </body>
 </html>

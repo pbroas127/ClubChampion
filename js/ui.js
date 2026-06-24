@@ -3,7 +3,8 @@
  * ==========================================================================*/
 (function () {
   "use strict";
-  var DATA = window.CC_DATA, ENGINE = window.CC_ENGINE, GAME = window.CC_GAME, CPU = window.CC_CPU;
+  var DATA = window.CC_DATA, ENGINE = window.CC_ENGINE, GAME = window.CC_GAME, CPU = window.CC_CPU, MATCHSIM = window.CC_MATCHSIM;
+  var activeSim = null;
 
   // -- UI selection state (before a game starts) ----------------------------
   var sel = { mode: "solo", difficulty: "normal", formationId: "balanced", hideRatings: false };
@@ -252,11 +253,14 @@
 
   function showResults() {
     lastResults = game.results();
-    var wrap = $("results-wrap");
-    var you = lastResults.you;
+    // vs-CPU: watch the match first, then show the result screen.
+    if (lastResults.mode === "cpu") return startMatchSim(lastResults);
+    renderSoloResults(lastResults);
+  }
 
-    if (lastResults.mode === "cpu") return showCpuResults(wrap, lastResults);
-
+  function renderSoloResults(R) {
+    var wrap = $("results-wrap"), you = R.you;
+    R.seasonStats = ENGINE.seasonStats(R.squad, you, game.seed);  // saved for the Stats tab later
     var v = verdictFor(you);
     wrap.innerHTML =
       '<div class="verdict ' + v.cls + '">' +
@@ -265,42 +269,111 @@
         '<div class="verdict-record">' + recordHTML(you.record) + "</div>" +
         '<div class="verdict-sub">' + v.sub + "</div>" +
         '<div class="verdict-pills"><span class="pill"><b>' + you.points + '</b> pts</span>' +
-          '<span class="pill"><b>' + you.record.W + '</b> wins</span>' +
+          '<span class="pill"><b>' + R.seasonStats.goalsFor + '</b> scored</span>' +
+          '<span class="pill"><b>' + R.seasonStats.goalsAgainst + '</b> conceded</span>' +
           '<span class="pill">' + you.record.L + ' losses</span></div>' +
       "</div>" +
-      '<div class="res-grid">' + categoryCard(you) + squadCard(lastResults.squad, "Your XI") + "</div>" +
+      '<div class="res-grid">' + categoryCard(you) + seasonStatsCard(R.seasonStats) + "</div>" +
       actionsHTML(false);
     showScreen("results");
     wireActions();
     if (v.party) party();
   }
 
+  // Run the canvas match animation, then reveal the head-to-head result.
+  function startMatchSim(R) {
+    showScreen("sim");
+    $("sim-head").textContent = "Champions Cup Final · " + game.formation.name + " " + game.formation.tag;
+    var canvas = $("sim-canvas");
+    var matchSeed = (game.seed * 2654435761) >>> 0 || 1;
+    if (activeSim) { activeSim.destroy(); activeSim = null; }
+    activeSim = MATCHSIM.create(canvas, {
+      squadA: R.squad, squadB: R.cpuSquad, result: R.match,
+      teamAName: "Your XI", teamBName: "CPU",
+      colorA: "#2ee87f", colorB: "#ff5d73", seed: matchSeed,
+      onDone: function (out) {
+        R.matchStats = out.stats; R.scorers = out.scorers;
+        activeSim = null;
+        showCpuResults($("results-wrap"), R);
+      },
+    });
+    $("btn-skip-sim").onclick = function () { if (activeSim) activeSim.skip(); };
+    activeSim.start();
+  }
+
   function showCpuResults(wrap, R) {
-    var youWin = R.youWin;
-    var m = R.match;
-    var vKicker = youWin ? "Champions Cup Final" : "Champions Cup Final";
+    var youWin = R.youWin, m = R.match;
     wrap.innerHTML =
       '<div class="verdict ' + (youWin ? "verdict--win" : "") + '">' +
-        '<div class="verdict-kicker">' + vKicker + "</div>" +
+        '<div class="verdict-kicker">Champions Cup Final</div>' +
         '<div class="verdict-title">' + (youWin ? "YOU WIN! 🏆" : "CPU WINS") + "</div>" +
         '<div class="verdict-sub">' + (youWin
           ? "You out-managed the CPU when it mattered most."
           : "The CPU edged the final — out-draft them next time.") + "</div></div>" +
-      '<div class="scoreboard">' +
-        '<div class="sb-side ' + (youWin ? "win" : "lose") + '"><div class="sb-name">Your XI</div>' +
-          '<div class="sb-rec">' + R.you.record.W + "-" + R.you.record.D + "-" + R.you.record.L + " · " + R.you.points + "pts</div>" +
-          '<div class="sb-score">' + m.goalsA + "</div></div>" +
-        '<div class="sb-mid">FT' + (m.pens ? '<div class="sb-pens">pens<br>' + m.pens.a + "-" + m.pens.b + "</div>" : "") + "</div>" +
-        '<div class="sb-side ' + (!youWin ? "win" : "lose") + '"><div class="sb-name">CPU (' + cap(game.difficulty) + ")</div>" +
-          '<div class="sb-rec">' + R.cpu.record.W + "-" + R.cpu.record.D + "-" + R.cpu.record.L + " · " + R.cpu.points + "pts</div>" +
-          '<div class="sb-score">' + m.goalsB + "</div></div>" +
-      "</div>" +
-      '<div class="res-grid">' + squadCard(R.squad, "Your XI") + squadCard(R.cpuSquad, "CPU XI") + "</div>" +
+      scoreboardHTML(R) +
+      '<div class="res-grid">' + matchStatsCard(R.matchStats.A, "Your XI", R.scorers.A)
+                               + matchStatsCard(R.matchStats.B, "CPU XI", R.scorers.B) + "</div>" +
       '<div style="margin-top:16px">' + categoryCard(R.you) + "</div>" +
       actionsHTML(true);
     showScreen("results");
     wireActions();
     if (youWin) party();
+  }
+
+  // Real-scoreboard style: TeamA  score ⚽ score  TeamB, with goalscorers below.
+  function scoreboardHTML(R) {
+    var m = R.match, youWin = R.youWin;
+    var pens = m.pens ? '<div class="sb-pens">pens ' + m.pens.a + "–" + m.pens.b + "</div>" : "";
+    return '<div class="scorebar">' +
+      '<div class="sb-team"><div class="sb-tname ' + (youWin ? "win" : "") + '">Your XI</div>' +
+        '<div class="sb-trec">' + R.you.record.W + "-" + R.you.record.D + "-" + R.you.record.L + " · " + R.you.points + "pts</div></div>" +
+      '<div class="sb-num ' + (youWin ? "win" : "") + '">' + m.goalsA + "</div>" +
+      '<div class="sb-mid"><div class="sb-ball">⚽</div><div class="sb-ft">FT</div>' + pens + "</div>" +
+      '<div class="sb-num ' + (!youWin ? "win" : "") + '">' + m.goalsB + "</div>" +
+      '<div class="sb-team"><div class="sb-tname ' + (!youWin ? "win" : "") + '">CPU · ' + cap(game.difficulty) + "</div>" +
+        '<div class="sb-trec">' + R.cpu.record.W + "-" + R.cpu.record.D + "-" + R.cpu.record.L + " · " + R.cpu.points + "pts</div></div>" +
+      "</div>" +
+      '<div class="scorers"><div class="scorers-col">' + scorerLines(R.scorers.A) + "</div>" +
+        '<div class="scorers-ball">⚽</div>' +
+        '<div class="scorers-col right">' + scorerLines(R.scorers.B) + "</div></div>";
+  }
+
+  function scorerLines(list) {
+    if (!list || !list.length) return '<span class="scorer-none">—</span>';
+    var byName = {};
+    list.forEach(function (s) { (byName[s.name] = byName[s.name] || []).push(s.minute); });
+    return Object.keys(byName).map(function (name) {
+      return '<div class="scorer">⚽ <b>' + lastName(name) + "</b> <span>" +
+        byName[name].sort(function (a, b) { return a - b; }).map(function (m) { return m + "'"; }).join(", ") + "</span></div>";
+    }).join("");
+  }
+
+  // Per-player match (or season) stat table.
+  function matchStatsCard(stats, title, scorers) {
+    var rows = stats.slice().sort(function (a, b) { return b.rating - a.rating; }).map(function (s) {
+      var line = (s.goals ? s.goals + "G " : "") + (s.assists ? s.assists + "A " : "") + (s.saves ? s.saves + "sv " : "");
+      return '<div class="st-row"><div class="st-pos pos-' + s.pos + '">' + s.pos + "</div>" +
+        '<div class="st-name">' + lastName(s.n) + '<small>' + (line || "&nbsp;") + "</small></div>" +
+        '<div class="st-rtg ' + rtgClass(s.rating) + '">' + s.rating.toFixed(1) + "</div></div>";
+    }).join("");
+    return '<div class="card"><h3>' + title + " · player ratings</h3><div class=\"stat-list\">" + rows + "</div></div>";
+  }
+  function rtgClass(r) { return r >= 7.5 ? "ovr-hi" : r >= 6.8 ? "ovr-mid" : "ovr-lo"; }
+
+  // Solo season: team summary + per-player season stats.
+  function seasonStatsCard(st) {
+    var order = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
+    var rows = st.players.slice().sort(function (a, b) {
+      return (b.goals + b.assists) - (a.goals + a.assists) || order[a.pos] - order[b.pos];
+    }).map(function (s) {
+      var line = (s.goals ? s.goals + "G " : "") + (s.assists ? s.assists + "A " : "") +
+        (s.saves ? s.saves + "sv " : "") + (s.cleanSheets && s.pos !== "FWD" && s.pos !== "MID" ? s.cleanSheets + "cs" : "");
+      return '<div class="st-row"><div class="st-pos pos-' + s.pos + '">' + s.pos + "</div>" +
+        '<div class="st-name">' + s.n + '<small>' + (line || "&nbsp;") + "</small></div>" +
+        '<div class="st-rtg ' + rtgClass(s.rating) + '">' + s.rating.toFixed(1) + "</div></div>";
+    }).join("");
+    return '<div class="card"><h3>Season stats · ' + st.goalsFor + " scored, " + st.goalsAgainst + " conceded, " + st.cleanSheets + " clean sheets</h3>" +
+      '<div class="stat-list">' + rows + "</div></div>";
   }
 
   function actionsHTML(isCpu) {

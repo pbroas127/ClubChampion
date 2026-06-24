@@ -247,8 +247,86 @@
     return result;
   }
 
+  /* ------------------------------------------- Per-player season stats */
+  // A position-weighted overall rating (0-99) for display/weighting.
+  function overall(pl) {
+    var r = pl.r;
+    switch (pl.pos) {
+      case "GK": return r.gk;
+      case "DEF": return r.df * 0.6 + r.ph * 0.25 + r.cr * 0.15;
+      case "MID": return r.cr * 0.5 + r.df * 0.2 + r.ph * 0.15 + r.at * 0.15;
+      default:    return r.at * 0.55 + r.cr * 0.25 + r.ph * 0.2;
+    }
+  }
+
+  function hashSquad(squad) {
+    var h = 2166136261 >>> 0;
+    squad.forEach(function (p) {
+      var s = (p.n || "") + "|" + (p.year || "");
+      for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    });
+    return h >>> 0;
+  }
+
+  // Split `total` across `weights` as whole numbers that sum exactly to total.
+  function distribute(total, weights, rand) {
+    var sum = weights.reduce(function (a, b) { return a + b; }, 0) || 1;
+    var raw = weights.map(function (w) { return total * w / sum; });
+    var out = raw.map(function (x) { return Math.floor(x); });
+    var used = out.reduce(function (a, b) { return a + b; }, 0);
+    var rem = total - used;
+    var order = raw.map(function (x, i) { return { i: i, frac: (x - Math.floor(x)) + rand() * 0.01 }; })
+      .sort(function (a, b) { return b.frac - a.frac; });
+    for (var k = 0; k < rem && order.length; k++) out[order[k % order.length].i]++;
+    return out;
+  }
+
+  // Realistic per-player numbers for a 38-game season. Driven by the squad's
+  // attack/defence strength (so better teammates lift everyone) and the final
+  // record (so a title side posts better numbers). Goals/assists reconcile to
+  // the team totals exactly.
+  function seasonStats(squad, season, seed) {
+    var rand = rng(seed != null ? seed : hashSquad(squad));
+    var totals = (season && season.totals) ? season.totals : categoryTotals(squad);
+    var atk = attackPower(totals), def = defencePower(totals);
+    var points = season ? season.points : 60;
+
+    var gpg = clamp(0.9 + (atk - 0.85) * 3.4, 0.7, 2.6);
+    var teamGF = Math.round(clamp(gpg * 38, 28, 105));
+    var gapg = clamp(1.9 - (def - 0.85) * 2.9, 0.42, 2.1);
+    var teamGA = Math.round(clamp(gapg * 38, 16, 86));
+    var cleanSheets = Math.round(38 * Math.exp(-gapg));
+    var savesSeason = Math.round(38 * clamp(1.8 + (1.2 - def) * 3.8, 1.4, 5));
+
+    var goalPos = { GK: 0.01, DEF: 0.18, MID: 0.55, FWD: 1.0 };
+    var astPos = { GK: 0.05, DEF: 0.45, MID: 1.0, FWD: 0.72 };
+    var gW = squad.map(function (p) { return Math.pow(p.r.at, 1.8) * goalPos[p.pos]; });
+    var aW = squad.map(function (p) { return Math.pow(p.r.cr, 1.5) * astPos[p.pos]; });
+    var goals = distribute(teamGF, gW, rand);
+    var assists = distribute(Math.round(teamGF * 0.72), aW, rand);
+
+    var players = squad.map(function (p, i) {
+      var ovr = Math.round(overall(p));
+      var ga = goals[i] + assists[i];
+      var isGK = p.pos === "GK";
+      var rating = clamp(6.5 + (ovr - 72) * 0.05 + ga * 0.022 + (points - 55) / 250 + (rand() - 0.5) * 0.2, 5.8, 9.6);
+      return {
+        n: p.n, pos: p.pos, club: p.club, year: p.year, ovr: ovr,
+        apps: 38 - Math.floor(rand() * 4),
+        goals: goals[i], assists: assists[i],
+        cleanSheets: (isGK || p.pos === "DEF") ? cleanSheets : 0,
+        saves: isGK ? savesSeason : 0,
+        rating: Math.round(rating * 10) / 10,
+      };
+    });
+    return { players: players, goalsFor: teamGF, goalsAgainst: teamGA, cleanSheets: cleanSheets };
+  }
+
   var API = {
     FORMATIONS: FORMATIONS,
+    overall: overall,
+    seasonStats: seasonStats,
+    hashSquad: hashSquad,
     PAR: PAR,
     categoryTotals: categoryTotals,
     ratios: ratios,

@@ -54,13 +54,17 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 
 /* ============================================================ HOME ===== */
 .screen--home {
+  --hero-desktop: url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260623_221540_c65b1e9d-69c2-43a3-bcfb-f57eedda40d6.png");
   background-image:
     linear-gradient(180deg, rgba(7,20,13,.74) 0%, rgba(7,20,13,.90) 58%, rgba(7,20,13,.98) 100%),
-    url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260623_221540_c65b1e9d-69c2-43a3-bcfb-f57eedda40d6.png");
+    var(--hero-desktop);
   background-size: cover;
-  background-position: center top;
+  background-position: center center;
   background-repeat: no-repeat;
-  background-attachment: fixed;
+  background-attachment: scroll;       /* mobile-safe default (iOS ignores fixed) */
+}
+@media (min-width: 761px) {
+  .screen--home { background-attachment: fixed; background-position: center top; }
 }
 .home-wrap {
   max-width: var(--maxw);
@@ -188,12 +192,20 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .progress-text { font-size: 12px; color: var(--muted); font-weight: 600; margin-top: 5px; display: block; }
 .skips { display: flex; gap: 8px; }
 .skip-btn {
-  padding: 8px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line-soft);
-  font-size: 13px; font-weight: 600; color: var(--text); transition: .15s; white-space: nowrap;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  padding: 6px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line-soft);
+  color: var(--text); transition: .15s; white-space: nowrap; position: relative; line-height: 1.15;
 }
-.skip-btn b { color: var(--gold); margin-left: 3px; }
-.skip-btn:hover:not(:disabled) { border-color: var(--gold-2); }
-.skip-btn:disabled { opacity: .35; cursor: not-allowed; }
+.skip-main { font-size: 12.5px; font-weight: 700; }
+.skip-hint { font-size: 9.5px; color: var(--muted); font-weight: 600; letter-spacing: .01em; }
+.skip-count {
+  position: absolute; top: -7px; right: -7px; background: var(--gold); color: #052914;
+  font-size: 10px; font-weight: 800; min-width: 17px; height: 17px; border-radius: 999px;
+  display: grid; place-items: center; padding: 0 4px; box-shadow: 0 2px 6px rgba(0,0,0,.4);
+}
+.skip-btn:hover:not(:disabled) { border-color: var(--gold-2); transform: translateY(-1px); }
+.skip-btn:disabled { opacity: .4; cursor: not-allowed; }
+.skip-btn:disabled .skip-count { background: var(--muted-2); color: var(--bg); }
 
 .draft-body {
   max-width: var(--maxw); margin: 0 auto; padding: 18px 16px 40px;
@@ -379,8 +391,55 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 /* confetti */
 .confetti { position: fixed; top: -12px; width: 9px; height: 14px; z-index: 40; pointer-events: none; border-radius: 2px; }
 
+/* ========================================================= MATCH SIM ==== */
+.sim-wrap { max-width: 920px; margin: 0 auto; padding: 18px 16px 30px; }
+.sim-head { text-align: center; font-family: "Archivo"; font-weight: 700; color: var(--gold);
+  font-style: italic; margin-bottom: 12px; font-size: 14px; }
+.sim-stage {
+  width: 100%; aspect-ratio: 3 / 2; border-radius: var(--radius); overflow: hidden;
+  border: 2px solid #1c6b3e; box-shadow: var(--shadow); background: #0f3f25;
+}
+#sim-canvas { width: 100%; height: 100%; display: block; }
+.sim-skip { max-width: 280px; margin: 16px auto 0; }
+
+/* ====================================================== SCOREBOARD ======= */
+.scorebar {
+  display: grid; grid-template-columns: 1fr auto auto auto 1fr; align-items: center; gap: 10px;
+  background: linear-gradient(180deg, var(--panel), var(--bg-2)); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 20px 16px; margin-bottom: 6px; box-shadow: var(--shadow);
+}
+.sb-team { text-align: center; min-width: 0; }
+.sb-tname { font-family: "Archivo"; font-weight: 800; font-size: clamp(14px,3.5vw,19px); }
+.sb-tname.win { color: var(--green); }
+.sb-trec { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.sb-num { font-family: "Archivo"; font-weight: 900; font-size: clamp(34px,9vw,56px); line-height: 1; color: var(--muted-2); min-width: 40px; text-align: center; }
+.sb-num.win { color: var(--green); }
+.sb-mid { text-align: center; color: var(--muted); }
+.sb-ball { font-size: 20px; }
+.sb-ft { font-size: 10px; font-weight: 700; letter-spacing: .1em; color: var(--muted-2); }
+.sb-pens { font-size: 10px; color: var(--gold); margin-top: 2px; }
+.scorers {
+  display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: start;
+  background: var(--bg-2); border: 1px solid var(--line-soft); border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius); padding: 12px 16px 14px; margin-bottom: 16px;
+}
+.scorers-col { font-size: 13px; display: grid; gap: 4px; }
+.scorers-col.right { text-align: right; justify-items: end; }
+.scorers-ball { font-size: 16px; opacity: .6; align-self: center; }
+.scorer { color: var(--text); } .scorer b { font-weight: 700; } .scorer span { color: var(--muted); font-size: 12px; }
+.scorer-none { color: var(--muted-2); }
+
+/* per-player stat list */
+.stat-list { display: grid; gap: 6px; }
+.st-row { display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: center; }
+.st-pos { font-family: "Archivo"; font-weight: 800; font-size: 10px; text-align: center; border-radius: 6px; padding: 3px 0; color: #05140c; }
+.st-name { font-weight: 600; font-size: 13.5px; min-width: 0; }
+.st-name small { display: block; color: var(--muted); font-weight: 500; font-size: 11px; }
+.st-rtg { font-family: "Archivo"; font-weight: 900; font-size: 16px; }
+
 /* --------------------------------------------------------- Responsive -- */
 @media (max-width: 760px) {
+  .sim-stage { aspect-ratio: 4 / 3; }
   .draft-body { grid-template-columns: 1fr; }
   .pitch-wrap { position: static; order: -1; max-width: 320px; margin: 0 auto; width: 100%; }
   .res-grid { grid-template-columns: 1fr; }
@@ -388,6 +447,8 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 @media (max-width: 480px) {
   .mode-grid { grid-template-columns: 1fr; }
   .formation-grid { grid-template-columns: 1fr 1fr; }
-  .skip-btn { padding: 8px 9px; font-size: 12px; }
+  .skip-btn { padding: 7px 9px; }
+  .skip-hint { display: none; }
+  .skip-main { font-size: 11.5px; }
   .draft-top { gap: 8px; padding: 10px 12px; }
 }
