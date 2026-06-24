@@ -3,7 +3,7 @@
 -- Paste this whole file into the Supabase SQL Editor and run it once.
 -- It creates the tables, a username-availability function, and Row Level
 -- Security (RLS) policies so users can only touch their own data (and read
--- their friends' best seasons).
+-- their friends' best seasons). Safe to re-run (idempotent).
 -- ============================================================================
 
 -- ---------- PROFILES (1:1 with auth.users) -------------------------------
@@ -27,6 +27,28 @@ returns boolean
 language sql security definer set search_path = public as $$
   select not exists (select 1 from public.profiles where lower(username) = lower(name));
 $$;
+
+-- ---------- FRIENDSHIPS ---------------------------------------------------
+-- Created BEFORE `seasons` because the seasons "friends read seasons" policy
+-- references this table.
+create table if not exists public.friendships (
+  id         uuid primary key default gen_random_uuid(),
+  requester  uuid not null references auth.users(id) on delete cascade,
+  addressee  uuid not null references auth.users(id) on delete cascade,
+  status     text not null default 'pending' check (status in ('pending','accepted')),
+  created_at timestamptz default now(),
+  unique (requester, addressee)
+);
+alter table public.friendships enable row level security;
+
+drop policy if exists "see own friendships" on public.friendships;
+create policy "see own friendships" on public.friendships for select using (auth.uid() in (requester, addressee));
+drop policy if exists "send requests" on public.friendships;
+create policy "send requests" on public.friendships for insert with check (auth.uid() = requester);
+drop policy if exists "respond to requests" on public.friendships;
+create policy "respond to requests" on public.friendships for update using (auth.uid() = addressee);
+drop policy if exists "remove friendships" on public.friendships;
+create policy "remove friendships" on public.friendships for delete using (auth.uid() in (requester, addressee));
 
 -- ---------- SEASONS (saved game results) ---------------------------------
 create table if not exists public.seasons (
@@ -58,26 +80,6 @@ create policy "friends read seasons" on public.seasons for select using (
 
 drop policy if exists "insert own seasons" on public.seasons;
 create policy "insert own seasons" on public.seasons for insert with check (auth.uid() = user_id);
-
--- ---------- FRIENDSHIPS ---------------------------------------------------
-create table if not exists public.friendships (
-  id         uuid primary key default gen_random_uuid(),
-  requester  uuid not null references auth.users(id) on delete cascade,
-  addressee  uuid not null references auth.users(id) on delete cascade,
-  status     text not null default 'pending' check (status in ('pending','accepted')),
-  created_at timestamptz default now(),
-  unique (requester, addressee)
-);
-alter table public.friendships enable row level security;
-
-drop policy if exists "see own friendships" on public.friendships;
-create policy "see own friendships" on public.friendships for select using (auth.uid() in (requester, addressee));
-drop policy if exists "send requests" on public.friendships;
-create policy "send requests" on public.friendships for insert with check (auth.uid() = requester);
-drop policy if exists "respond to requests" on public.friendships;
-create policy "respond to requests" on public.friendships for update using (auth.uid() = addressee);
-drop policy if exists "remove friendships" on public.friendships;
-create policy "remove friendships" on public.friendships for delete using (auth.uid() in (requester, addressee));
 
 -- ---------- RANKED (reserved for the upcoming ranked mode) ---------------
 -- create table if not exists public.ranked_profiles (

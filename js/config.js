@@ -11,6 +11,6 @@
  * saved locally in the browser; friends/ranked are disabled).
  * ==========================================================================*/
 window.CC_CONFIG = {
-  SUPABASE_URL: "",       // e.g. "https://abcd1234.supabase.co"
-  SUPABASE_ANON_KEY: "",  // e.g. "eyJhbGciOi...."
+  SUPABASE_URL: "https://dpvucqmskwzxlgonasbs.supabase.co",
+  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRwdnVjcW1za3d6eGxnb25hc2JzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyNTc0NDIsImV4cCI6MjA5NzgzMzQ0Mn0.Ep_iI_nRtUJRKGuwNjAoeYamy-duGWkv0bpPYt2SoAw",
 };
