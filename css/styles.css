@@ -604,9 +604,10 @@ body[data-screen="draft"] .topnav, body[data-screen="sim"] .topnav, body[data-sc
   /* portrait stage → matchsim renders its vertical (mobile) pitch */
   .sim-stage { aspect-ratio: 2 / 3; max-height: 80vh; }
 
-  /* draft: a compact pitch up top so the players are only a short scroll away */
+  /* draft: slot machine + player cards FIRST; the pitch sits below (no order:-1)
+     so the big formation slots don't bury the players + their stat bars */
   .draft-body { grid-template-columns: 1fr; gap: 12px; }
-  .pitch-wrap { position: static; order: -1; max-width: 210px; margin: 0 auto; width: 100%; }
+  .pitch-wrap { position: static; max-width: 230px; margin: 4px auto 0; width: 100%; }
   .slot { padding: 10px; margin-bottom: 10px; }
   .reel { height: 50px; }
   .need-line { font-size: 13px; margin: 2px 2px 8px; }
