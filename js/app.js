@@ -233,14 +233,33 @@
         var v = input.value.trim();
         if (v.length < 3) { $("auth-err").textContent = "At least 3 characters."; return; }
         if (!/^[a-z0-9_]+$/i.test(v)) { $("auth-err").textContent = "Letters, numbers, and underscores only."; return; }
+        $("auth-err").textContent = "";
         $("auth-submit").disabled = true;
-        BE.profile.available(v).then(function (ok) {
-          if (!ok) { $("auth-err").textContent = "That username is taken — try another."; $("auth-submit").disabled = false; return; }
-          return BE.profile.setUsername(v).then(function (r) {
-            if (r.error) throw r.error;
-            closeAuth(); onAuth(state.user); toast("Welcome, " + v + "!");
-          });
-        }).catch(function (e) { $("auth-err").textContent = e.message; $("auth-submit").disabled = false; });
+
+        // Make sure we have a current user before saving
+        BE.auth.getUser().then(function (currentUser) {
+          if (!currentUser) {
+            throw new Error("Session expired — please sign in again.");
+          }
+          state.user = currentUser; // refresh state just in case
+          return BE.profile.available(v);
+        }).then(function (ok) {
+          if (!ok) {
+            $("auth-err").textContent = "That username is taken — try another.";
+            $("auth-submit").disabled = false;
+            return null;
+          }
+          return BE.profile.setUsername(v);
+        }).then(function (r) {
+          if (!r) return; // taken case already handled
+          if (r.error) throw r.error;
+          closeAuth();
+          onAuth(state.user);
+          toast("Welcome, " + v + "!");
+        }).catch(function (e) {
+          $("auth-err").textContent = (e && e.message) || "Couldn't save username.";
+          $("auth-submit").disabled = false;
+        });
       };
     }, 30);
   }
