@@ -124,20 +124,20 @@
 
   function openHelp() {
     var faqs = [
-      ["What is Club Champion?", "Spin a club &amp; an exact year (or a World Cup nation), draft a 7-player squad, and chase an unbeaten season or a knockout title."],
-      ["How are players rated?", "Each player has Attack, Creativity, Defence, Physical and Goalkeeping. Your squad's totals run through a non-linear engine — one weak category caps your whole season."],
+      ["What is Club Champion?", "Spin a club and an exact year, draft a 7-player squad, and chase an unbeaten season or a knockout title."],
+      ["How are players rated?", "Each player has Attack, Creativity, Defence, Physical and Goalkeeping. One weak category caps your whole season."],
       ["What is Pro Mode?", "Ratings are hidden during the draft so you pick on football knowledge alone."],
       ["What do the Swap buttons do?", "Swap Club rolls a different side (same year); Swap Year rolls a different year (same side)."],
-      ["How do UCL Climb &amp; World Cup work?", "Keep one drafted squad and win single-leg knockouts to advance. Opponents get tougher each round."],
-      ["Are my stats saved?", "Yes — when you're signed in, every game is saved to your account and shown per mode in the Stats tab."],
-      ["How do friends work?", "Add players by username, accept requests, and see who's online. Head-to-head and live matches are rolling out."],
-      ["Found a bug or a wrong rating?", "Ratings are subjective and for fun. Email us anything below and we'll take a look."],
+      ["How do UCL Climb and World Cup work?", "Keep one drafted squad and win single-leg knockouts to advance."],
+      ["Are my stats saved?", "Yes — when you're signed in, every game is saved to your account."],
+      ["How do friends work?", "Add players by username, accept requests, see who's online, and challenge them."],
+      ["Found a bug or wrong rating?", "Ratings are subjective and for fun. Email us anything below."],
     ];
     var howto = [
       ["Season", "Solo. Draft a balanced XI and try to finish 38-0."],
       ["Beat the CPU", "Out-draft the CPU, then win the one-off final."],
-      ["UCL Climb", "One squad, Round of 16 → Final. Win or go home."],
-      ["World Cup", "Draft national legends from 1990–2026, Group of 32 → Final."],
+      ["UCL Climb", "One squad, Round of 16 to Final. Win or go home."],
+      ["World Cup", "Draft national legends from 1990 to 2026."],
       ["Friends", "Add by username, manage requests, view their stats."],
     ];
     var ov = el("div", "modal"); ov.id = "help-modal";
@@ -227,11 +227,11 @@
           if (r.data && r.data.session) {
             return BE.profile.setUsername(uname).then(function () { toast("Welcome, " + uname + "!"); closeAuth(); });
           }
-          showErr("Account made — but Supabase has 'Confirm email' ON, so check your inbox to confirm, then sign in.");
+          showErr("Account made — but Supabase has 'Confirm email' ON, so check your inbox.");
           $("auth-submit").disabled = false;
         }).catch(function (e) {
           var msg = (e && e.message) || "Sign-up failed.";
-          if (/already registered/i.test(msg)) msg = "That email already has an account — try Sign in instead.";
+          if (/already registered/i.test(msg)) msg = "That email already has an account — try Sign in.";
           showErr(msg); $("auth-submit").disabled = false;
         });
       } else {
@@ -239,7 +239,7 @@
           if (r.error) throw r.error; toast("Signed in!"); closeAuth();
         }).catch(function (e) {
           var msg = (e && e.message) || "Sign-in failed.";
-          if (/invalid login/i.test(msg)) msg = "Wrong email/password — or your email isn't confirmed yet.";
+          if (/invalid login/i.test(msg)) msg = "Wrong email/password — or email not confirmed.";
           showErr(msg); $("auth-submit").disabled = false;
         });
       }
@@ -322,27 +322,21 @@
       $("auth-email").style.display = "none"; $("auth-pass").style.display = "none";
       $("auth-google").style.display = "none"; document.querySelector(".auth-or").style.display = "none";
       $("auth-username-row").hidden = false;
-
       var hint = document.createElement("p");
       hint.style.cssText = "color:var(--muted);font-size:13px;margin:-8px 0 14px;";
-      hint.textContent = "Pick a unique username — others will use this to find and friend you.";
+      hint.textContent = "Pick a unique username — others will use this to find you.";
       $("auth-title").after(hint);
-
       var input = $("auth-username");
       var status = $("auth-uname-status");
-
       if (suggested && suggested.length >= 3) {
         input.value = suggested;
         findAvailableVariation(suggested, 0);
-      } else {
-        status.textContent = "At least 3 characters";
-      }
-
+      } else { status.textContent = "At least 3 characters"; }
       $("auth-submit").textContent = "Save username";
       $("auth-submit").onclick = function () {
         var v = input.value.trim();
         if (v.length < 3) { $("auth-err").textContent = "At least 3 characters."; return; }
-        if (!/^[a-z0-9_]+$/i.test(v)) { $("auth-err").textContent = "Letters, numbers, and underscores only."; return; }
+        if (!/^[a-z0-9_]+$/i.test(v)) { $("auth-err").textContent = "Letters, numbers, underscores only."; return; }
         $("auth-err").textContent = "";
         $("auth-submit").disabled = true;
         BE.auth.getUser().then(function (currentUser) {
@@ -350,7 +344,7 @@
           state.user = currentUser;
           return BE.profile.available(v);
         }).then(function (ok) {
-          if (!ok) { $("auth-err").textContent = "That username is taken — try another."; $("auth-submit").disabled = false; return null; }
+          if (!ok) { $("auth-err").textContent = "That username is taken."; $("auth-submit").disabled = false; return null; }
           return BE.profile.setUsername(v);
         }).then(function (r) {
           if (!r) return;
@@ -426,7 +420,7 @@
     var wrap = $("screen-stats"); if (!wrap) return;
     var head = '<div class="page-head"><h2>Your Stats</h2><p>' +
       (state.user ? "Tracked per mode, saved to your account." : "Sign in to save and track your stats.") + "</p></div>";
-    if (!state.user) { statsData = null; wrap.innerHTML = head + signInCard("Sign in to save &amp; track your stats."); wireSignInCard(); return; }
+    if (!state.user) { statsData = null; wrap.innerHTML = head + signInCard("Sign in to save and track your stats."); wireSignInCard(); return; }
     wrap.innerHTML = head + statsTabBar() + '<div id="stats-body" class="muted-line">Loading…</div>';
     wireStatsTabs();
     BE.data.mySeasons().then(function (seasons) {
@@ -454,15 +448,15 @@
     var list = statsData[statsSub] || [];
     var n = '<div class="muted-line">' + list.length + " played</div>";
     if (statsSub === "solo") body.innerHTML = list.length ? bestSeasonCard(bestSeason(list), "Best season") + n : emptyMini("🏆", "No seasons yet — chase 38-0.");
-    else if (statsSub === "cpu") body.innerHTML = list.length ? bestSeasonCard(bestSeason(list), "Best vs-CPU squad") + n : emptyMini("🆚", "No CPU games yet — beat a rival manager.");
-    else body.innerHTML = list.length ? runCard(bestRun(list)) + n : emptyMini(statsSub === "ucl" ? "⭐" : "🌍", "No runs yet — keep one squad and climb.");
+    else if (statsSub === "cpu") body.innerHTML = list.length ? bestSeasonCard(bestSeason(list), "Best vs-CPU squad") + n : emptyMini("🆚", "No CPU games yet.");
+    else body.innerHTML = list.length ? runCard(bestRun(list)) + n : emptyMini(statsSub === "ucl" ? "⭐" : "🌍", "No runs yet.");
   }
   function emptyMini(icon, msg) {
     return '<div class="card empty-card" style="padding:34px 22px"><div class="empty-emoji">' + icon + "</div><p>" + esc(msg) + "</p></div>";
   }
 
   function roundLabelFromRow(s) {
-    var rounds = (root.CC_GAME && root.CC_GAME.TOUR_ROUNDS[s.mode]) || [];
+    var rounds = (root.CC_GAME && root.CC_GAME.TOUR_ROUNDS && root.CC_GAME.TOUR_ROUNDS[s.mode]) || [];
     if (s.unbeaten || (rounds.length && s.wins >= rounds.length)) return "🏆 Champions";
     var idx = Math.min(s.wins || 0, Math.max(0, rounds.length - 1));
     return "Reached the " + (rounds[idx] || "knockouts");
@@ -479,7 +473,7 @@
     return '<div class="card">' +
       '<div class="run-head"><div class="run-round">' + roundLabelFromRow(s) + "</div>" +
         '<div class="run-meta">' + esc(s.formation || "") + " · " + (s.goals_for || 0) + " GF / " + (s.goals_against || 0) + " GA</div></div>" +
-      '<div class="stat-list stat-list--full" style="margin-top:12px">' + (rows || '<div class="muted-line">No player stats recorded.</div>') + "</div></div>";
+      '<div class="stat-list stat-list--full" style="margin-top:12px">' + (rows || '<div class="muted-line">No player stats.</div>') + "</div></div>";
   }
 
   function bestSeasonCard(s, title) {
@@ -511,7 +505,7 @@
   function renderFriends() {
     var wrap = $("screen-friends"); if (!wrap) return;
     var head = '<div class="page-head"><h2>Friends</h2><p>Add players by username, manage requests, and compare best seasons.</p></div>';
-    if (!BE.configured) { wrap.innerHTML = head + emptyCard("Accounts not set up", "Add your Supabase keys in <code>js/config.js</code> to enable friends."); return; }
+    if (!BE.configured) { wrap.innerHTML = head + emptyCard("Accounts not set up", "Add your Supabase keys."); return; }
     if (!state.user) { wrap.innerHTML = head + signInCard("Sign in to add friends."); wireSignInCard(); teardownFriendsRealtime(); return; }
 
     wrap.innerHTML = head +
@@ -522,8 +516,7 @@
       '<div class="card"><h3>Add a Friend</h3>' +
         '<div class="friend-add">' +
           '<input class="inp" id="friend-search" placeholder="Friend\'s username" maxlength="20" autocomplete="off" />' +
-          '<button class="btn btn--kickoff btn--sm" id="friend-add-btn">Add</button>' +
-        '</div>' +
+          '<button class="btn btn--kickoff btn--sm" id="friend-add-btn">Add</button></div>' +
         '<div class="friend-msg" id="friend-msg"></div></div>' +
       '<div class="card" id="friend-requests-card"><h3>Requests</h3>' +
         '<div class="friend-sub-head">Incoming</div>' +
@@ -598,7 +591,7 @@
 
     BE.friends.list().then(function (fr) {
       var box = $("friend-list"); if (!box) return;
-      if (!fr.length) { box.innerHTML = '<div class="muted-line" style="text-align:left">No friends yet — add someone above.</div>'; return; }
+      if (!fr.length) { box.innerHTML = '<div class="muted-line" style="text-align:left">No friends yet.</div>'; return; }
       var ids = fr.map(function (f) { return f.userId; });
       BE.profile.getMany(ids).then(function (pmap) {
         box.innerHTML = fr.map(function (f) {
@@ -606,7 +599,7 @@
           return '<div class="friend-row friend-row--full" id="fr-' + f.userId + '">' +
             '<span class="status-dot ' + (pr.online ? "on" : "off") + '"></span>' +
             '<div class="friend-id"><b>' + esc(f.username) + '</b><small>' + pr.text + '</small></div>' +
-            '<span class="friend-h2h dim" id="h2h-' + f.userId + '" title="Head-to-head vs you">0-0</span>' +
+            '<span class="friend-h2h dim" id="h2h-' + f.userId + '">0-0</span>' +
             '<span class="friend-acts">' +
               '<button class="mini-btn mini-btn--play" data-play="' + f.userId + '" data-name="' + esc(f.username) + '">Challenge</button>' +
               '<button class="mini-btn" data-stats="' + f.userId + '" data-name="' + esc(f.username) + '">Stats</button>' +
@@ -635,7 +628,7 @@
     m.innerHTML =
       '<div class="ip-title">Challenge ' + esc(name) + "</div>" +
       '<label class="ip-row"><span>Player pool</span>' +
-        '<select class="inp ip-sel" id="ip-pool"><option value="club">Clubs (1990–2026)</option><option value="wc">World Cup nations</option></select></label>' +
+        '<select class="inp ip-sel" id="ip-pool"><option value="club">Clubs (1990-2026)</option><option value="wc">World Cup nations</option></select></label>' +
       '<label class="ip-row"><span>Pro Mode</span><input type="checkbox" id="ip-pro" /></label>' +
       '<div class="ip-mode">Mode: <b>Classic</b> · Tournament <span class="dim">soon</span></div>' +
       '<button class="btn btn--kickoff btn--sm" id="ip-send">Send invite</button>';
@@ -666,12 +659,9 @@
       var html = "";
       if (inv.incoming.length) html += '<div class="friend-sub-head">Incoming</div>' + inv.incoming.map(function (x) { return row(x, false); }).join("");
       if (inv.outgoing.length) html += '<div class="friend-sub-head"' + (inv.incoming.length ? ' style="margin-top:12px"' : "") + ">Sent</div>" + inv.outgoing.map(function (x) { return row(x, true); }).join("");
-      box.innerHTML = html || '<div class="muted-line" style="text-align:left;padding:4px 2px">No invites. Hit <b>Challenge</b> on a friend to start a match.</div>';
+      box.innerHTML = html || '<div class="muted-line" style="text-align:left;padding:4px 2px">No invites. Hit <b>Challenge</b> on a friend.</div>';
       box.querySelectorAll("[data-acc-inv]").forEach(function (b) {
-        b.onclick = function () {
-          b.disabled = true;
-          BE.invites.accept(b.dataset.accInv).then(function (r) { onInviteAccepted(r && r.data); });
-        };
+        b.onclick = function () { b.disabled = true; BE.invites.accept(b.dataset.accInv).then(function (r) { onInviteAccepted(r && r.data); }); };
       });
       box.querySelectorAll("[data-dec-inv]").forEach(function (b) { b.onclick = function () { b.disabled = true; BE.invites.decline(b.dataset.decInv).then(function () { renderInvites(); }); }; });
       box.querySelectorAll("[data-cancel-inv]").forEach(function (b) { b.onclick = function () { b.disabled = true; BE.invites.cancel(b.dataset.cancelInv).then(function () { renderInvites(); }); }; });
@@ -692,6 +682,7 @@
 
   function onInviteAccepted(inviteRow) {
     if (!inviteRow) { setTimeout(function () { tryEnterLobby(); }, 400); return; }
+    if (!BE.lobby) { toast("Lobby system not loaded."); return; }
     BE.lobby.createFromInvite(inviteRow).then(function (r) {
       if (r && r.data) enterLobby(r.data.id, true);
       else tryEnterLobby();
@@ -699,6 +690,7 @@
   }
 
   function tryEnterLobby() {
+    if (!BE.lobby) return;
     BE.lobby.mine().then(function (lobbyRow) {
       if (lobbyRow) enterLobby(lobbyRow.id, lobbyRow.host === state.user.id);
       else toast("Couldn't find match lobby — try again.");
@@ -767,4 +759,201 @@
   function renderRanked() {
     var wrap = $("screen-ranked"); if (!wrap) return;
     wrap.innerHTML =
-      '<div class="page-head"><h2>Ranked <span class="tag-soon">COMING SOON</span
+      '<div class="page-head"><h2>Ranked <span class="tag-soon">COMING SOON</span></h2><p>Climb the ladder against real managers.</p></div>' +
+      '<div class="card ranked-teaser">' +
+        '<div class="ranked-badge">🏅</div>' +
+        '<h3>Draft. Watch. Climb.</h3>' +
+        '<p>Ranked mode will match you against other players. Win <b>ELO</b> based on the result.</p>' +
+        '<ul class="ranked-list"><li>Seeded matchmaking by rating</li><li>Seasonal divisions and leaderboards</li><li>ELO rewards for unbeaten runs</li></ul>' +
+        '<div class="ranked-cta">In the works — check back soon.</div>' +
+      "</div>";
+  }
+
+  /* ============================================================ LOBBY === */
+  var lobbyState = { lobbyId: null, isHost: false, channel: null, timerHandle: null, deadline: 0, chosenFormation: null, profiles: {} };
+
+  function enterLobby(lobbyId, isHost) {
+    lobbyState.lobbyId = lobbyId;
+    lobbyState.isHost = isHost;
+    lobbyState.chosenFormation = null;
+    lobbyState.deadline = Date.now() + 20000;
+    showLobbyScreen();
+    BE.lobby.get(lobbyId).then(function (row) {
+      if (!row) { toast("Lobby missing."); UI.showScreen("home"); return; }
+      var ids = [row.host, row.guest];
+      BE.profile.getMany(ids).then(function (pmap) { lobbyState.profiles = pmap; renderLobby(row); });
+    });
+    if (lobbyState.channel) BE.lobby.unsubscribe(lobbyState.channel);
+    lobbyState.channel = BE.lobby.subscribe(lobbyId, function (newRow) {
+      if (!newRow) return;
+      if (newRow.host_ready && newRow.guest_ready && newRow.phase === "formation") {
+        if (lobbyState.isHost) BE.lobby.start(lobbyId);
+      }
+      if (newRow.phase === "reveal" || newRow.phase === "draft") {
+        toast("Both ready! First-pick reveal coming next session.");
+        stopLobbyTimer();
+        return;
+      }
+      renderLobby(newRow);
+    });
+    startLobbyTimer();
+  }
+
+  function showLobbyScreen() {
+    document.querySelectorAll(".screen").forEach(function (s) { s.classList.remove("is-active"); });
+    var s = $("screen-mplobby");
+    if (s) s.classList.add("is-active");
+    document.body.dataset.screen = "mplobby";
+  }
+
+  function renderLobby(row) {
+    var wrap = $("mpl-wrap"); if (!wrap) return;
+    var me = state.user.id;
+    var hostP = lobbyState.profiles[row.host] || { username: "Host" };
+    var guestP = lobbyState.profiles[row.guest] || { username: "Guest" };
+    var meIsHost = row.host === me;
+    var meName = meIsHost ? hostP.username : guestP.username;
+    var oppName = meIsHost ? guestP.username : hostP.username;
+    var meReady = meIsHost ? row.host_ready : row.guest_ready;
+    var oppReady = meIsHost ? row.guest_ready : row.host_ready;
+    var draft = row.draft || {};
+    var meFormation = meIsHost ? draft.host_formation : draft.guest_formation;
+    var oppFormation = meIsHost ? draft.guest_formation : draft.host_formation;
+    var formations = (root.CC_ENGINE && root.CC_ENGINE.FORMATIONS) || [];
+
+    wrap.innerHTML =
+      '<div class="mpl-head">' +
+        '<div class="mpl-kicker">Champions Cup — Multiplayer</div>' +
+        '<div class="mpl-title">Match Lobby</div>' +
+        '<div class="mpl-vs"><b>' + esc(meName) + '</b> vs <b>' + esc(oppName) + '</b></div>' +
+      '</div>' +
+      '<div class="mpl-players">' +
+        '<div class="mpl-side me">' +
+          '<div class="mpl-name">' + esc(meName) + ' (you)</div>' +
+          '<div class="mpl-fm">' + (meFormation ? formationLabel(meFormation, formations) : "—") + '</div>' +
+          '<div class="mpl-status' + (meReady ? " ready" : "") + '">' + (meReady ? "Ready" : "Choosing…") + '</div>' +
+        '</div>' +
+        '<div class="mpl-vs-mid">VS</div>' +
+        '<div class="mpl-side">' +
+          '<div class="mpl-name">' + esc(oppName) + '</div>' +
+          '<div class="mpl-fm">' + (oppFormation ? formationLabel(oppFormation, formations) : "—") + '</div>' +
+          '<div class="mpl-status' + (oppReady ? " ready" : "") + '">' + (oppReady ? "Ready" : "Choosing…") + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="mpl-timer-wrap">' +
+        '<div class="mpl-timer-label">Both players ready in</div>' +
+        '<div class="mpl-timer" id="mpl-timer">0:20</div>' +
+      '</div>' +
+      '<div class="mpl-panel"><h3>Pick Your Formation</h3>' +
+        '<div class="formation-grid" id="mpl-fgrid"></div>' +
+      '</div>' +
+      '<div class="mpl-panel">' +
+        '<div class="mpl-pro-row locked">' +
+          '<label class="toggle">' +
+            '<input type="checkbox" disabled' + (row.pro ? " checked" : "") + ' />' +
+            '<span class="toggle-track"><span class="toggle-thumb"></span></span>' +
+            '<span class="toggle-label"><b>Pro Mode</b><small>Locked to the inviter\'s choice.</small></span>' +
+          '</label></div>' +
+      '</div>' +
+      '<div class="mpl-actions">' +
+        '<button class="btn btn--ghost btn--sm" id="mpl-leave">Leave</button>' +
+        '<button class="btn btn--kickoff btn--sm flex1" id="mpl-ready"' + (!meFormation || meReady ? " disabled" : "") + '>' +
+          (meReady ? "Ready ✓" : "Ready up") + '</button>' +
+      '</div>';
+
+    var fgrid = $("mpl-fgrid");
+    if (fgrid && formations.length) {
+      formations.forEach(function (f) {
+        var card = el("button", "formation-card" + (meFormation === f.id ? " is-selected" : ""));
+        card.dataset.id = f.id;
+        card.innerHTML =
+          '<div class="formation-num">' + f.name + "</div>" +
+          '<div class="formation-tag">' + f.tag + "</div>" +
+          '<div class="formation-blurb">' + f.blurb + "</div>";
+        if (meReady) card.disabled = true;
+        card.addEventListener("click", function () {
+          if (meReady) return;
+          lobbyState.chosenFormation = f.id;
+          BE.lobby.setFormation(lobbyState.lobbyId, meIsHost, f.id).then(function () {
+            fgrid.querySelectorAll(".formation-card").forEach(function (c) { c.classList.remove("is-selected"); });
+            card.classList.add("is-selected");
+            var rb = $("mpl-ready"); if (rb) rb.disabled = false;
+          });
+        });
+        fgrid.appendChild(card);
+      });
+    }
+
+    $("mpl-leave").onclick = function () {
+      if (confirm("Leave this lobby?")) {
+        BE.lobby.leave(lobbyState.lobbyId);
+        teardownLobby();
+        UI.showScreen("home");
+      }
+    };
+
+    $("mpl-ready").onclick = function () {
+      var chosen = lobbyState.chosenFormation || meFormation;
+      if (!chosen) { toast("Pick a formation first."); return; }
+      $("mpl-ready").disabled = true;
+      BE.lobby.setReady(lobbyState.lobbyId, meIsHost, true);
+    };
+  }
+
+  function formationLabel(id, formations) {
+    var f = formations.filter(function (x) { return x.id === id; })[0];
+    return f ? f.name + " · " + f.tag : id;
+  }
+
+  function startLobbyTimer() {
+    stopLobbyTimer();
+    lobbyState.timerHandle = setInterval(function () {
+      var left = Math.max(0, Math.round((lobbyState.deadline - Date.now()) / 1000));
+      var t = $("mpl-timer");
+      if (t) {
+        t.textContent = "0:" + (left < 10 ? "0" : "") + left;
+        t.classList.toggle("warn", left <= 5);
+      }
+      if (left <= 0) {
+        if (!lobbyState.chosenFormation) {
+          var formations = (root.CC_ENGINE && root.CC_ENGINE.FORMATIONS) || [];
+          if (formations.length) {
+            var pick = formations[Math.floor(Math.random() * formations.length)];
+            lobbyState.chosenFormation = pick.id;
+            BE.lobby.setFormation(lobbyState.lobbyId, lobbyState.isHost, pick.id);
+          }
+        }
+        BE.lobby.setReady(lobbyState.lobbyId, lobbyState.isHost, true);
+        stopLobbyTimer();
+      }
+    }, 250);
+  }
+
+  function stopLobbyTimer() {
+    if (lobbyState.timerHandle) { clearInterval(lobbyState.timerHandle); lobbyState.timerHandle = null; }
+  }
+
+  function teardownLobby() {
+    if (lobbyState.channel) BE.lobby.unsubscribe(lobbyState.channel);
+    lobbyState.channel = null;
+    stopLobbyTimer();
+    lobbyState.lobbyId = null;
+  }
+
+  function emptyCard(t, sub) { return '<div class="card empty-card"><div class="empty-emoji">⚽</div><h3>' + t + "</h3><p>" + sub + "</p></div>"; }
+  function signInCard(t) { return '<div class="card empty-card"><div class="empty-emoji">🔒</div><h3>' + t + '</h3><button class="btn btn--kickoff btn--sm" id="signin-cta" style="max-width:200px;margin:14px auto 0">Sign in</button></div>'; }
+  function wireSignInCard() { var b = $("signin-cta"); if (b) b.onclick = function () { openAuth("in"); }; }
+
+  function init() {
+    UI = root.CC_UI;
+    if (!BE) { BE = root.CC_BACKEND || { configured: false, auth: {}, profile: {}, data: {}, friends: {} }; }
+    wireNav();
+    refreshAccountButton();
+    if (BE.configured) {
+      BE.auth.onChange(onAuth);
+      BE.auth.getUser().then(function (u) { if (u) onAuth(u); });
+    }
+  }
+
+  root.CC_APP = { init: init, onScreen: onScreen, recordSeason: recordSeason, recordRun: recordRun, openAuth: openAuth, setTab: setTab };
+})(window);
