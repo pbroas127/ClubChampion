@@ -10,7 +10,25 @@
     return function () {
       s |= 0; s = (s + 0x6D2B79F5) | 0;
       var t = Math.imul(s ^ (s >>> 15), 1 | s);
-      t = return g; }      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function ri(rand, a, b) { return a + Math.floor(rand() * (b - a + 1)); }
+  function pick(rand, arr) { return arr[Math.floor(rand() * arr.length)]; }
+  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+  function shuffle(arr, rand) {
+    arr = arr.slice();
+    for (var i = arr.length - 1; i > 0; i--) { var j = Math.floor(rand() * (i + 1)); var t = arr[i]; arr[i] = arr[j]; arr[j] = t; }
+    return arr;
+  }
+  function lastName(n) { var p = (n || "").replace(/\(alt\)/, "").trim().split(" "); return p[p.length - 1]; }
+
+  function byPos(squad) {
+    var g = { GK: [], DEF: [], MID: [], FWD: [] };
+    squad.forEach(function (p, i) { g[p.pos].push(i); });
+    return g;
+  }
 
   function layout(squad, side, phase) {
     var g = byPos(squad), out = new Array(squad.length);
@@ -170,12 +188,10 @@
           add(minute, 360, goalMouth(side, rand, false), side, "save", "Great save!", false);
           dst[gkIdx(def)].saves++;
           if (saveOutcome < 0.45) {
-            // parried into play — defender clears
             var rebX = side === "A" ? 0.78 : 0.22;
             var rebY = clamp(0.5 + (rand() - 0.5) * 0.4, 0.25, 0.75);
             add(minute, 380, { x: rebX, y: rebY }, def, "parry", null, false);
           } else if (saveOutcome < 0.65) {
-            // tipped wide — corner kick
             var topSide = rand() < 0.5;
             add(minute, 0, { x: side === "A" ? 0.985 : 0.015, y: topSide ? 0.06 : 0.94 }, side, "cornerSetup", "Corner Kick", false);
             add(minute, 420, { x: side === "A" ? 0.985 : 0.015, y: topSide ? 0.06 : 0.94 }, side, "corner", null, false);
@@ -187,13 +203,11 @@
             st[head].touches++; st[head].shots++;
             if (res === "save") dst[gkIdx(def)].saves++;
           }
-          // else: keeper catches cleanly — no extra beat, next possession starts naturally
         } else if (type === "miss") {
           add(minute, 280, posOf(side, shooter, 1), side, "shot", null, false, { _shooterIdx: shooter });
           st[shooter].touches++; st[shooter].shots++;
           var wideTop = rand() < 0.5;
           add(minute, 360, { x: side === "A" ? 1.02 : -0.02, y: wideTop ? 0.18 : 0.82 }, side, "miss", null, false);
-          // ball flew out → quick goal kick (no banner, just resume from GK)
           add(minute, 380, { x: side === "A" ? 0.40 : 0.60, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) }, def, "goalkick", null, false);
         } else if (type === "post") {
           add(minute, 280, posOf(side, shooter, 1), side, "shot", null, false, { _shooterIdx: shooter });
@@ -201,7 +215,6 @@
           var hitTop = rand() < 0.5;
           add(minute, 260, { x: side === "A" ? 0.985 : 0.015, y: hitTop ? 0.42 : 0.58 }, side, "postHit", "Off the post!", false);
           if (rand() < 0.3) {
-            // bounces out for a corner
             add(minute, 320, { x: side === "A" ? 1.01 : -0.01, y: hitTop ? 0.04 : 0.96 }, side, "postBounce", null, false);
             add(minute, 0, { x: side === "A" ? 0.985 : 0.015, y: hitTop ? 0.06 : 0.94 }, side, "cornerSetup", "Corner Kick", false);
             add(minute, 420, { x: side === "A" ? 0.985 : 0.015, y: hitTop ? 0.06 : 0.94 }, side, "corner", null, false);
@@ -213,7 +226,6 @@
             st[head2].touches++; st[head2].shots++;
             if (res2 === "save") dst[gkIdx(def)].saves++;
           } else {
-            // rebounds back into play
             add(minute, 340, { x: side === "A" ? 0.80 : 0.20, y: hitTop ? 0.30 : 0.70 }, def, "postBounce", null, false);
           }
         } else if (type === "block") {
@@ -222,7 +234,6 @@
           var blk = pick(rand, dg.DEF); dst[blk].tackles++;
           add(minute, 300, posOf(def, blk, 0.2), def, "blockOut", null, false);
         } else {
-          // tackle / turnover
           var tk = pick(rand, dg.DEF.concat(dg.MID));
           add(minute, 260, posOf(side, pick(rand, g.MID.concat(g.FWD)), 0.6), side, "dribble", null, false);
           add(minute, 280, posOf(def, tk, 0.1), def, "tackle", null, false);
@@ -260,11 +271,8 @@
       if (vertical) { FL = W * 0.04; FR = W * 0.96; FT = H * 0.045; FB = H * 0.955; }
       else          { FL = W * 0.075; FR = W * 0.925; FT = H * 0.07; FB = H * 0.93; }
     }
-    // Field coords: x = goal-to-goal axis, y = sideline-to-sideline axis.
-    // In vertical mode we map x → screen Y and y → screen X (90° rotation).
     function sx(x, y) { return vertical ? FL + y * (FR - FL) : FL + x * (FR - FL); }
     function sy(x, y) { return vertical ? FT + x * (FB - FT) : FT + y * (FB - FT); }
-    // Shims for places that only know one axis (used in drawPitch helpers).
     function px(x) { return FL + x * (FR - FL); }
     function py(y) { return FT + y * (FB - FT); }
     function adir(side) { return side === "A" ? 1 : -1; }
@@ -302,7 +310,6 @@
         case "dribble":    return 0.28;
         case "goalkick":   return 0.95;
         case "blockOut":   return 0.55;
-        case "freekickRestart": return 0.70;
         case "kickoff":
         case "foul":       return 0.80;
         default:           return 0.62;
@@ -317,7 +324,6 @@
       return nearest(pool, b.ball);
     }
 
-    /* Setpiece formations — return target {x,y} for each player */
     function setpieceTargets(b) {
       if (b.kind !== "cornerSetup" && b.kind !== "goalkickSetup") return null;
       var targets = {};
@@ -346,7 +352,7 @@
           var i = defOut.indexOf(p);
           targets[p.side + p.idx] = { x: (atk === "A" ? 0.90 : 0.10) + (i % 2 ? 0.03 : -0.01) * adir(atk), y: clamp(0.32 + (i * 0.09), 0.30, 0.70) };
         });
-      } else { /* goalkickSetup */
+      } else {
         var gkX = atk === "A" ? 0.13 : 0.87;
         players.forEach(function (p) {
           if (p.side === atk && p.ptype === "GK") {
@@ -370,7 +376,7 @@
         "postHit":    { i: "❗", t: b.label || "Off the Post!" },
         "save":       { i: "🧤", t: b.label || "Save!" },
         "kickoff":    { i: "⚽", t: b.label || "Kick-off" },
-        "fulltime":   { i: "⏱️", t: b.label || "Full Time" },
+        "fulltime":   { i: "⏱️", t: b.label || "Full Time" }
       };
       var m = map[b.kind];
       if (m) { banner = m.t; bannerIcon = m.i; bannerT = 1.4; }
@@ -398,7 +404,6 @@
         b._formation = true; dwell = 1.1; return;
       }
 
-      // Goal kick (no setup) — snap ball to GK so the long ball comes from him.
       if (b.kind === "goalkick") {
         var gk = playersOf(b.posSide).filter(function (p) { return p.ptype === "GK"; })[0];
         if (gk) { ball.x = gk.pos.x; ball.y = gk.pos.y; }
@@ -614,24 +619,17 @@
       ctx.fillStyle = "rgba(255,255,255,.04)";
 
       if (vertical) {
-        // horizontal mowing stripes
         for (var s = 0; s < 10; s++) if (s % 2) ctx.fillRect(FL, FT + (s / 10) * fh, fw, fh / 10);
         ctx.strokeRect(FL, FT, fw, fh);
-        // halfway line
         ctx.beginPath(); ctx.moveTo(FL, FT + 0.5 * fh); ctx.lineTo(FR, FT + 0.5 * fh); ctx.stroke();
-        // centre circle
         ctx.beginPath(); ctx.arc(FL + 0.5 * fw, FT + 0.5 * fh, fw * 0.16, 0, 7); ctx.stroke();
-        // penalty boxes (top & bottom)
         ctx.strokeRect(FL + fw * 0.26, FT, fw * 0.48, fh * 0.13);
         ctx.strokeRect(FL + fw * 0.26, FB - fh * 0.13, fw * 0.48, fh * 0.13);
-        // 6-yard boxes
         ctx.strokeRect(FL + fw * 0.38, FT, fw * 0.24, fh * 0.05);
         ctx.strokeRect(FL + fw * 0.38, FB - fh * 0.05, fw * 0.24, fh * 0.05);
-        // corner arcs
         [[FL, FT], [FR, FT], [FL, FB], [FR, FB]].forEach(function (c) {
           ctx.beginPath(); ctx.arc(c[0], c[1], 7, 0, 7); ctx.stroke();
         });
-        // goals (above top edge, below bottom edge)
         var gd = Math.max(10, fh * 0.035), gx1 = FL + fw * 0.42, gx2 = FL + fw * 0.58;
         ctx.fillStyle = "rgba(255,255,255,.16)"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2.5;
         ctx.fillRect(gx1, FT - gd, gx2 - gx1, gd); ctx.strokeRect(gx1, FT - gd, gx2 - gx1, gd);
@@ -694,7 +692,7 @@
     return {
       start: start,
       skip: finish,
-      destroy: function () { if (raf) cancelAnimationFrame(raf); root.removeEventListener("resize", resize); if (overlay) overlay.classList.remove("show"); finished = true; },
+      destroy: function () { if (raf) cancelAnimationFrame(raf); root.removeEventListener("resize", resize); if (overlay) overlay.classList.remove("show"); finished = true; }
     };
   }
 
@@ -702,16 +700,3 @@
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   root.CC_MATCHSIM = API;
 })(typeof window !== "undefined" ? window : globalThis);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  }
-  function ri(rand, a, b) { return a + Math.floor(rand() * (b - a + 1)); }
-  function pick(rand, arr) { return arr[Math.floor(rand() * arr.length)]; }
-  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
-  function shuffle(arr, rand) {
-    arr = arr.slice();
-    for (var i = arr.length - 1; i > 0; i--) { var j = Math.floor(rand() * (i + 1)); var t = arr[i]; arr[i] = arr[j]; arr[j] = t; }
-    return arr;
-  }
-  function lastName(n) { var p = (n || "").replace(/\(alt\)/, "").trim().split(" "); return p[p.length - 1]; }
-
