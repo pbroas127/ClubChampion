@@ -548,3 +548,85 @@ body[data-screen="draft"] .topnav, body[data-screen="sim"] .topnav { display: no
   .nav-account { padding: 7px 13px; }
   .topnav { gap: 8px; padding: 8px 12px; }
 }
+/* ========================================================= LINEUP INTRO === */
+.screen--lineup {
+  background:
+    radial-gradient(900px 500px at 50% 0%, rgba(46,232,127,.08) 0%, transparent 60%),
+    radial-gradient(900px 500px at 50% 100%, rgba(255,93,115,.06) 0%, transparent 60%),
+    var(--bg);
+  padding: 16px;
+}
+.lineup-wrap { max-width: 1100px; margin: 0 auto; }
+.lineup-head { text-align: center; margin-bottom: 18px; }
+.lineup-kicker {
+  font-family: "Archivo"; font-weight: 700; font-size: 12px; letter-spacing: .2em;
+  text-transform: uppercase; color: var(--gold); font-style: italic;
+}
+.lineup-title {
+  font-family: "Archivo"; font-weight: 900; font-size: clamp(28px, 6vw, 48px);
+  letter-spacing: .04em; margin-top: 4px;
+  background: linear-gradient(180deg, #fff, #b6e9cd);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+.lineup-grid {
+  display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: start;
+}
+.lineup-side {
+  background: linear-gradient(180deg, var(--panel), var(--bg-2));
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow);
+}
+.lineup-team-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); margin-bottom: 10px;
+}
+.lineup-team-name { font-family: "Archivo"; font-weight: 900; font-size: 18px; }
+.lineup-team-formation { font-size: 12px; color: var(--muted); font-weight: 700; letter-spacing: .08em; }
+.lineup-rows { display: grid; gap: 8px; }
+.lu-row { display: grid; gap: 6px; }
+
+.lu-player {
+  display: grid; grid-template-columns: 38px 1fr auto; gap: 10px; align-items: center;
+  background: var(--bg-2); border: 1px solid var(--line-soft);
+  border-left: 3px solid var(--lu-col, var(--green));
+  border-radius: 10px; padding: 9px 12px;
+  transition: opacity .45s ease, transform .45s ease;
+}
+.lu-hidden { opacity: 0; transform: translateY(8px); }
+.lu-badge {
+  width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center;
+  font-family: "Archivo"; font-weight: 800; font-size: 11px; color: #05140c;
+}
+.lu-info { min-width: 0; }
+.lu-name {
+  font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: block;
+}
+.lu-sub {
+  font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: block;
+}
+.lu-ovr {
+  font-family: "Archivo"; font-weight: 900; font-size: 18px; color: var(--lu-col, var(--green));
+}
+
+.lineup-vs {
+  font-family: "Archivo"; font-weight: 900; font-size: 24px; color: var(--gold);
+  text-align: center; padding-top: 60px; letter-spacing: .1em;
+  text-shadow: 0 0 16px rgba(255,210,74,.4);
+}
+
+.lineup-actions {
+  margin-top: 22px; display: flex; gap: 10px; align-items: center; justify-content: center;
+  flex-wrap: wrap;
+}
+.lineup-actions .btn { margin: 0; max-width: 260px; }
+.lineup-actions .link-btn { margin: 0; }
+
+@media (max-width: 760px) {
+  .lineup-grid { grid-template-columns: 1fr; }
+  .lineup-vs { padding: 6px 0; font-size: 18px; }
+}
