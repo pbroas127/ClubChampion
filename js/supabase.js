@@ -40,6 +40,14 @@
     setUsername: function (name) {
       need();
       return auth.getUser().then(function (u) {
+        if (!u || !u.id) {
+          // Fallback: try session directly
+          return client.auth.getSession().then(function (s) {
+            var user = s && s.data && s.data.session ? s.data.session.user : null;
+            if (!user || !user.id) throw new Error("Not signed in — please sign in again.");
+            return client.from("profiles").upsert({ id: user.id, username: name }).select().single();
+          });
+        }
         return client.from("profiles").upsert({ id: u.id, username: name }).select().single();
       });
     },
