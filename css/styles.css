@@ -604,10 +604,14 @@ body[data-screen="draft"] .topnav, body[data-screen="sim"] .topnav, body[data-sc
   /* portrait stage → matchsim renders its vertical (mobile) pitch */
   .sim-stage { aspect-ratio: 2 / 3; max-height: 80vh; }
 
-  /* draft: slot machine + player cards FIRST; the pitch sits below (no order:-1)
-     so the big formation slots don't bury the players + their stat bars */
-  .draft-body { grid-template-columns: 1fr; gap: 12px; }
-  .pitch-wrap { position: static; max-width: 230px; margin: 4px auto 0; width: 100%; }
+  /* draft: keep the pitch up top but with smaller slot chips so all positions
+     fit compactly and the players stay close below */
+  .draft-body { grid-template-columns: 1fr; gap: 10px; }
+  .pitch-wrap { position: static; order: -1; max-width: 188px; margin: 0 auto; width: 100%; }
+  .slot-chip { max-width: 48px; border-radius: 8px; padding: 3px; gap: 0; }
+  .slot-chip .chip-pos { font-size: 8.5px; }
+  .slot-chip .chip-name { font-size: 8px; }
+  .slot-chip .chip-sub { font-size: 6.5px; }
   .slot { padding: 10px; margin-bottom: 10px; }
   .reel { height: 50px; }
   .need-line { font-size: 13px; margin: 2px 2px 8px; }
