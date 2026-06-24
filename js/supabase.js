@@ -15,7 +15,7 @@
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
   }) : null;
 
-  function need() { if (!client) throw new Error("Accounts aren't set up yet — add your Supabase keys in js/config.js."); }
+  function need() { if (!client) throw new Error("Accounts aren't set up yet - add your Supabase keys in js/config.js."); }
 
   var auth = {
     signUpEmail: function (email, password) { need(); return client.auth.signUp({ email: email, password: password }); },
@@ -90,7 +90,7 @@
       need();
       return Promise.all([auth.getUser(), profile.byUsername(username)]).then(function (vals) {
         var me = vals[0], target = vals[1];
-        if (!target) throw new Error("No player found with username "" + username + "".");
+        if (!target) throw new Error("No player found with username '" + username + "'.");
         if (target.id === me.id) throw new Error("You can't add yourself.");
         // Check for any existing relationship to give a clearer error
         return client.from("friendships").select("id,status,requester,addressee")
@@ -101,7 +101,7 @@
               if (row.status === "accepted") throw new Error("You're already friends with " + username + ".");
               if (row.status === "pending") {
                 if (row.requester === me.id) throw new Error("You already sent " + username + " a request.");
-                throw new Error(username + " already sent you a request — check your Requests.");
+                throw new Error(username + " already sent you a request - check your Requests.");
               }
             }
             return client.from("friendships").insert({ requester: me.id, addressee: target.id, status: "pending" });
@@ -153,8 +153,6 @@
           });
       });
     },
-    // Realtime: fires `callback()` whenever a friendship row changes that
-    // involves the current user. Returns the channel so callers can unsubscribe.
     subscribe: function (callback) {
       if (!client) return null;
       var channel = client.channel("friendships-" + Date.now());
