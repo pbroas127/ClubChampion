@@ -2,14 +2,11 @@
  * CLUB CHAMPION — Backend (Supabase)
  * ----------------------------------------------------------------------------
  * Thin wrapper over the Supabase JS client (loaded from CDN as `supabase`).
- * Exposes auth, profiles, seasons and friends. If keys aren't configured (or
- * the CDN didn't load), `configured` is false and callers fall back to local
- * offline behaviour — the game stays fully playable.
  * ==========================================================================*/
 (function (root) {
   "use strict";
   var CFG = root.CC_CONFIG || {};
-  var lib = root.supabase; // UMD global from the CDN script
+  var lib = root.supabase;
   var configured = !!(CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY && lib && lib.createClient);
   var client = configured ? lib.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
@@ -42,7 +39,6 @@
       need();
       return auth.getUser().then(function (u) {
         if (!u || !u.id) {
-          // Fallback: try session directly
           return client.auth.getSession().then(function (s) {
             var user = s && s.data && s.data.session ? s.data.session.user : null;
             if (!user || !user.id) throw new Error("Not signed in — please sign in again.");
@@ -63,7 +59,6 @@
       if (!client) return Promise.resolve(null);
       return client.from("profiles").select("*").ilike("username", name).maybeSingle().then(function (r) { return r.data; });
     },
-    // ---- presence (Phase 2) ----
     heartbeat: function () {
       if (!client) return Promise.resolve();
       return auth.getUser().then(function (u) {
@@ -77,7 +72,6 @@
         var map = {}; (r.data || []).forEach(function (p) { map[p.id] = p; }); return map;
       }).catch(function () { return {}; });
     },
-    // ---- settings (Phase 4) ----
     full: function () {
       if (!client) return Promise.resolve(null);
       return auth.getUser().then(function (u) {
@@ -113,7 +107,6 @@
     },
   };
 
-  // ---- account management (Phase 4) ---------------------------------------
   var account = {
     wipeStats: function () {
       need();
@@ -152,20 +145,20 @@
           .order("created_at", { ascending: false }).then(function (r) { return r.data || []; });
       });
     },
-    userSeasons: function (userId) {                 // a friend's seasons (RLS-gated)
+    userSeasons: function (userId) {
       if (!client) return Promise.resolve([]);
       return client.from("seasons").select("*").eq("user_id", userId)
         .order("created_at", { ascending: false }).then(function (r) { return r.data || []; }).catch(function () { return []; });
     },
   };
 
-  // ---- friends -------------------------------------------------------------
   function profilesByIds(ids) {
     if (!client || !ids.length) return Promise.resolve({});
     return client.from("profiles").select("id,username").in("id", ids).then(function (r) {
       var map = {}; (r.data || []).forEach(function (p) { map[p.id] = p.username; }); return map;
     });
   }
+
   var friends = {
     request: function (username) {
       need();
@@ -173,7 +166,6 @@
         var me = vals[0], target = vals[1];
         if (!target) throw new Error("No player found with username '" + username + "'.");
         if (target.id === me.id) throw new Error("You can't add yourself.");
-        // Check for any existing relationship to give a clearer error
         return client.from("friendships").select("id,status,requester,addressee")
           .or("and(requester.eq." + me.id + ",addressee.eq." + target.id + "),and(requester.eq." + target.id + ",addressee.eq." + me.id + ")")
           .maybeSingle().then(function (existing) {
@@ -234,7 +226,6 @@
           });
       });
     },
-    // ---- head-to-head + moderation (Phase 3) ----
     headToHead: function (otherId) {
       if (!client) return Promise.resolve({ wins: 0, losses: 0 });
       return auth.getUser().then(function (u) {
@@ -267,11 +258,9 @@
     subscribe: function (callback) {
       if (!client) return null;
       var channel = client.channel("friendships-" + Date.now());
-      channel
-        .on("postgres_changes", { event: "*", schema: "public", table: "friendships" }, function () {
-          try { callback(); } catch (e) {}
-        })
-        .subscribe();
+      channel.on("postgres_changes", { event: "*", schema: "public", table: "friendships" }, function () {
+        try { callback(); } catch (e) {}
+      }).subscribe();
       return channel;
     },
     unsubscribe: function (channel) {
@@ -279,7 +268,6 @@
     },
   };
 
-  // ---- game invites (Phase 5 — backend ready for the match flow) -----------
   var invites = {
     send: function (toUserId, opts) {
       need(); opts = opts || {};
@@ -324,9 +312,78 @@
     unsubscribe: function (ch) { if (client && ch) try { client.removeChannel(ch); } catch (e) {} },
   };
 
+  // ---- match lobby (Phase 6) -----------------------------------------------
+  var lobby = {
+    createFromInvite: function (invite) {
+      need();
+      return auth.getUser().then(function (u) {
+        return client.from("match_lobby").insert({
+          host: invite.from_user || invite.fromUser,
+          guest: invite.to_user || invite.toUser,
+          pool: invite.pool || "club",
+          pro: !!invite.pro,
+          phase: "formation",
+        }).select().single();
+      });
+    },
+    mine: function () {
+      if (!client) return Promise.resolve(null);
+      return auth.getUser().then(function (u) {
+        if (!u) return null;
+        return client.from("match_lobby").select("*")
+          .or("host.eq." + u.id + ",guest.eq." + u.id)
+          .in("phase", ["formation", "reveal", "draft", "match"])
+          .order("created_at", { ascending: false }).limit(1).maybeSingle()
+          .then(function (r) { return r.data; });
+      }).catch(function () { return null; });
+    },
+    get: function (lobbyId) {
+      if (!client) return Promise.resolve(null);
+      return client.from("match_lobby").select("*").eq("id", lobbyId).maybeSingle().then(function (r) { return r.data; });
+    },
+    setFormation: function (lobbyId, isHost, formationId) {
+      need();
+      return client.from("match_lobby").select("draft").eq("id", lobbyId).single().then(function (r) {
+        var draft = (r.data && r.data.draft) || {};
+        if (isHost) draft.host_formation = formationId; else draft.guest_formation = formationId;
+        return client.from("match_lobby").update({ draft: draft }).eq("id", lobbyId);
+      });
+    },
+    setReady: function (lobbyId, isHost, ready) {
+      need();
+      var update = isHost ? { host_ready: !!ready } : { guest_ready: !!ready };
+      return client.from("match_lobby").update(update).eq("id", lobbyId);
+    },
+    start: function (lobbyId) {
+      need();
+      return client.from("match_lobby").select("*").eq("id", lobbyId).single().then(function (r) {
+        var row = r.data; if (!row) return null;
+        if (row.phase !== "formation") return row;
+        var seed = Math.floor(Math.random() * 2147483647);
+        var firstPick = (seed % 2 === 0) ? row.host : row.guest;
+        return client.from("match_lobby").update({
+          seed: seed, first_pick: firstPick, phase: "reveal",
+        }).eq("id", lobbyId).select().single().then(function (rr) { return rr.data; });
+      });
+    },
+    leave: function (lobbyId) {
+      if (!client) return Promise.resolve();
+      return client.from("match_lobby").update({ phase: "done" }).eq("id", lobbyId).catch(function () {});
+    },
+    subscribe: function (lobbyId, cb) {
+      if (!client) return null;
+      var ch = client.channel("lobby-" + lobbyId);
+      ch.on("postgres_changes", {
+        event: "*", schema: "public", table: "match_lobby", filter: "id=eq." + lobbyId,
+      }, function (payload) { try { cb(payload.new || payload.old); } catch (e) {} }).subscribe();
+      return ch;
+    },
+    unsubscribe: function (ch) { if (client && ch) try { client.removeChannel(ch); } catch (e) {} },
+  };
+
   root.CC_BACKEND = {
     configured: configured, client: client,
     auth: auth, profile: profile, data: data, friends: friends,
-    account: account, invites: invites,
+    account: account, invites: invites, lobby: lobby,
   };
 })(window);
