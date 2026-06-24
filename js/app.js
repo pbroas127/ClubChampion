@@ -211,22 +211,94 @@
     BE.data.saveSeason(season).catch(function () {});
   }
 
-  function bestOf(list) {
+  // Tournament runs (UCL Climb / World Cup) save into the same table, tagged by
+  // mode, with `wins` = rounds won and `unbeaten` = champion. The round reached
+  // is derived from those for display.
+  function recordRun(s) {
+    if (!state.user || !BE.configured) { toast("Sign in to save your run"); return; }
+    var run = {
+      mode: s.mode,
+      formation: s.formation ? s.formation.name + " " + s.formation.tag : "",
+      wins: s.roundsWon, draws: 0, losses: s.champion ? 0 : 1, points: s.roundsWon,
+      goals_for: s.goalsFor, goals_against: s.goalsAgainst,
+      unbeaten: !!s.champion,
+      squad: s.squad.map(function (p) { return { n: p.n, pos: p.pos, club: p.club, year: p.year }; }),
+      player_stats: s.players,
+      created_at: new Date().toISOString(),
+    };
+    BE.data.saveSeason(run).catch(function () {});
+  }
+
+  function bestSeason(list) {
     return list.slice().sort(function (a, b) { return (b.points - a.points) || (a.losses - b.losses); })[0] || null;
+  }
+  // Farthest tournament run: most rounds won, then champion, then goal diff.
+  function bestRun(list) {
+    return list.slice().sort(function (a, b) {
+      return (b.wins - a.wins) || ((b.unbeaten ? 1 : 0) - (a.unbeaten ? 1 : 0)) ||
+        (((b.goals_for || 0) - (b.goals_against || 0)) - ((a.goals_for || 0) - (a.goals_against || 0)));
+    })[0] || null;
   }
 
   /* -------------------------------------------------------- STATS tab --- */
+  // Four separate sections so each mode is tracked on its own:
+  // Season (solo), vs CPU, UCL Climb, World Cup.
   function renderStats() {
     var wrap = $("screen-stats"); if (!wrap) return;
     var head = '<div class="page-head"><h2>Your Stats</h2><p>' +
-      (state.user ? "Saved to your account." : "Sign in to save and track your seasons.") + "</p></div>";
+      (state.user ? "Tracked per mode, saved to your account." : "Sign in to save and track your stats.") + "</p></div>";
     if (!state.user) { wrap.innerHTML = head + signInCard("Sign in to save &amp; track your stats."); wireSignInCard(); return; }
+    wrap.innerHTML = head + '<div class="muted-line">Loading…</div>';
     BE.data.mySeasons().then(function (seasons) {
-      var best = bestOf(seasons);
-      if (!best) { wrap.innerHTML = head + emptyCard("No seasons yet", "Play a game and your best season &amp; player stats show up here."); return; }
-      wrap.innerHTML = head + bestSeasonCard(best, "Your best season") +
-        '<div class="muted-line">' + seasons.length + " season" + (seasons.length > 1 ? "s" : "") + " played</div>";
+      var byMode = { solo: [], cpu: [], ucl: [], wc: [] };
+      seasons.forEach(function (s) { if (byMode[s.mode]) byMode[s.mode].push(s); });
+      wrap.innerHTML = head +
+        seasonSection("Season", "🏆", byMode.solo, "season") +
+        seasonSection("vs CPU", "🆚", byMode.cpu, "cpu") +
+        tourSection("UCL Climb", "⭐", byMode.ucl, "ucl") +
+        tourSection("World Cup", "🌍", byMode.wc, "wc");
     });
+  }
+
+  function statsBlock(title, icon, count, inner) {
+    return '<div class="stats-section"><div class="stats-sec-head"><h3>' + icon + " " + esc(title) + "</h3>" +
+      '<span class="stats-count">' + count + " played</span></div>" + inner + "</div>";
+  }
+  function emptyMini(icon, msg) {
+    return '<div class="card empty-card" style="padding:22px"><div class="empty-emoji">' + icon + "</div><p>" + esc(msg) + "</p></div>";
+  }
+  function seasonSection(title, icon, list, kind) {
+    var best = bestSeason(list);
+    var inner = best ? bestSeasonCard(best, kind === "cpu" ? "Best vs-CPU squad" : "Best season")
+      : emptyMini(icon, kind === "cpu" ? "No CPU games yet — beat a rival manager." : "No seasons yet — chase 38-0.");
+    return statsBlock(title, icon, list.length, inner);
+  }
+  function tourSection(title, icon, list, mode) {
+    var best = bestRun(list);
+    var inner = best ? runCard(best) : emptyMini(icon, "No runs yet — keep one squad and climb.");
+    return statsBlock(title, icon, list.length, inner);
+  }
+
+  // Headline a run by the farthest round reached (no W-L record per design).
+  function roundLabelFromRow(s) {
+    var rounds = (root.CC_GAME && root.CC_GAME.TOUR_ROUNDS[s.mode]) || [];
+    if (s.unbeaten || (rounds.length && s.wins >= rounds.length)) return "🏆 Champions";
+    var idx = Math.min(s.wins || 0, Math.max(0, rounds.length - 1));
+    return "Reached the " + (rounds[idx] || "knockouts");
+  }
+  function runCard(s) {
+    var players = (s.player_stats || []).slice().sort(function (a, b) { return (b.goals + b.assists) - (a.goals + a.assists); });
+    var rows = players.map(function (p) {
+      var line = (p.goals ? p.goals + "G " : "") + (p.assists ? p.assists + "A " : "") + (p.saves ? p.saves + "sv " : "");
+      return '<div class="st-row"><div class="st-pos pos-' + p.pos + '">' + p.pos + "</div>" +
+        '<div class="st-name">' + esc(p.n) + "<small>" + esc(p.club || "") + (p.year ? " · " + p.year : "") + "</small></div>" +
+        '<div class="st-sub">' + (line || "&nbsp;") + "</div>" +
+        '<div class="st-rtg">' + (p.rating != null ? (p.rating.toFixed ? p.rating.toFixed(1) : p.rating) : "") + "</div></div>";
+    }).join("");
+    return '<div class="card">' +
+      '<div class="run-head"><div class="run-round">' + roundLabelFromRow(s) + "</div>" +
+        '<div class="run-meta">' + esc(s.formation || "") + " · " + (s.goals_for || 0) + " GF / " + (s.goals_against || 0) + " GA</div></div>" +
+      '<div class="stat-list stat-list--full" style="margin-top:12px">' + (rows || '<div class="muted-line">No player stats recorded.</div>') + "</div></div>";
   }
 
   function bestSeasonCard(s, title) {
@@ -329,5 +401,5 @@
     }
   }
 
-  root.CC_APP = { init: init, onScreen: onScreen, recordSeason: recordSeason, openAuth: openAuth, setTab: setTab };
+  root.CC_APP = { init: init, onScreen: onScreen, recordSeason: recordSeason, recordRun: recordRun, openAuth: openAuth, setTab: setTab };
 })(window);

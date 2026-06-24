@@ -221,15 +221,19 @@
     return (totals.df / PAR.df) * 0.55 + (totals.gk / PAR.gk) * 0.45;
   }
 
-  function playMatch(squadA, squadB, seed) {
+  // `bias` (>1 favours A, <1 favours B) is a handicap knob used by the CPU
+  // difficulty selector and the knockout round scaling — without it, two squads
+  // built from all-time greats are near-identical and every match is a coin-flip.
+  function playMatch(squadA, squadB, seed, bias) {
+    bias = bias || 1;
     var ta = categoryTotals(squadA), tb = categoryTotals(squadB);
     var rand = rng(seed || 1);
 
     // Exponent > 1 amplifies a quality edge so the better side is favoured,
     // while the cap keeps freak scorelines in check (upsets still happen — it
-    // is one match, after all).
-    var xgA = clamp(1.35 * Math.pow(attackPower(ta) / Math.max(0.45, defencePower(tb)), 1.4), 0.3, 3.2);
-    var xgB = clamp(1.35 * Math.pow(attackPower(tb) / Math.max(0.45, defencePower(ta)), 1.4), 0.3, 3.2);
+    // is one match, after all). The bias tilts expected goals each way.
+    var xgA = clamp(1.4 * Math.pow(attackPower(ta) / Math.max(0.45, defencePower(tb)), 1.4) * bias, 0.3, 3.6);
+    var xgB = clamp(1.4 * Math.pow(attackPower(tb) / Math.max(0.45, defencePower(ta)), 1.4) / bias, 0.25, 3.4);
 
     var ga = Math.min(5, poisson(xgA, rand)), gb = Math.min(5, poisson(xgB, rand));
     var result = { goalsA: ga, goalsB: gb, xgA: xgA, xgB: xgB, pens: null };
@@ -322,10 +326,27 @@
     return { players: players, goalsFor: teamGF, goalsAgainst: teamGA, cleanSheets: cleanSheets };
   }
 
+  // Squad "FIFA-style" display ratings for the pre-match team sheet:
+  // ATT / DEF / GOA (goalkeeping) plus a headline OVR. Maps the squad's
+  // category strength onto a familiar 30–99 scale.
+  function toRating(r) { return clamp(Math.round(38 + r * 46), 30, 99); }
+  function teamRatings(squad) {
+    var totals = categoryTotals(squad);
+    var att = attackPower(totals);                          // ~0.4–1.3
+    var def = (totals.df / PAR.df) * 0.65 + (totals.ph / PAR.ph) * 0.35;
+    var gk = totals.gk / PAR.gk;
+    var ovr = strength(ratios(totals));
+    return {
+      att: toRating(att), def: toRating(def), gk: toRating(gk),
+      ovr: clamp(Math.round(46 + ovr * 40), 30, 99),
+    };
+  }
+
   var API = {
     FORMATIONS: FORMATIONS,
     overall: overall,
     seasonStats: seasonStats,
+    teamRatings: teamRatings,
     hashSquad: hashSquad,
     PAR: PAR,
     categoryTotals: categoryTotals,

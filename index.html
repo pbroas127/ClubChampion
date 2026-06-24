@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=6" />
+  <link rel="stylesheet" href="css/styles.css?v=7" />
 </head>
 <body>
   <div id="app">
@@ -57,17 +57,32 @@
         </header>
 
         <div class="panel">
-          <h2 class="panel-label">1 · Choose your game</h2>
-          <div class="mode-grid" id="mode-grid">
+          <h2 class="panel-label">Select mode</h2>
+          <div class="mode-grid mode-grid--5" id="mode-grid">
             <button class="mode-card is-selected" data-mode="solo">
               <span class="mode-icon">🏆</span>
-              <span class="mode-name">Chase 38-0</span>
-              <span class="mode-desc">Solo. Build the perfect unbeaten season.</span>
+              <span class="mode-name">Season</span>
+              <span class="mode-desc"><b>38-0 solo.</b> Chase the perfect unbeaten league season.</span>
             </button>
             <button class="mode-card" data-mode="cpu">
               <span class="mode-icon">🆚</span>
               <span class="mode-name">Beat the CPU</span>
               <span class="mode-desc">Out-draft a rival manager, then settle it in a final.</span>
+            </button>
+            <button class="mode-card" data-mode="ucl">
+              <span class="mode-icon">⭐</span>
+              <span class="mode-name">UCL Climb</span>
+              <span class="mode-desc">Knockout run — Round of 16 to the final. One squad, no second chances.</span>
+            </button>
+            <button class="mode-card" data-mode="wc">
+              <span class="mode-icon">🌍</span>
+              <span class="mode-name">World Cup <span class="tag-lim">LIMITED</span></span>
+              <span class="mode-desc">Draft national legends from World Cups 1990–2026. Group of 32 to the final.</span>
+            </button>
+            <button class="mode-card mode-card--soon" data-mode="ranked" data-soon="1">
+              <span class="mode-icon">🏅</span>
+              <span class="mode-name">Ranked 1v1 <span class="tag-soon">SOON</span></span>
+              <span class="mode-desc">Climb a global ladder against real managers.</span>
             </button>
           </div>
 
@@ -81,8 +96,25 @@
           </div>
         </div>
 
+        <button class="btn btn--kickoff" id="btn-kickoff">KICK OFF <span>→</span></button>
+        <button class="link-btn" id="btn-how">How to play</button>
+        <p class="foot-note">A for-fun tribute game · player ratings are subjective · inspired by the 82-0 challenge</p>
+      </div>
+    </section>
+
+    <!-- ===================================================== SETUP ==== -->
+    <section class="screen screen--setup" id="screen-setup">
+      <div class="home-wrap">
+        <header class="setup-head">
+          <button class="icon-btn" id="btn-setup-back" title="Back to menu">←</button>
+          <div>
+            <h2 class="setup-title" id="setup-title">Set up your squad</h2>
+            <p class="setup-sub" id="setup-sub">Pick a shape, then draft your XI.</p>
+          </div>
+        </header>
+
         <div class="panel">
-          <h2 class="panel-label">2 · Pick a formation <span class="hint">— same 7 players, different shape &amp; trade-offs</span></h2>
+          <h2 class="panel-label">Pick a formation <span class="hint">— same 7 players, different shape &amp; trade-offs</span></h2>
           <div class="formation-grid" id="formation-grid"><!-- injected --></div>
         </div>
 
@@ -97,9 +129,7 @@
           </label>
         </div>
 
-        <button class="btn btn--kickoff" id="btn-kickoff">KICK OFF <span>→</span></button>
-        <button class="link-btn" id="btn-how">How to play</button>
-        <p class="foot-note">A for-fun tribute game · player ratings are subjective · inspired by the 82-0 challenge</p>
+        <button class="btn btn--kickoff" id="btn-start-draft">START DRAFT <span>→</span></button>
       </div>
     </section>
 
@@ -125,6 +155,8 @@
         </div>
       </header>
 
+      <div class="tourney-banner" id="tourney-banner" hidden></div>
+
       <div class="draft-body">
         <!-- Slot machine + player choices -->
         <div class="draft-main">
@@ -146,6 +178,11 @@
           <div class="squad-meta" id="squad-meta"></div>
         </aside>
       </div>
+    </section>
+
+    <!-- ================================================= LINEUP ====== -->
+    <section class="screen screen--lineup" id="screen-lineup">
+      <div class="lineup-wrap" id="lineup-wrap"><!-- injected --></div>
     </section>
 
     <!-- =============================================== MATCH SIM ===== -->
@@ -189,15 +226,16 @@
 
   <!-- Supabase client (enables accounts/friends/stats once keys are set in js/config.js) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=6"></script>
-  <script src="js/supabase.js?v=6"></script>
+  <script src="js/config.js?v=7"></script>
+  <script src="js/supabase.js?v=7"></script>
 
-  <script src="js/data.js?v=6"></script>
-  <script src="js/engine.js?v=6"></script>
-  <script src="js/cpu.js?v=6"></script>
-  <script src="js/game.js?v=6"></script>
-  <script src="js/matchsim.js?v=6"></script>
-  <script src="js/app.js?v=6"></script>
-  <script src="js/ui.js?v=6"></script>
+  <script src="js/data.js?v=7"></script>
+  <script src="js/data-nations.js?v=7"></script>
+  <script src="js/engine.js?v=7"></script>
+  <script src="js/cpu.js?v=7"></script>
+  <script src="js/game.js?v=7"></script>
+  <script src="js/matchsim.js?v=7"></script>
+  <script src="js/app.js?v=7"></script>
+  <script src="js/ui.js?v=7"></script>
 </body>
 </html>

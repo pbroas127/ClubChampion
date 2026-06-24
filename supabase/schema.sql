@@ -54,13 +54,15 @@ create policy "remove friendships" on public.friendships for delete using (auth.
 create table if not exists public.seasons (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null references auth.users(id) on delete cascade,
-  mode          text not null,           -- 'solo' | 'cpu'
+  mode          text not null,           -- 'solo' | 'cpu' | 'ucl' | 'wc'
   formation     text,
+  -- For seasons: W/D/L + points. For tournament runs (ucl/wc): wins = rounds
+  -- won, losses = 0 (champion) or 1 (knocked out), unbeaten = champion.
   wins int, draws int, losses int, points int,
   goals_for int, goals_against int,
   unbeaten      boolean default false,
   squad         jsonb,                   -- the drafted XI
-  player_stats  jsonb,                   -- per-player season stats
+  player_stats  jsonb,                   -- per-player season / run stats
   created_at    timestamptz default now()
 );
 alter table public.seasons enable row level security;
