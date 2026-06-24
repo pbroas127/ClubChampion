@@ -60,12 +60,12 @@
     m.style.top = (r.bottom + 8) + "px"; m.style.right = (window.innerWidth - r.right) + "px";
     $("acc-stats").onclick = function () { m.remove(); setTab("stats"); };
     $("acc-out").onclick = function () { m.remove(); BE.auth.signOut().then(function () { toast("Signed out"); }); };
-    setTimeout(function () { document.addEventListener("click", function h(e) { if (!m.contains(e.target) && e.target.id !== "nav-account") { m.remove(); document.removeEventListener("click", h); } }); }, 0);
+    setTimeout(function () { document.addEventListener("click", function h(e) { if (!m.contains(e.target) && e.target.id !== "nav-account") { m.remove(); document.removeEventListener("click", h); } }); }, 20);
   }
 
   /* ------------------------------------------------------- auth modal --- */
   function openAuth(mode) {
-    if (!BE.configured) { toast("Accounts aren’t set up yet (add Supabase keys)."); return; }
+    if (!BE.configured) { toast("Accounts aren't set up yet (add Supabase keys)."); return; }
     closeAuth();
     var ov = el("div", "modal"); ov.id = "auth-modal";
     ov.innerHTML =
@@ -123,7 +123,7 @@
       if (m === "up") {
         var uname = $("auth-username").value.trim();
         if (uname.length < 3) { $("auth-submit").disabled = false; return showErr("Choose a username (3-20 chars)."); }
-        if (!unameOk) { $("auth-submit").disabled = false; return showErr("That username isn’t available."); }
+        if (!unameOk) { $("auth-submit").disabled = false; return showErr("That username isn't available."); }
         BE.profile.available(uname).then(function (ok) {
           if (!ok) throw new Error("That username was just taken.");
           return BE.auth.signUpEmail(email, pass);
@@ -134,7 +134,7 @@
             return BE.profile.setUsername(uname).then(function () { toast("Welcome, " + uname + "!"); closeAuth(); });
           }
           // email confirmation is ON in Supabase — user can't log in until they confirm
-          showErr("Account made — but Supabase has ‘Confirm email’ ON, so check your inbox to confirm, then sign in. (Turn it off in Supabase → Auth for instant login.)");
+          showErr("Account made — but Supabase has 'Confirm email' ON, so check your inbox to confirm, then sign in. (Turn it off in Supabase → Auth for instant login.)");
           $("auth-submit").disabled = false;
         }).catch(function (e) {
           var msg = (e && e.message) || "Sign-up failed.";
@@ -146,7 +146,7 @@
           if (r.error) throw r.error; toast("Signed in!"); closeAuth();
         }).catch(function (e) {
           var msg = (e && e.message) || "Sign-in failed.";
-          if (/invalid login/i.test(msg)) msg = "Wrong email/password — or your email isn’t confirmed yet.";
+          if (/invalid login/i.test(msg)) msg = "Wrong email/password — or your email isn't confirmed yet.";
           showErr(msg); $("auth-submit").disabled = false;
         });
       }
@@ -326,51 +326,140 @@
   }
 
   /* ------------------------------------------------------- FRIENDS tab -- */
+  var friendsChannel = null;
+
+  function teardownFriendsRealtime() {
+    if (friendsChannel) { BE.friends.unsubscribe(friendsChannel); friendsChannel = null; }
+  }
+
   function renderFriends() {
     var wrap = $("screen-friends"); if (!wrap) return;
-    var head = '<div class="page-head"><h2>Friends</h2><p>Add players by username and compare best seasons.</p></div>';
+    var head = '<div class="page-head"><h2>Friends</h2><p>Add players by username, manage requests, and compare best seasons.</p></div>';
     if (!BE.configured) { wrap.innerHTML = head + emptyCard("Accounts not set up", "Add your Supabase keys in <code>js/config.js</code> to enable friends."); return; }
-    if (!state.user) { wrap.innerHTML = head + signInCard("Sign in to add friends."); wireSignInCard(); return; }
+    if (!state.user) { wrap.innerHTML = head + signInCard("Sign in to add friends."); wireSignInCard(); teardownFriendsRealtime(); return; }
 
     wrap.innerHTML = head +
-      '<div class="card"><h3>Add a friend</h3>' +
-        '<div class="friend-add"><input class="inp" id="friend-search" placeholder="Friend’s username" maxlength="20" />' +
-        '<button class="btn btn--kickoff btn--sm" id="friend-add-btn">Add</button></div>' +
-        '<div class="friend-msg" id="friend-msg"></div></div>' +
-      '<div class="card" id="friend-requests"><h3>Requests</h3><div class="muted-line">Loading…</div></div>' +
-      '<div class="card" id="friend-list"><h3>Your friends</h3><div class="muted-line">Loading…</div></div>';
-    $("friend-add-btn").onclick = function () {
-      var u = $("friend-search").value.trim(); if (!u) return;
-      $("friend-add-btn").disabled = true;
+      // Card 1 — Game Invites (placeholder for now)
+      '<div class="card"><h3>🎮 Game Invites</h3>' +
+        '<div class="muted-line" style="text-align:left;padding:6px 2px">No invites yet — coming soon when you can challenge friends.</div>' +
+      '</div>' +
+      // Card 2 — Add Friend
+      '<div class="card"><h3>➕ Add a Friend</h3>' +
+        '<div class="friend-add">' +
+          '<input class="inp" id="friend-search" placeholder="Friend's username" maxlength="20" autocomplete="off" />' +
+          '<button class="btn btn--kickoff btn--sm" id="friend-add-btn">Add</button>' +
+        '</div>' +
+        '<div class="friend-msg" id="friend-msg"></div>' +
+      '</div>' +
+      // Card 3 — Requests (Incoming + Sent)
+      '<div class="card" id="friend-requests-card">' +
+        '<h3>📬 Requests</h3>' +
+        '<div class="friend-sub-head">📥 Incoming</div>' +
+        '<div id="friend-incoming"><div class="muted-line" style="text-align:left">Loading…</div></div>' +
+        '<div class="friend-sub-head" style="margin-top:14px">📤 Sent</div>' +
+        '<div id="friend-outgoing"><div class="muted-line" style="text-align:left">Loading…</div></div>' +
+      '</div>' +
+      // Card 4 — Your Friends
+      '<div class="card" id="friend-list-card">' +
+        '<h3>👥 Your Friends</h3>' +
+        '<div id="friend-list"><div class="muted-line" style="text-align:left">Loading…</div></div>' +
+      '</div>';
+
+    wireFriendsAdd();
+    loadFriendsData();
+
+    // Realtime — re-fetch whenever anything in friendships changes
+    teardownFriendsRealtime();
+    friendsChannel = BE.friends.subscribe(function () {
+      // Only refresh if we're still on Friends tab
+      if (state.tab === "friends") loadFriendsData();
+    });
+  }
+
+  function wireFriendsAdd() {
+    var btn = $("friend-add-btn"), input = $("friend-search"), msg = $("friend-msg");
+    function send() {
+      var u = input.value.trim();
+      if (!u) { msg.textContent = ""; return; }
+      btn.disabled = true; msg.className = "friend-msg"; msg.textContent = "Sending…";
       BE.friends.request(u).then(function (r) {
         if (r && r.error) throw r.error;
-        $("friend-msg").textContent = "Request sent to " + u + "."; $("friend-search").value = "";
-      }).catch(function (e) { $("friend-msg").textContent = e.message || "Couldn’t send request."; })
-        .then(function () { $("friend-add-btn").disabled = false; });
-    };
+        msg.className = "friend-msg ok"; msg.textContent = "✓ Request sent to " + u + ".";
+        input.value = "";
+        loadFriendsData();
+      }).catch(function (e) {
+        msg.className = "friend-msg bad";
+        msg.textContent = (e && e.message) || "Couldn't send request.";
+      }).then(function () { btn.disabled = false; });
+    }
+    btn.onclick = send;
+    input.onkeydown = function (e) { if (e.key === "Enter") send(); };
+  }
+
+  function loadFriendsData() {
+    if (!state.user) return;
+    // Incoming requests
     BE.friends.incoming().then(function (reqs) {
-      var box = $("friend-requests");
-      if (!reqs.length) { box.innerHTML = "<h3>Requests</h3><div class=\"muted-line\">No pending requests.</div>"; return; }
-      box.innerHTML = "<h3>Requests</h3>" + reqs.map(function (r) {
-        return '<div class="friend-row"><b>' + esc(r.username) + "</b><span>" +
-          '<button class="mini-btn ok" data-acc="' + r.id + '">Accept</button>' +
-          '<button class="mini-btn" data-dec="' + r.id + '">Decline</button></span></div>';
+      var box = $("friend-incoming"); if (!box) return;
+      if (!reqs.length) { box.innerHTML = '<div class="muted-line" style="text-align:left">No pending requests.</div>'; return; }
+      box.innerHTML = reqs.map(function (r) {
+        return '<div class="friend-row">' +
+          '<b>' + esc(r.username) + '</b>' +
+          '<span>' +
+            '<button class="mini-btn ok" data-acc="' + r.id + '">Accept</button>' +
+            '<button class="mini-btn" data-dec="' + r.id + '">Decline</button>' +
+          '</span></div>';
       }).join("");
-      box.querySelectorAll("[data-acc]").forEach(function (b) { b.onclick = function () { BE.friends.accept(b.dataset.acc).then(function () { renderFriends(); }); }; });
-      box.querySelectorAll("[data-dec]").forEach(function (b) { b.onclick = function () { BE.friends.decline(b.dataset.dec).then(function () { renderFriends(); }); }; });
+      box.querySelectorAll("[data-acc]").forEach(function (b) {
+        b.onclick = function () {
+          b.disabled = true;
+          BE.friends.accept(b.dataset.acc).then(function () { loadFriendsData(); });
+        };
+      });
+      box.querySelectorAll("[data-dec]").forEach(function (b) {
+        b.onclick = function () {
+          b.disabled = true;
+          BE.friends.decline(b.dataset.dec).then(function () { loadFriendsData(); });
+        };
+      });
     });
+
+    // Outgoing requests
+    BE.friends.outgoing().then(function (reqs) {
+      var box = $("friend-outgoing"); if (!box) return;
+      if (!reqs.length) { box.innerHTML = '<div class="muted-line" style="text-align:left">No requests sent.</div>'; return; }
+      box.innerHTML = reqs.map(function (r) {
+        return '<div class="friend-row">' +
+          '<b>' + esc(r.username) + '</b>' +
+          '<span><span class="dim" style="font-size:12px">Pending</span>' +
+            '<button class="mini-btn" data-cancel="' + r.id + '">Cancel</button>' +
+          '</span></div>';
+      }).join("");
+      box.querySelectorAll("[data-cancel]").forEach(function (b) {
+        b.onclick = function () {
+          b.disabled = true;
+          BE.friends.cancelRequest(b.dataset.cancel).then(function () { loadFriendsData(); });
+        };
+      });
+    });
+
+    // Friends list
     BE.friends.list().then(function (fr) {
-      var box = $("friend-list");
-      if (!fr.length) { box.innerHTML = "<h3>Your friends</h3><div class=\"muted-line\">No friends yet — add someone above.</div>"; return; }
-      box.innerHTML = "<h3>Your friends</h3>" + fr.map(function (f) {
-        return '<div class="friend-row" id="fr-' + f.userId + '"><b>' + esc(f.username) + "</b><span class=\"dim\">loading best…</span></div>";
+      var box = $("friend-list"); if (!box) return;
+      if (!fr.length) { box.innerHTML = '<div class="muted-line" style="text-align:left">No friends yet — add someone above.</div>'; return; }
+      box.innerHTML = fr.map(function (f) {
+        return '<div class="friend-row" id="fr-' + f.userId + '">' +
+          '<b>' + esc(f.username) + '</b>' +
+          '<span class="dim">loading best…</span>' +
+          '</div>';
       }).join("");
       fr.forEach(function (f) {
         BE.data.bestSeason(f.userId).then(function (s) {
           var row = $("fr-" + f.userId); if (!row) return;
-          var span = row.querySelector("span");
-          span.className = "";
-          span.innerHTML = s ? "<b>" + s.wins + "-" + s.draws + "-" + s.losses + "</b> · " + s.points + "pts" + (s.unbeaten ? " 🏆" : "") : "<span class=\"dim\">no season yet</span>";
+          var span = row.querySelector("span"); span.className = "";
+          span.innerHTML = s
+            ? '<b>' + s.wins + "-" + s.draws + "-" + s.losses + "</b> · " + s.points + "pts" + (s.unbeaten ? " 🏆" : "")
+            : '<span class="dim">no season yet</span>';
         });
       });
     });
@@ -384,7 +473,7 @@
       '<div class="card ranked-teaser">' +
         '<div class="ranked-badge">🏅</div>' +
         '<h3>Draft. Watch. Climb.</h3>' +
-        '<p>Ranked mode will match you against other players’ saved squads. Draft your XI, watch the match play out, and win <b>ELO</b> based on the result, your goal difference, and your season record. Lose and you’ll drop — every placement counts.</p>' +
+        '<p>Ranked mode will match you against other players' saved squads. Draft your XI, watch the match play out, and win <b>ELO</b> based on the result, your goal difference, and your season record.</p>' +
         '<ul class="ranked-list"><li>Seeded matchmaking by rating</li><li>Seasonal divisions &amp; leaderboards</li><li>ELO rewards for unbeaten runs</li></ul>' +
         '<div class="ranked-cta">In the works — check back soon.</div>' +
       "</div>";
@@ -392,7 +481,7 @@
 
   /* --------------------------------------------------------- helpers ---- */
   function emptyCard(t, sub) { return '<div class="card empty-card"><div class="empty-emoji">⚽</div><h3>' + t + "</h3><p>" + sub + "</p></div>"; }
-  function signInCard(t) { return '<div class="card empty-card"><div class="empty-emoji">🔒</div><h3>' + t + '</h3><button class="btn btn--kickoff btn--sm" id="signin-cta" style="max-width:200px;margin:14px auto 0">Sign in</button></div>'; }
+  function signInCard(t) { return '<div class="card empty-card"><div class="empty-emoji">🔒</div><h3>' + t + '</h3><button class="btn btn--kickoff btn--sm" id="signin-cta" style="max-width:200px">Sign in</button></div>'; }
   function wireSignInCard() { var b = $("signin-cta"); if (b) b.onclick = function () { openAuth("in"); }; }
 
   /* ----------------------------------------------------------- init ----- */
