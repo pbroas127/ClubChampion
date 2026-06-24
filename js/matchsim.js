@@ -26,7 +26,7 @@
 
   function byPos(squad) { var g = { GK: [], DEF: [], MID: [], FWD: [] }; squad.forEach(function (p, i) { g[p.pos].push(i); }); return g; }
 
-  // PATCH: Balanced spread — not hugging the edges, not bunched middle.
+  // Balanced spread — not edge-hugging, not bunched.
   function layout(squad, side, phase) {
     var g = byPos(squad), out = new Array(squad.length);
     var xBase  = { GK: 0.06, DEF: 0.23, MID: 0.46, FWD: 0.70 };
@@ -46,7 +46,6 @@
     return out;
   }
 
-  /* --------------------------------------------------- timeline generator */
   function initStats(squad) {
     return squad.map(function (p) {
       return { n: p.n, pos: p.pos, club: p.club, year: p.year, ovr: Math.round(E.overall(p)),
@@ -84,7 +83,6 @@
 
     add(0, 600, { x: 0.5, y: 0.5 }, "A", "kickoff", "Kick-off at " + (result.stadium || "the stadium") + "!", false);
 
-    // PATCH: fewer possessions = shorter match (was 26-34).
     var nPoss = ri(rand, 20, 26);
     var minutes = []; for (var i = 0; i < nPoss; i++) minutes.push(ri(rand, 2, 89));
     minutes.sort(function (a, b) { return a - b; });
@@ -123,7 +121,6 @@
       var g = groups[side], dg = groups[def];
       var st = stats[side], dst = stats[def];
 
-      // PATCH: faster build-up (was 500-720).
       var nPass = ri(rand, 1, 3);
       var carriers = shuffle(g.DEF.concat(g.MID), rand);
       var last = null;
@@ -184,8 +181,6 @@
         return goal ? pick(rand, ["GOAL! Towering header!", "GOAL! Headed home at the back post!", "GOAL! Tap-in from the cross!"]) : "Header just wide.";
       }
 
-      // PATCH: misses + post hits now have follow-through beats so the ball
-      // doesn't just freeze in the goal box.
       function finishNoGoal() {
         var type = pick(rand, ["save", "save", "miss", "block", "corner", "tackle", "tackle", "post", "offside"]);
         var shooter = attacker();
@@ -202,20 +197,17 @@
             var rebY = clamp(0.5 + (rand() - 0.5) * 0.4, 0.25, 0.75);
             add(minute, 380, { x: rebX, y: rebY }, def, "parry", "Parried clear!", false);
           } else {
-            // GK catches → throws/kicks it out to a defender.
             add(minute, 420, { x: side === "A" ? 0.32 : 0.68, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) },
               def, "goalkick", null, false);
           }
         } else if (type === "miss") {
           add(minute, 300, posOf(side, shooter, 1), side, "shot", "Shoots…", false);
           st[shooter].touches++; st[shooter].shots++;
-          // Ball flies wide & out — past the goal line clearly.
           var wideTop = rand() < 0.5;
           var missY = wideTop ? 0.18 : 0.82;
           var outX = side === "A" ? 1.02 : -0.02;
           add(minute, 380, { x: outX, y: missY }, side, "miss",
               pick(rand, ["Just wide!", "Over the bar!", "Inches off target."]), false);
-          // Goal kick — ball teleports to GK then long ball to a defender.
           add(minute, 460, { x: side === "A" ? 0.32 : 0.68, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) },
             def, "goalkick", null, false);
         } else if (type === "post") {
@@ -225,7 +217,6 @@
           var postY = hitTop ? 0.42 : 0.58;
           var postX = side === "A" ? 0.985 : 0.015;
           add(minute, 280, { x: postX, y: postY }, side, "postHit", "OFF THE POST!", false);
-          // 50/50 — bounces out for a corner OR back into play to a defender.
           if (rand() < 0.5) {
             var cornerX = side === "A" ? 1.01 : -0.01;
             var cornerY = hitTop ? 0.04 : 0.96;
@@ -252,7 +243,6 @@
           add(minute, 300, posOf(side, shooter, 1), side, "shot", "Shot blocked!", false);
           st[shooter].touches++; st[shooter].shots++;
           var blk = pick(rand, dg.DEF); dst[blk].tackles++;
-          // Ball deflects to the blocker.
           add(minute, 320, posOf(def, blk, 0.2), def, "blockOut", null, false);
         } else if (type === "corner") {
           add(minute, 440, { x: side === "A" ? 0.985 : 0.015, y: 0.04 }, side, "corner", "Corner kick…", false);
@@ -268,13 +258,11 @@
               def, "goalkick", null, false);
           }
         } else if (type === "offside") {
-          // PATCH: offsides only in the attacking third (just past defenders).
           var offX = side === "A" ? clamp(0.66 + (rand() - 0.5) * 0.08, 0.62, 0.74) :
                                     clamp(0.34 + (rand() - 0.5) * 0.08, 0.26, 0.38);
           var offY = clamp(0.5 + (rand() - 0.5) * 0.5, 0.18, 0.82);
           add(minute, 320, { x: offX, y: offY }, side, "offside", "Flag's up — offside.", false);
           st[shooter].touches++;
-          // Free kick back to defender.
           add(minute, 380, { x: side === "A" ? 0.35 : 0.65, y: offY }, def, "goalkick", null, false);
         } else {
           var tk = pick(rand, dg.DEF.concat(dg.MID));
@@ -332,7 +320,7 @@
     function d2(a, b) { var dx = a.x - b.x, dy = a.y - b.y; return dx * dx + dy * dy; }
     function nearest(list, pt) { var best = null, bd = 1e9; list.forEach(function (p) { var d = d2(p.pos, pt); if (d < bd) { bd = d; best = p; } }); return best; }
 
-    var ball = { x: 0.5, y: 0.5, p0: null, p1: null, p2: null, u: 1, len: 1, speed: 0.6, moving: false, dribble: false, dribT: 0, carrier: null };
+    var ball = { x: 0.5, y: 0.5, p0: null, p1: null, p2: null, u: 1, len: 1, speed: 0.6, moving: false, dribble: false, dribT: 0, carrier: null, t: 0 };
     function speedFor(k) {
       switch (k) {
         case "goal":       return 1.50;
@@ -377,7 +365,6 @@
       if (b.kind === "kickoff") { initPlayers(true); ball.x = 0.5; ball.y = 0.5; ball.moving = false; ball.dribble = false; ball.carrier = null; dwell = 0.5; return; }
       if (b.kind === "fulltime") { ball.moving = false; ball.dribble = false; dwell = 1.0; return; }
 
-      // PATCH: goal kick teleports ball to GK so it visibly comes from him.
       if (b.kind === "goalkick") {
         var gk = playersOf(b.posSide).filter(function (p) { return p.ptype === "GK"; })[0];
         if (gk) { ball.x = gk.pos.x; ball.y = gk.pos.y; }
@@ -391,8 +378,8 @@
       if (b.kind === "dribble") {
         ball.carrier = nearest(playersOf(b.posSide).filter(function (p) { return p.ptype !== "GK"; }), { x: ball.x, y: ball.y });
       } else if (/^(shot|goal|miss|postHit)$/.test(b.kind)) {
-        // PATCH: shooter MUST be FWD or MID — never DEF/GK (no own goals).
         var pool = playersOf(b.posSide).filter(function (p) { return p.ptype === "FWD" || p.ptype === "MID"; });
+        if (!pool.length) pool = playersOf(b.posSide).filter(function (p) { return p.ptype !== "GK"; });
         b._shooter = nearest(pool, { x: b.ball.x, y: b.ball.y });
         b._preShot = !!b._shooter;
       } else {
@@ -417,7 +404,6 @@
     function onArrive() {
       var b = tl.beats[bi];
       if (b.kind === "goal") return celebrate(b);
-      // PATCH: tighter dwell times = faster overall match.
       dwell = /^(save|parry|corner|foul|postHit|miss|tackle|offside|goalkick)$/.test(b.kind) ? 0.32 : 0.10;
     }
 
@@ -454,7 +440,6 @@
       var b = tl.beats[bi]; if (!b) return;
       ball.t = (ball.t || 0) + dt;
 
-      // PATCH: smoother eased homing on shooter before strike.
       if (b._preShot && b._shooter) {
         var sp = b._shooter.pos;
         var dx = sp.x - ball.x, dy = sp.y - ball.y, d = Math.hypot(dx, dy);
@@ -474,4 +459,148 @@
 
       if (ball.dribble && ball.carrier) {
         var off = adir(b.posSide) * 0.022;
-        ball.x = 
+        ball.x = ball.carrier.pos.x + off; ball.y = ball.carrier.pos.y;
+        if ((d2({ x: ball.carrier.pos.x, y: ball.y }, b.ball) < 0.0016 || ball.t > 2.4) && dwell <= 0) { ball.dribble = false; onArrive(); }
+        return;
+      }
+      if (ball.moving && b._recv) {
+        var tg = b._recv.pos, dx3 = tg.x - ball.x, dy3 = tg.y - ball.y, d3 = Math.hypot(dx3, dy3) || 1e-4, step = ball.speed * dt;
+        if (d3 <= step + 0.02 || ball.t > 2.8) { ball.x = tg.x; ball.y = tg.y; ball.moving = false; onArrive(); }
+        else { ball.x += dx3 / d3 * step; ball.y += dy3 / d3 * step; }
+        return;
+      }
+      if (ball.moving) {
+        ball.u += (ball.speed * dt) / ball.len;
+        if (ball.u >= 1) { ball.u = 1; ball.moving = false; ball.x = ball.p2.x; ball.y = ball.p2.y; onArrive(); }
+        else { var u = ball.u, iu = 1 - u; ball.x = iu * iu * ball.p0.x + 2 * iu * u * ball.p1.x + u * u * ball.p2.x; ball.y = iu * iu * ball.p0.y + 2 * iu * u * ball.p1.y + u * u * ball.p2.y; }
+      }
+    }
+
+    function updatePlayers(dt) {
+      var b = tl.beats[bi]; if (!b) return;
+      var poss = b.posSide, def = poss === "A" ? "B" : "A";
+      var bp = { x: ball.x, y: ball.y };
+      var dfO = playersOf(def).filter(function (p) { return p.ptype !== "GK"; })
+        .sort(function (a, c) { return d2(a.pos, bp) - d2(c.pos, bp); });
+
+      players.forEach(function (p) {
+        if (p.ptype === "GK") {
+          var gx = ownGoalX(p.side);
+          var tx = gx + adir(p.side) * 0.025;
+          var ty = clamp(0.5 + (ball.y - 0.5) * 0.55, 0.36, 0.64);
+          if (def === p.side && /^(shot|goal|save|postHit)$/.test(b.kind)) {
+            tx = gx + adir(p.side) * 0.05;
+            ty = clamp(ball.y, 0.32, 0.68);
+          }
+          return steer(p, tx, ty, 0.32, dt);
+        }
+
+        if (p.side === poss) {
+          if (p === ball.carrier) return steer(p, b.ball.x, b.ball.y, 0.22, dt);
+          if (p === b._recv)      return steer(p, b.ball.x, b.ball.y, 0.30, dt);
+          if (p === b._shooter && b._preShot) return steer(p, ball.x, ball.y, 0.34, dt);
+          var ahead = p.ptype === "FWD" ? 0.30 : p.ptype === "MID" ? 0.05 : -0.28;
+          var tx2 = clamp(p.pos0.x + ahead * adir(poss) * 0.6 + (ball.x - 0.5) * 0.25, 0.06, 0.94);
+          var ty2 = clamp(p.pos0.y * 0.95 + ball.y * 0.05, 0.06, 0.94);
+          return steer(p, tx2, ty2, p.ptype === "FWD" ? 0.20 : 0.16, dt);
+        }
+
+        var rank = dfO.indexOf(p);
+        if (rank === 0) return steer(p, ball.x, ball.y, 0.34, dt);
+        if (rank === 1) return steer(p, (ball.x + ownGoalX(p.side)) / 2, ball.y, 0.24, dt);
+        var back = p.ptype === "DEF" ? 0.22 : 0.08;
+        var tx3 = clamp(p.pos0.x - back * adir(p.side) + (ball.x - 0.5) * 0.15, 0.06, 0.94);
+        var ty3 = clamp(p.pos0.y * 0.95 + ball.y * 0.05, 0.06, 0.94);
+        return steer(p, tx3, ty3, 0.16, dt);
+      });
+    }
+
+    function steer(p, tx, ty, maxSp, dt) {
+      var dx = tx - p.pos.x, dy = ty - p.pos.y, d = Math.hypot(dx, dy) || 0.0001;
+      var want = Math.min(maxSp, d * 3.0);
+      p.vel.x += (dx / d * want - p.vel.x) * 0.18;
+      p.vel.y += (dy / d * want - p.vel.y) * 0.18;
+      p.pos.x = clamp(p.pos.x + p.vel.x * dt + (Math.random() - 0.5) * 0.0006, 0.03, 0.97);
+      p.pos.y = clamp(p.pos.y + p.vel.y * dt + (Math.random() - 0.5) * 0.0006, 0.06, 0.94);
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      drawPitch();
+      players.forEach(drawPlayer);
+      if (flash > 0) { ctx.fillStyle = "rgba(255,210,74," + (flash * 0.3) + ")"; ctx.fillRect(0, 0, W, H); if (!celebrating) flash = Math.max(0, flash - 0.03); }
+      var bx = px(ball.x), by = py(ball.y);
+      ctx.beginPath(); ctx.arc(bx, by, 5.5, 0, 7); ctx.fillStyle = "#fff";
+      ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 6; ctx.fill(); ctx.shadowBlur = 0;
+      drawHud(tl.beats[Math.max(0, Math.min(bi, tl.beats.length - 1))]);
+      if (banner && bannerT > 0 && !celebrating) { drawBanner(banner, bannerT); bannerT = Math.max(0, bannerT - 0.01); }
+    }
+
+    function drawPlayer(p) {
+      var x = px(p.pos.x), y = py(p.pos.y), isGK = p.ptype === "GK";
+      ctx.beginPath(); ctx.arc(x, y, isGK ? 8.5 : 9.5, 0, 7);
+      ctx.fillStyle = isGK ? "#13314a" : (p.side === "A" ? colorA : colorB);
+      ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.stroke();
+      ctx.fillStyle = isGK ? "#cfe8ff" : "rgba(4,20,12,.9)";
+      ctx.font = "700 9px Inter, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(isGK ? "GK" : lastName(squads[p.side][p.idx].n).slice(0, 3), x, y);
+    }
+
+    function drawPitch() {
+      var g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, "#16542f"); g.addColorStop(1, "#103f24");
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      var fw = FR - FL, fh = FB - FT;
+      ctx.fillStyle = "rgba(255,255,255,.04)";
+      for (var s = 0; s < 10; s++) if (s % 2) ctx.fillRect(px(s / 10), FT, fw / 10, fh);
+      ctx.strokeStyle = "rgba(255,255,255,.75)"; ctx.lineWidth = 2;
+      ctx.strokeRect(FL, FT, fw, fh);
+      ctx.beginPath(); ctx.moveTo(px(0.5), FT); ctx.lineTo(px(0.5), FB); ctx.stroke();
+      ctx.beginPath(); ctx.arc(px(0.5), py(0.5), fh * 0.13, 0, 7); ctx.stroke();
+      ctx.strokeRect(FL, py(0.26), fw * 0.13, fh * 0.48);
+      ctx.strokeRect(FR - fw * 0.13, py(0.26), fw * 0.13, fh * 0.48);
+      ctx.strokeRect(FL, py(0.38), fw * 0.05, fh * 0.24);
+      ctx.strokeRect(FR - fw * 0.05, py(0.38), fw * 0.05, fh * 0.24);
+      [[FL, FT, 1, 1], [FR, FT, -1, 1], [FL, FB, 1, -1], [FR, FB, -1, -1]].forEach(function (c) {
+        ctx.beginPath(); ctx.arc(c[0], c[1], 7, 0, 7); ctx.stroke();
+      });
+      var gd = Math.max(10, fw * 0.045), gy1 = py(0.42), gy2 = py(0.58);
+      ctx.fillStyle = "rgba(255,255,255,.16)"; ctx.lineWidth = 2.5; ctx.strokeStyle = "#fff";
+      ctx.fillRect(FL - gd, gy1, gd, gy2 - gy1); ctx.strokeRect(FL - gd, gy1, gd, gy2 - gy1);
+      ctx.fillRect(FR, gy1, gd, gy2 - gy1); ctx.strokeRect(FR, gy1, gd, gy2 - gy1);
+    }
+
+    function drawHud(beat) {
+      ctx.fillStyle = "rgba(7,20,13,.78)"; ctx.fillRect(0, 0, W, 30);
+      ctx.textBaseline = "middle"; ctx.font = "800 14px Archivo, Inter, sans-serif";
+      ctx.textAlign = "left"; ctx.fillStyle = colorA; ctx.fillText(nameA, 12, 15);
+      ctx.textAlign = "right"; ctx.fillStyle = colorB; ctx.fillText(nameB, W - 12, 15);
+      ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.font = "900 16px Archivo, Inter, sans-serif";
+      ctx.fillText(beat.scoreA + " - " + beat.scoreB, W / 2, 15);
+      ctx.font = "700 11px Inter, sans-serif"; ctx.fillStyle = "#9fcfb4";
+      ctx.fillText(Math.min(90, beat.minute) + "'", W / 2, 40);
+    }
+
+    function drawBanner(text, a) {
+      ctx.globalAlpha = clamp(a, 0, 1);
+      ctx.fillStyle = "rgba(7,20,13,.82)";
+      ctx.font = "800 15px Archivo, Inter, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      var w = ctx.measureText(text).width + 28;
+      ctx.fillRect(W / 2 - w / 2, H - 40, w, 26);
+      ctx.fillStyle = "#ffd24a"; ctx.fillText(text, W / 2, H - 27);
+      ctx.globalAlpha = 1;
+    }
+
+    resize();
+    root.addEventListener("resize", resize);
+    return {
+      start: start,
+      skip: finish,
+      destroy: function () { if (raf) cancelAnimationFrame(raf); root.removeEventListener("resize", resize); if (overlay) overlay.classList.remove("show"); finished = true; },
+    };
+  }
+
+  var API = { create: create, generate: generate };
+  if (typeof module !== "undefined" && module.exports) module.exports = API;
+  root.CC_MATCHSIM = API;
+})(typeof window !== "undefined" ? window : globalThis);
