@@ -531,7 +531,7 @@ body[data-screen="draft"] .topnav, body[data-screen="sim"] .topnav { display: no
 
 /* --------------------------------------------------------- Responsive -- */
 @media (max-width: 760px) {
-  .sim-stage { aspect-ratio: 4 / 3; }
+  .sim-stage { aspect-ratio: 2 / 3; max-height: 80vh; }
   .draft-body { grid-template-columns: 1fr; }
   .pitch-wrap { position: static; order: -1; max-width: 320px; margin: 0 auto; width: 100%; }
   .res-grid { grid-template-columns: 1fr; }
