@@ -657,7 +657,7 @@
             '<div class="friend-id"><b>' + esc(f.username) + '</b><small>' + pr.text + '</small></div>' +
             '<span class="friend-h2h dim" id="h2h-' + f.userId + '" title="Head-to-head vs you">0-0</span>' +
             '<span class="friend-acts">' +
-              '<button class="mini-btn" data-play="' + f.userId + '" title="Challenge to a match">▶</button>' +
+              '<button class="mini-btn mini-btn--play" data-play="' + f.userId + '">Challenge</button>' +
               '<button class="mini-btn" data-stats="' + f.userId + '" data-name="' + esc(f.username) + '">Stats</button>' +
               '<button class="mini-btn friend-menu-btn" data-menu="' + f.userId + '" data-name="' + esc(f.username) + '">⋮</button>' +
             '</span></div>';
