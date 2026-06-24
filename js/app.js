@@ -434,7 +434,7 @@
 
     wrap.innerHTML = head +
       // Card 1 — Game Invites (placeholder for now)
-      '<div class="card"><h3>🎮 Game Invites</h3>' +
+      '<div class="card"><h3>Game Invites</h3>' +
         '<div class="muted-line" style="text-align:left;padding:6px 2px">No invites yet — coming soon when you can challenge friends.</div>' +
       '</div>' +
       // Card 2 — Add Friend
@@ -447,15 +447,15 @@
       '</div>' +
       // Card 3 — Requests (Incoming + Sent)
       '<div class="card" id="friend-requests-card">' +
-        '<h3>📬 Requests</h3>' +
-        '<div class="friend-sub-head">📥 Incoming</div>' +
+        '<h3>Requests</h3>' +
+        '<div class="friend-sub-head">Incoming</div>' +
         '<div id="friend-incoming"><div class="muted-line" style="text-align:left">Loading…</div></div>' +
-        '<div class="friend-sub-head" style="margin-top:14px">📤 Sent</div>' +
+        '<div class="friend-sub-head" style="margin-top:14px">Sent</div>' +
         '<div id="friend-outgoing"><div class="muted-line" style="text-align:left">Loading…</div></div>' +
       '</div>' +
       // Card 4 — Your Friends
       '<div class="card" id="friend-list-card">' +
-        '<h3>👥 Your Friends</h3>' +
+        '<h3>Your Friends</h3>' +
         '<div id="friend-list"><div class="muted-line" style="text-align:left">Loading…</div></div>' +
       '</div>';
 
