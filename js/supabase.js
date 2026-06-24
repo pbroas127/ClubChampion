@@ -25,6 +25,7 @@
       return client.auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname } });
     },
     signOut: function () { need(); return client.auth.signOut(); },
+    resetPassword: function (email) { need(); return client.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }); },
     getUser: function () {
       if (!client) return Promise.resolve(null);
       return client.auth.getUser().then(function (r) { return r && r.data ? r.data.user : null; }).catch(function () { return null; });
@@ -62,6 +63,73 @@
       if (!client) return Promise.resolve(null);
       return client.from("profiles").select("*").ilike("username", name).maybeSingle().then(function (r) { return r.data; });
     },
+    // ---- presence (Phase 2) ----
+    heartbeat: function () {
+      if (!client) return Promise.resolve();
+      return auth.getUser().then(function (u) {
+        if (!u) return;
+        return client.from("profiles").update({ last_seen: new Date().toISOString() }).eq("id", u.id);
+      }).catch(function () {});
+    },
+    getMany: function (ids) {
+      if (!client || !ids || !ids.length) return Promise.resolve({});
+      return client.from("profiles").select("id,username,last_seen").in("id", ids).then(function (r) {
+        var map = {}; (r.data || []).forEach(function (p) { map[p.id] = p; }); return map;
+      }).catch(function () { return {}; });
+    },
+    // ---- settings (Phase 4) ----
+    full: function () {
+      if (!client) return Promise.resolve(null);
+      return auth.getUser().then(function (u) {
+        if (!u) return null;
+        return client.from("profiles").select("username,username_changed_at,pro_default").eq("id", u.id).maybeSingle().then(function (r) { return r.data; });
+      }).catch(function () { return null; });
+    },
+    changeUsername: function (name) {
+      need();
+      return auth.getUser().then(function (u) {
+        if (!u) throw new Error("Not signed in.");
+        return client.from("profiles").select("username_changed_at").eq("id", u.id).maybeSingle().then(function (r) {
+          var last = r.data && r.data.username_changed_at ? new Date(r.data.username_changed_at) : null;
+          if (last) {
+            var days = (Date.now() - last.getTime()) / 86400000;
+            if (days < 30) {
+              var e = new Error("You can change your username again on " + new Date(last.getTime() + 30 * 86400000).toLocaleDateString());
+              e.locked = true; throw e;
+            }
+          }
+          return client.rpc("username_available", { name: name }).then(function (a) {
+            if (!a.data) throw new Error("That username is taken.");
+            return client.from("profiles").update({ username: name, username_changed_at: new Date().toISOString() }).eq("id", u.id).select().single();
+          });
+        });
+      });
+    },
+    setProDefault: function (on) {
+      if (!client) return Promise.resolve();
+      return auth.getUser().then(function (u) {
+        if (!u) return; return client.from("profiles").update({ pro_default: !!on }).eq("id", u.id);
+      }).catch(function () {});
+    },
+  };
+
+  // ---- account management (Phase 4) ---------------------------------------
+  var account = {
+    wipeStats: function () {
+      need();
+      return auth.getUser().then(function (u) { return client.from("seasons").delete().eq("user_id", u.id); });
+    },
+    deleteAccount: function () {
+      need();
+      return auth.getUser().then(function (u) {
+        var id = u.id;
+        return Promise.all([
+          client.from("seasons").delete().eq("user_id", id),
+          client.from("friendships").delete().or("requester.eq." + id + ",addressee.eq." + id),
+          client.from("profiles").delete().eq("id", id),
+        ]).then(function () { return client.auth.signOut(); });
+      });
+    },
   };
 
   var data = {
@@ -83,6 +151,11 @@
         return client.from("seasons").select("*").eq("user_id", u.id)
           .order("created_at", { ascending: false }).then(function (r) { return r.data || []; });
       });
+    },
+    userSeasons: function (userId) {                 // a friend's seasons (RLS-gated)
+      if (!client) return Promise.resolve([]);
+      return client.from("seasons").select("*").eq("user_id", userId)
+        .order("created_at", { ascending: false }).then(function (r) { return r.data || []; }).catch(function () { return []; });
     },
   };
 
@@ -161,6 +234,36 @@
           });
       });
     },
+    // ---- head-to-head + moderation (Phase 3) ----
+    headToHead: function (otherId) {
+      if (!client) return Promise.resolve({ wins: 0, losses: 0 });
+      return auth.getUser().then(function (u) {
+        if (!u) return { wins: 0, losses: 0 };
+        var lo = u.id < otherId ? u.id : otherId, hi = u.id < otherId ? otherId : u.id;
+        return client.from("head_to_head").select("*").eq("low_id", lo).eq("high_id", hi).maybeSingle().then(function (r) {
+          if (!r.data) return { wins: 0, losses: 0 };
+          var meLow = u.id === lo;
+          return { wins: meLow ? r.data.low_wins : r.data.high_wins, losses: meLow ? r.data.high_wins : r.data.low_wins };
+        });
+      }).catch(function () { return { wins: 0, losses: 0 }; });
+    },
+    recordResult: function (winnerId, loserId) {
+      if (!client) return Promise.resolve();
+      return client.rpc("record_h2h", { winner: winnerId, loser: loserId }).catch(function () {});
+    },
+    report: function (otherId, reason, comment) {
+      need();
+      return auth.getUser().then(function (u) {
+        return client.from("reports").insert({ reporter: u.id, reported: otherId, reason: reason, comment: comment || null });
+      });
+    },
+    removeByUser: function (otherId) {
+      need();
+      return auth.getUser().then(function (u) {
+        return client.from("friendships").delete()
+          .or("and(requester.eq." + u.id + ",addressee.eq." + otherId + "),and(requester.eq." + otherId + ",addressee.eq." + u.id + ")");
+      });
+    },
     subscribe: function (callback) {
       if (!client) return null;
       var channel = client.channel("friendships-" + Date.now());
@@ -176,8 +279,54 @@
     },
   };
 
+  // ---- game invites (Phase 5 — backend ready for the match flow) -----------
+  var invites = {
+    send: function (toUserId, opts) {
+      need(); opts = opts || {};
+      return auth.getUser().then(function (u) {
+        var now = Date.now();
+        return client.from("game_invites").insert({
+          from_user: u.id, to_user: toUserId, status: "pending",
+          pool: opts.pool || "club", pro: !!opts.pro, mode: opts.mode || "classic",
+          expires_at: new Date(now + 30000).toISOString(),
+        }).select().single();
+      });
+    },
+    cancel: function (id) { need(); return client.from("game_invites").update({ status: "cancelled" }).eq("id", id); },
+    accept: function (id) { need(); return client.from("game_invites").update({ status: "accepted" }).eq("id", id).select().single(); },
+    decline: function (id) { need(); return client.from("game_invites").update({ status: "declined" }).eq("id", id); },
+    mine: function () {
+      if (!client) return Promise.resolve({ incoming: [], outgoing: [] });
+      return auth.getUser().then(function (u) {
+        if (!u) return { incoming: [], outgoing: [] };
+        return client.from("game_invites").select("*").eq("status", "pending").gt("expires_at", new Date().toISOString())
+          .or("from_user.eq." + u.id + ",to_user.eq." + u.id).then(function (r) {
+            var rows = r.data || [];
+            var ids = rows.map(function (x) { return x.from_user === u.id ? x.to_user : x.from_user; });
+            return profilesByIds(ids).then(function (m) {
+              var inc = [], out = [];
+              rows.forEach(function (x) {
+                var other = x.from_user === u.id ? x.to_user : x.from_user;
+                var e = { id: x.id, userId: other, username: m[other] || "player", pool: x.pool, pro: x.pro, expires_at: x.expires_at };
+                if (x.to_user === u.id) inc.push(e); else out.push(e);
+              });
+              return { incoming: inc, outgoing: out };
+            });
+          });
+      }).catch(function () { return { incoming: [], outgoing: [] }; });
+    },
+    subscribe: function (cb) {
+      if (!client) return null;
+      var ch = client.channel("invites-" + Date.now());
+      ch.on("postgres_changes", { event: "*", schema: "public", table: "game_invites" }, function () { try { cb(); } catch (e) {} }).subscribe();
+      return ch;
+    },
+    unsubscribe: function (ch) { if (client && ch) try { client.removeChannel(ch); } catch (e) {} },
+  };
+
   root.CC_BACKEND = {
     configured: configured, client: client,
     auth: auth, profile: profile, data: data, friends: friends,
+    account: account, invites: invites,
   };
 })(window);

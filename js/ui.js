@@ -13,6 +13,7 @@
 
   // -- UI selection state (before a game starts) ----------------------------
   var sel = { mode: "solo", difficulty: "normal", formationId: "balanced", hideRatings: false };
+  var proDefault = false;   // account "Pro Mode default" preference (Phase 4)
   var game = null;
   var lastResults = null;
 
@@ -130,6 +131,9 @@
     $("setup-title").textContent = info.t;
     $("setup-sub").textContent = info.s;
     $("btn-start-draft").innerHTML = "START DRAFT <span>→</span>";
+    // apply the account's Pro Mode default each time you enter setup
+    sel.hideRatings = proDefault;
+    var pt = $("pro-toggle"); if (pt) pt.checked = proDefault;
     showScreen("setup");
   }
 
@@ -720,6 +724,7 @@
     getGame: function () { return game; },
     getResults: function () { return lastResults; },
     seasonStatsFor: function (squad, season, seed) { return ENGINE.seasonStats(squad, season, seed); },
+    setProDefault: function (on) { proDefault = !!on; },
   };
   window.CC_TOAST = toast;
 

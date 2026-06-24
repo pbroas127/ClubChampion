@@ -55,13 +55,115 @@
     m.innerHTML =
       '<div class="acc-head">Signed in as<br><b>' + esc(state.profile ? state.profile.username : "—") + "</b></div>" +
       '<button class="acc-item" id="acc-stats">My stats</button>' +
+      '<button class="acc-item" id="acc-settings">Settings</button>' +
+      '<button class="acc-item" id="acc-help">Help</button>' +
       '<button class="acc-item" id="acc-out">Sign out</button>';
     document.body.appendChild(m);
     var r = $("nav-account").getBoundingClientRect();
     m.style.top = (r.bottom + 8) + "px"; m.style.right = (window.innerWidth - r.right) + "px";
     $("acc-stats").onclick = function () { m.remove(); setTab("stats"); };
+    $("acc-settings").onclick = function () { m.remove(); openSettings(); };
+    $("acc-help").onclick = function () { m.remove(); openHelp(); };
     $("acc-out").onclick = function () { m.remove(); BE.auth.signOut().then(function () { toast("Signed out"); }); };
     setTimeout(function () { document.addEventListener("click", function h(e) { if (!m.contains(e.target) && e.target.id !== "nav-account") { m.remove(); document.removeEventListener("click", h); } }); }, 0);
+  }
+
+  /* ---------------------------------------------------- settings (P4) --- */
+  function openSettings() {
+    if (!state.user) return;
+    var ov = el("div", "modal"); ov.id = "settings-modal";
+    ov.innerHTML = '<div class="modal-card" style="max-width:440px;max-height:88vh;overflow:auto">' +
+      '<button class="icon-btn modal-close" id="set-close">✕</button>' +
+      "<h2>Settings</h2>" +
+      '<div class="set-block"><label class="set-label">Username</label>' +
+        '<div class="friend-add"><input class="inp" id="set-uname" maxlength="20" value="' + esc(state.profile ? state.profile.username : "") + '" />' +
+        '<button class="btn btn--kickoff btn--sm" id="set-uname-btn" style="width:auto;padding:0 16px">Save</button></div>' +
+        '<div class="set-hint" id="set-uname-hint">Change your username once every 30 days.</div></div>' +
+      '<div class="set-block"><label class="set-label">Password</label>' +
+        '<button class="btn btn--ghost btn--sm" id="set-pass">Send password reset email</button></div>' +
+      '<div class="set-block set-row"><div><b>Pro Mode default</b><div class="set-hint">Start every game with ratings hidden.</div></div>' +
+        '<label class="toggle" style="width:auto;gap:0"><input type="checkbox" id="set-pro"' + (state.profile && state.profile.pro_default ? " checked" : "") + ' /><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>' +
+      '<div class="set-block"><label class="set-label set-danger-label">Danger zone</label>' +
+        '<button class="btn btn--ghost btn--sm set-danger-btn" id="set-wipe">Wipe all my stats</button>' +
+        '<button class="btn btn--ghost btn--sm set-danger-btn" id="set-delete" style="margin-top:8px">Delete my account</button></div>' +
+      '<div class="auth-err" id="set-err"></div></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener("click", function (e) { if (e.target === ov) ov.remove(); });
+    $("set-close").onclick = function () { ov.remove(); };
+    if (BE.profile.full) BE.profile.full().then(function (p) {
+      if (p && p.username_changed_at) {
+        var next = new Date(new Date(p.username_changed_at).getTime() + 30 * 86400000);
+        if (next > new Date()) {
+          $("set-uname").disabled = true; $("set-uname-btn").disabled = true;
+          $("set-uname-hint").textContent = "Next username change: " + next.toLocaleDateString();
+        }
+      }
+    });
+    $("set-uname-btn").onclick = function () {
+      var v = $("set-uname").value.trim();
+      if (v.length < 3 || !/^[a-z0-9_]+$/i.test(v)) { $("set-err").textContent = "3–20 letters, numbers, or underscores."; return; }
+      $("set-uname-btn").disabled = true; $("set-err").textContent = "";
+      BE.profile.changeUsername(v).then(function () {
+        toast("Username updated to " + v); if (state.profile) state.profile.username = v; refreshAccountButton(); ov.remove();
+      }).catch(function (e) { $("set-err").textContent = (e && e.message) || "Couldn’t change username."; $("set-uname-btn").disabled = false; });
+    };
+    $("set-pass").onclick = function () {
+      var email = (state.user && state.user.email) || "";
+      if (!email) { $("set-err").textContent = "No email on this account (signed in with Google?)."; return; }
+      BE.auth.resetPassword(email).then(function () { toast("Reset email sent to " + email); }).catch(function (e) { $("set-err").textContent = (e && e.message) || "Couldn’t send email."; });
+    };
+    $("set-pro").onchange = function (e) {
+      BE.profile.setProDefault(e.target.checked);
+      if (state.profile) state.profile.pro_default = e.target.checked;
+      if (root.CC_UI && root.CC_UI.setProDefault) root.CC_UI.setProDefault(e.target.checked);
+    };
+    $("set-wipe").onclick = function () {
+      if (confirm("Delete ALL your saved stats (every mode)? This can’t be undone.")) {
+        BE.account.wipeStats().then(function () { toast("All stats wiped."); ov.remove(); if (state.tab === "stats") renderStats(); });
+      }
+    };
+    $("set-delete").onclick = function () {
+      if (confirm("Permanently delete your account, stats, and friends? This can’t be undone.")) {
+        BE.account.deleteAccount().then(function () { toast("Account deleted."); ov.remove(); }).catch(function (e) { $("set-err").textContent = (e && e.message) || "Couldn’t delete account."; });
+      }
+    };
+  }
+
+  /* ------------------------------------------------------- help (P4) ---- */
+  function openHelp() {
+    var faqs = [
+      ["What is Club Champion?", "Spin a club &amp; an exact year (or a World Cup nation), draft a 7-player squad, and chase an unbeaten season or a knockout title."],
+      ["How are players rated?", "Each player has Attack, Creativity, Defence, Physical and Goalkeeping. Your squad’s totals run through a non-linear engine — one weak category caps your whole season."],
+      ["What is Pro Mode?", "Ratings are hidden during the draft so you pick on football knowledge alone. Player choices are ordered by position, not quality."],
+      ["What do the Swap buttons do?", "Swap Club/Nation rolls a different side (same year); Swap Year rolls a different year (same side). Tournaments give you 2 of each."],
+      ["How do UCL Climb &amp; World Cup work?", "Keep one drafted squad and win single-leg knockouts to advance. Opponents get tougher each round."],
+      ["Are my stats saved?", "Yes — when you’re signed in, every game is saved to your account and shown per mode in the Stats tab."],
+      ["How do friends work?", "Add players by username, accept requests, and see who’s online. Head-to-head and live matches are rolling out."],
+      ["Found a bug or a wrong rating?", "Ratings are subjective and for fun. Email us anything below and we’ll take a look."],
+    ];
+    var howto = [
+      ["Season", "Solo. Draft a balanced XI and try to finish 38-0."],
+      ["Beat the CPU", "Out-draft the CPU, then win the one-off final."],
+      ["UCL Climb", "One squad, Round of 16 → Final. Win or go home."],
+      ["World Cup", "Draft national legends from 1990–2026, Group of 32 → Final."],
+      ["Friends", "Add by username, manage requests, view their stats."],
+    ];
+    var ov = el("div", "modal"); ov.id = "help-modal";
+    ov.innerHTML = '<div class="modal-card" style="max-width:560px;max-height:86vh;overflow:auto">' +
+      '<button class="icon-btn modal-close" id="help-close">✕</button>' +
+      "<h2>Help</h2>" +
+      '<h3 class="fs-sec">FAQ</h3><div class="help-faq">' +
+        faqs.map(function (q) { return '<details class="help-q"><summary>' + q[0] + "</summary><p>" + q[1] + "</p></details>"; }).join("") +
+      "</div>" +
+      '<h3 class="fs-sec">How to play</h3><div class="help-how">' +
+        howto.map(function (h) { return '<div class="help-row"><b>' + h[0] + "</b><span>" + h[1] + "</span></div>"; }).join("") +
+      "</div>" +
+      '<h3 class="fs-sec">Contact</h3>' +
+      '<p class="help-contact">Questions or feedback? <a href="mailto:clubchampsupport@gmail.com">clubchampsupport@gmail.com</a></p>' +
+      "</div>";
+    document.body.appendChild(ov);
+    ov.addEventListener("click", function (e) { if (e.target === ov) ov.remove(); });
+    $("help-close").onclick = function () { ov.remove(); };
   }
 
   /* ------------------------------------------------------- auth modal --- */
@@ -158,7 +260,11 @@
   /* --------------------------------------------------- auth state sync -- */
   function onAuth(user) {
     state.user = user;
-    if (!user) { state.profile = null; refreshAccountButton(); if (state.tab === "friends" || state.tab === "stats") (state.tab === "friends" ? renderFriends : renderStats)(); return; }
+    if (!user) {
+      state.profile = null; stopHeartbeat(); refreshAccountButton();
+      if (state.tab === "friends" || state.tab === "stats") (state.tab === "friends" ? renderFriends : renderStats)();
+      return;
+    }
     BE.profile.mine().then(function (p) {
       if (!p && state.pendingUsername) return BE.profile.setUsername(state.pendingUsername).then(function () { return BE.profile.mine(); });
       return p;
@@ -170,9 +276,32 @@
         return;
       }
       state.profile = p; refreshAccountButton();
+      if (root.CC_UI && root.CC_UI.setProDefault) root.CC_UI.setProDefault(!!p.pro_default);
+      startHeartbeat();
       if (state.tab === "stats") renderStats();
       if (state.tab === "friends") renderFriends();
     });
+  }
+
+  /* ----------------------------------------------------- presence (P2) -- */
+  var heartbeatTimer = null;
+  function startHeartbeat() {
+    if (!BE.profile.heartbeat) return;
+    BE.profile.heartbeat();
+    if (heartbeatTimer) return;
+    heartbeatTimer = setInterval(function () { if (state.user) BE.profile.heartbeat(); }, 60000);
+  }
+  function stopHeartbeat() { if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; } }
+  // "online now" / "5m ago" / "2h ago" / "3d ago" from a last_seen timestamp.
+  function presence(lastSeen) {
+    if (!lastSeen) return { online: false, text: "offline" };
+    var diff = Date.now() - new Date(lastSeen).getTime();
+    if (diff < 5 * 60000) return { online: true, text: "online now" };
+    var m = Math.floor(diff / 60000);
+    if (m < 60) return { online: false, text: m + "m ago" };
+    var h = Math.floor(m / 60);
+    if (h < 24) return { online: false, text: h + "h ago" };
+    return { online: false, text: Math.floor(h / 24) + "d ago" };
   }
 
   function isAutoGeneratedUsername(username, user) {
@@ -519,22 +648,93 @@
     BE.friends.list().then(function (fr) {
       var box = $("friend-list"); if (!box) return;
       if (!fr.length) { box.innerHTML = '<div class="muted-line" style="text-align:left">No friends yet — add someone above.</div>'; return; }
-      box.innerHTML = fr.map(function (f) {
-        return '<div class="friend-row" id="fr-' + f.userId + '">' +
-          '<b>' + esc(f.username) + '</b>' +
-          '<span class="dim">loading best…</span>' +
-          '</div>';
-      }).join("");
-      fr.forEach(function (f) {
-        BE.data.bestSeason(f.userId).then(function (s) {
-          var row = $("fr-" + f.userId); if (!row) return;
-          var span = row.querySelector("span"); span.className = "";
-          span.innerHTML = s
-            ? '<b>' + s.wins + "-" + s.draws + "-" + s.losses + "</b> · " + s.points + "pts" + (s.unbeaten ? " 🏆" : "")
-            : '<span class="dim">no season yet</span>';
+      var ids = fr.map(function (f) { return f.userId; });
+      BE.profile.getMany(ids).then(function (pmap) {
+        box.innerHTML = fr.map(function (f) {
+          var pr = presence((pmap[f.userId] || {}).last_seen);
+          return '<div class="friend-row friend-row--full" id="fr-' + f.userId + '">' +
+            '<span class="status-dot ' + (pr.online ? "on" : "off") + '"></span>' +
+            '<div class="friend-id"><b>' + esc(f.username) + '</b><small>' + pr.text + '</small></div>' +
+            '<span class="friend-h2h dim" id="h2h-' + f.userId + '" title="Head-to-head vs you">0-0</span>' +
+            '<span class="friend-acts">' +
+              '<button class="mini-btn" data-play="' + f.userId + '" title="Challenge to a match">▶</button>' +
+              '<button class="mini-btn" data-stats="' + f.userId + '" data-name="' + esc(f.username) + '">Stats</button>' +
+              '<button class="mini-btn friend-menu-btn" data-menu="' + f.userId + '" data-name="' + esc(f.username) + '">⋮</button>' +
+            '</span></div>';
+        }).join("");
+        fr.forEach(function (f) {
+          BE.friends.headToHead(f.userId).then(function (h) {
+            var e = $("h2h-" + f.userId); if (!e) return;
+            e.textContent = h.wins + "-" + h.losses;
+            e.classList.toggle("dim", (h.wins + h.losses) === 0);
+          });
         });
+        box.querySelectorAll("[data-play]").forEach(function (b) { b.onclick = function () { toast("Live multiplayer matches are coming soon!"); }; });
+        box.querySelectorAll("[data-stats]").forEach(function (b) { b.onclick = function () { renderFriendStats(b.dataset.stats, b.dataset.name); }; });
+        box.querySelectorAll("[data-menu]").forEach(function (b) { b.onclick = function (ev) { ev.stopPropagation(); openFriendMenu(b, b.dataset.menu, b.dataset.name); }; });
       });
     });
+  }
+
+  /* ------------------------------------------------ friend stats viewer -- */
+  function renderFriendStats(userId, name) {
+    var wrap = $("screen-friends"); if (!wrap) return;
+    teardownFriendsRealtime();
+    wrap.innerHTML = '<div class="page-head"><button class="link-btn" id="fs-back" style="margin:0 0 10px">← Back to Friends</button>' +
+      "<h2>" + esc(name) + "’s Stats</h2><p>Their best run in each mode.</p></div>" +
+      '<div id="fs-body" class="muted-line">Loading…</div>';
+    $("fs-back").onclick = function () { renderFriends(); };
+    BE.data.userSeasons(userId).then(function (seasons) {
+      var by = { solo: [], cpu: [], ucl: [], wc: [] };
+      seasons.forEach(function (s) { if (by[s.mode]) by[s.mode].push(s); });
+      var html = "";
+      if (by.solo.length) html += '<h3 class="fs-sec">🏆 Season</h3>' + bestSeasonCard(bestSeason(by.solo), "Best season");
+      if (by.cpu.length) html += '<h3 class="fs-sec">🆚 vs CPU</h3>' + bestSeasonCard(bestSeason(by.cpu), "Best vs-CPU squad");
+      if (by.ucl.length) html += '<h3 class="fs-sec">⭐ UCL Climb</h3>' + runCard(bestRun(by.ucl));
+      if (by.wc.length) html += '<h3 class="fs-sec">🌍 World Cup</h3>' + runCard(bestRun(by.wc));
+      var body = $("fs-body"); if (!body) return;
+      body.className = "";
+      body.innerHTML = html || emptyMini("📊", esc(name) + " hasn’t played any tracked games yet.");
+    });
+  }
+
+  /* --------------------------------------------------- friend ⋮ menu ----- */
+  function openFriendMenu(btn, userId, name) {
+    var ex = $("friend-pop"); if (ex) { ex.remove(); return; }
+    var m = el("div", "acc-menu"); m.id = "friend-pop";
+    m.innerHTML = '<button class="acc-item" id="fm-report">Report</button><button class="acc-item" id="fm-remove">Remove friend</button>';
+    document.body.appendChild(m);
+    var r = btn.getBoundingClientRect();
+    m.style.top = (r.bottom + 6) + "px"; m.style.right = Math.max(8, window.innerWidth - r.right) + "px";
+    $("fm-report").onclick = function () { m.remove(); openReportModal(userId, name); };
+    $("fm-remove").onclick = function () {
+      m.remove();
+      if (confirm("Remove " + name + " from your friends?")) {
+        BE.friends.removeByUser(userId).then(function () { toast("Removed " + name); loadFriendsData(); });
+      }
+    };
+    setTimeout(function () { document.addEventListener("click", function h(e) { if (!m.contains(e.target)) { m.remove(); document.removeEventListener("click", h); } }); }, 0);
+  }
+
+  function openReportModal(userId, name) {
+    var ov = el("div", "modal"); ov.id = "report-modal";
+    ov.innerHTML = '<div class="modal-card" style="max-width:420px">' +
+      '<button class="icon-btn modal-close" id="rep-close">✕</button>' +
+      "<h2>Report " + esc(name) + "</h2>" +
+      '<label class="set-label">Reason</label>' +
+      '<select class="inp" id="rep-reason"><option>Spam</option><option>Abuse</option><option>Cheating</option><option>Other</option></select>' +
+      '<textarea class="inp" id="rep-comment" placeholder="Add details (optional)" rows="3" style="resize:vertical"></textarea>' +
+      '<div class="auth-err" id="rep-err"></div>' +
+      '<button class="btn btn--kickoff btn--sm" id="rep-submit">Submit report</button></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener("click", function (e) { if (e.target === ov) ov.remove(); });
+    $("rep-close").onclick = function () { ov.remove(); };
+    $("rep-submit").onclick = function () {
+      $("rep-submit").disabled = true;
+      BE.friends.report(userId, $("rep-reason").value, $("rep-comment").value.trim()).then(function () {
+        ov.remove(); toast("Report submitted. Thank you.");
+      }).catch(function (e) { $("rep-err").textContent = (e && e.message) || "Couldn’t submit report."; $("rep-submit").disabled = false; });
+    };
   }
 
   /* -------------------------------------------------------- RANKED tab -- */
