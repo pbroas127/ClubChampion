@@ -254,11 +254,42 @@
   }
 
   function showResults() {
-    lastResults = game.results();
-    // vs-CPU: watch the match first, then show the result screen.
-    if (lastResults.mode === "cpu") return startMatchSim(lastResults);
-    renderSoloResults(lastResults);
+  lastResults = game.results();
+  // vs-CPU: show lineup intro first, then watch (or skip to results).
+  if (lastResults.mode === "cpu") return showLineupIntro(lastResults);
+  renderSoloResults(lastResults);
+}
+
+function showLineupIntro(R) {
+  if (!window.CC_LINEUP || !document.getElementById("screen-lineup")) {
+    // Lineup module not loaded — fall through to old behavior
+    return startMatchSim(R);
   }
+  window.CC_LINEUP.show({
+    squadA: R.squad,
+    squadB: R.cpuSquad,
+    nameA: "Your XI",
+    nameB: "CPU · " + cap(game.difficulty),
+    colorA: "#2ee87f",
+    colorB: "#ff5d73",
+    subtitle: "Champions Cup Final · " + game.formation.name + " " + game.formation.tag,
+    onWatch: function () { startMatchSim(R); },
+    onSim: function () {
+      // Skip the canvas sim — fabricate empty per-player match stats and go straight to results.
+      var emptyStats = function (squad) {
+        return squad.map(function (p) {
+          return { n: p.n, pos: p.pos, club: p.club, year: p.year,
+            ovr: Math.round(CPU.primaryRating(p)),
+            touches: 0, passes: 0, shots: 0, saves: 0, tackles: 0,
+            goals: 0, assists: 0, rating: 6.5 };
+        });
+      };
+      R.matchStats = { A: emptyStats(R.squad), B: emptyStats(R.cpuSquad) };
+      R.scorers = { A: [], B: [] };
+      showCpuResults($("results-wrap"), R);
+    },
+  });
+}
 
   function renderSoloResults(R) {
     var wrap = $("results-wrap"), you = R.you;
