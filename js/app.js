@@ -527,13 +527,16 @@
   }
 
   /* ------------------------------------------------------- FRIENDS tab -- */
-  var friendsChannel = null;
+  var friendsChannel = null, invitesChannel = null, inviteTick = null;
 
   function teardownFriendsRealtime() {
     if (friendsChannel && BE.friends && BE.friends.unsubscribe) {
-      BE.friends.unsubscribe(friendsChannel);
-      friendsChannel = null;
+      BE.friends.unsubscribe(friendsChannel); friendsChannel = null;
     }
+    if (invitesChannel && BE.invites && BE.invites.unsubscribe) {
+      BE.invites.unsubscribe(invitesChannel); invitesChannel = null;
+    }
+    if (inviteTick) { clearInterval(inviteTick); inviteTick = null; }
   }
 
   function renderFriends() {
@@ -548,9 +551,9 @@
         '<h3>Your Friends</h3>' +
         '<div id="friend-list"><div class="muted-line" style="text-align:left">Loading…</div></div>' +
       '</div>' +
-      // Card 2 — Game Invites (placeholder for now)
-      '<div class="card"><h3>Game Invites</h3>' +
-        '<div class="muted-line" style="text-align:left;padding:6px 2px">No invites yet — coming soon when you can challenge friends.</div>' +
+      // Card 2 — Game Invites (live)
+      '<div class="card" id="game-invites-card"><h3>Game Invites</h3>' +
+        '<div id="game-invites"><div class="muted-line" style="text-align:left;padding:4px 2px">Loading…</div></div>' +
       '</div>' +
       // Card 3 — Add Friend
       '<div class="card"><h3>Add a Friend</h3>' +
@@ -571,13 +574,17 @@
 
     wireFriendsAdd();
     loadFriendsData();
+    renderInvites();
 
     teardownFriendsRealtime();
     if (BE.friends && BE.friends.subscribe) {
-      friendsChannel = BE.friends.subscribe(function () {
-        if (state.tab === "friends") loadFriendsData();
-      });
+      friendsChannel = BE.friends.subscribe(function () { if (state.tab === "friends") loadFriendsData(); });
     }
+    if (BE.invites && BE.invites.subscribe) {
+      invitesChannel = BE.invites.subscribe(function () { if (state.tab === "friends") renderInvites(); });
+    }
+    // re-render invite cards once a second to drive the countdowns
+    inviteTick = setInterval(function () { if (state.tab === "friends") updateInviteCountdowns(); }, 1000);
   }
 
   function wireFriendsAdd() {
@@ -657,7 +664,7 @@
             '<div class="friend-id"><b>' + esc(f.username) + '</b><small>' + pr.text + '</small></div>' +
             '<span class="friend-h2h dim" id="h2h-' + f.userId + '" title="Head-to-head vs you">0-0</span>' +
             '<span class="friend-acts">' +
-              '<button class="mini-btn mini-btn--play" data-play="' + f.userId + '">Challenge</button>' +
+              '<button class="mini-btn mini-btn--play" data-play="' + f.userId + '" data-name="' + esc(f.username) + '">Challenge</button>' +
               '<button class="mini-btn" data-stats="' + f.userId + '" data-name="' + esc(f.username) + '">Stats</button>' +
               '<button class="mini-btn friend-menu-btn" data-menu="' + f.userId + '" data-name="' + esc(f.username) + '">⋮</button>' +
             '</span></div>';
@@ -669,11 +676,74 @@
             e.classList.toggle("dim", (h.wins + h.losses) === 0);
           });
         });
-        box.querySelectorAll("[data-play]").forEach(function (b) { b.onclick = function () { toast("Live multiplayer matches are coming soon!"); }; });
+        box.querySelectorAll("[data-play]").forEach(function (b) { b.onclick = function () { openInvitePopup(b, b.dataset.play, b.dataset.name); }; });
         box.querySelectorAll("[data-stats]").forEach(function (b) { b.onclick = function () { renderFriendStats(b.dataset.stats, b.dataset.name); }; });
         box.querySelectorAll("[data-menu]").forEach(function (b) { b.onclick = function (ev) { ev.stopPropagation(); openFriendMenu(b, b.dataset.menu, b.dataset.name); }; });
       });
     });
+  }
+
+  /* ----------------------------------------------- game invites (P5) ---- */
+  function poolLabel(p) { return p === "wc" ? "World Cup" : "Clubs"; }
+
+  function openInvitePopup(btn, userId, name) {
+    var ex = $("invite-pop"); if (ex) { ex.remove(); return; }
+    var m = el("div", "invite-pop"); m.id = "invite-pop";
+    m.innerHTML =
+      '<div class="ip-title">Challenge ' + esc(name) + "</div>" +
+      '<label class="ip-row"><span>Player pool</span>' +
+        '<select class="inp ip-sel" id="ip-pool"><option value="club">Clubs (1990–2026)</option><option value="wc">World Cup nations</option></select></label>' +
+      '<label class="ip-row"><span>Pro Mode</span><input type="checkbox" id="ip-pro" /></label>' +
+      '<div class="ip-mode">Mode: <b>Classic</b> · Tournament <span class="dim">soon</span></div>' +
+      '<button class="btn btn--kickoff btn--sm" id="ip-send">Send invite</button>';
+    document.body.appendChild(m);
+    var r = btn.getBoundingClientRect();
+    m.style.top = (r.bottom + 8) + "px";
+    m.style.left = Math.max(8, Math.min(r.left - 60, window.innerWidth - 250)) + "px";
+    $("ip-send").onclick = function () {
+      $("ip-send").disabled = true;
+      BE.invites.send(userId, { pool: $("ip-pool").value, pro: $("ip-pro").checked }).then(function () {
+        m.remove(); toast("Challenge sent to " + name + "!"); renderInvites();
+      }).catch(function (e) { toast((e && e.message) || "Couldn’t send invite."); $("ip-send").disabled = false; });
+    };
+    setTimeout(function () { document.addEventListener("click", function h(e) { if (!m.contains(e.target) && e.target !== btn) { m.remove(); document.removeEventListener("click", h); } }); }, 0);
+  }
+
+  function renderInvites() {
+    var box = $("game-invites"); if (!box) return;
+    BE.invites.mine().then(function (inv) {
+      function row(x, sent) {
+        return '<div class="friend-row invite-row" data-exp="' + x.expires_at + '">' +
+          '<div class="friend-id"><b>' + esc(x.username) + "</b><small>" + poolLabel(x.pool) + (x.pro ? " · Pro" : "") + ' · <span class="inv-cd">…</span></small></div>' +
+          '<span class="friend-acts">' + (sent
+            ? '<span class="dim" style="font-size:12px">Waiting…</span><button class="mini-btn" data-cancel-inv="' + x.id + '">Cancel</button>'
+            : '<button class="mini-btn ok" data-acc-inv="' + x.id + '">Accept</button><button class="mini-btn" data-dec-inv="' + x.id + '">Decline</button>') +
+          "</span></div>";
+      }
+      var html = "";
+      if (inv.incoming.length) html += '<div class="friend-sub-head">Incoming</div>' + inv.incoming.map(function (x) { return row(x, false); }).join("");
+      if (inv.outgoing.length) html += '<div class="friend-sub-head"' + (inv.incoming.length ? ' style="margin-top:12px"' : "") + ">Sent</div>" + inv.outgoing.map(function (x) { return row(x, true); }).join("");
+      box.innerHTML = html || '<div class="muted-line" style="text-align:left;padding:4px 2px">No invites. Hit <b>Challenge</b> on a friend to start a match.</div>';
+      box.querySelectorAll("[data-acc-inv]").forEach(function (b) { b.onclick = function () { b.disabled = true; BE.invites.accept(b.dataset.accInv).then(function () { onInviteAccepted(); }); }; });
+      box.querySelectorAll("[data-dec-inv]").forEach(function (b) { b.onclick = function () { b.disabled = true; BE.invites.decline(b.dataset.decInv).then(function () { renderInvites(); }); }; });
+      box.querySelectorAll("[data-cancel-inv]").forEach(function (b) { b.onclick = function () { b.disabled = true; BE.invites.cancel(b.dataset.cancelInv).then(function () { renderInvites(); }); }; });
+      updateInviteCountdowns();
+    }).catch(function () {});
+  }
+  function updateInviteCountdowns() {
+    var rows = document.querySelectorAll(".invite-row"); var expired = false;
+    rows.forEach(function (rw) {
+      var exp = new Date(rw.getAttribute("data-exp")).getTime();
+      var left = Math.max(0, Math.round((exp - Date.now()) / 1000));
+      var cd = rw.querySelector(".inv-cd"); if (cd) cd.textContent = left + "s";
+      if (left <= 0) expired = true;
+    });
+    if (expired && state.tab === "friends") renderInvites();
+  }
+  function onInviteAccepted() {
+    // Phase 6+ (match lobby) lands here next. For now confirm the handshake.
+    toast("Match accepted! The live match screen is coming next.");
+    renderInvites();
   }
 
   /* ------------------------------------------------ friend stats viewer -- */
