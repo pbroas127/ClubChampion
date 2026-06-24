@@ -433,30 +433,30 @@
     if (!state.user) { wrap.innerHTML = head + signInCard("Sign in to add friends."); wireSignInCard(); teardownFriendsRealtime(); return; }
 
     wrap.innerHTML = head +
-      // Card 1 — Game Invites (placeholder for now)
+      // Card 1 — Your Friends
+      '<div class="card" id="friend-list-card">' +
+        '<h3>Your Friends</h3>' +
+        '<div id="friend-list"><div class="muted-line" style="text-align:left">Loading…</div></div>' +
+      '</div>' +
+      // Card 2 — Game Invites (placeholder for now)
       '<div class="card"><h3>Game Invites</h3>' +
         '<div class="muted-line" style="text-align:left;padding:6px 2px">No invites yet — coming soon when you can challenge friends.</div>' +
       '</div>' +
-      // Card 2 — Add Friend
-      '<div class="card"><h3>➕ Add a Friend</h3>' +
+      // Card 3 — Add Friend
+      '<div class="card"><h3>Add a Friend</h3>' +
         '<div class="friend-add">' +
-          '<input class="inp" id="friend-search" placeholder="Friend’s username" maxlength="20" autocomplete="off" />' +
+          '<input class="inp" id="friend-search" placeholder="Friend's username" maxlength="20" autocomplete="off" />' +
           '<button class="btn btn--kickoff btn--sm" id="friend-add-btn">Add</button>' +
         '</div>' +
         '<div class="friend-msg" id="friend-msg"></div>' +
       '</div>' +
-      // Card 3 — Requests (Incoming + Sent)
+      // Card 4 — Requests (Incoming + Sent)
       '<div class="card" id="friend-requests-card">' +
         '<h3>Requests</h3>' +
         '<div class="friend-sub-head">Incoming</div>' +
         '<div id="friend-incoming"><div class="muted-line" style="text-align:left">Loading…</div></div>' +
         '<div class="friend-sub-head" style="margin-top:14px">Sent</div>' +
         '<div id="friend-outgoing"><div class="muted-line" style="text-align:left">Loading…</div></div>' +
-      '</div>' +
-      // Card 4 — Your Friends
-      '<div class="card" id="friend-list-card">' +
-        '<h3>Your Friends</h3>' +
-        '<div id="friend-list"><div class="muted-line" style="text-align:left">Loading…</div></div>' +
       '</div>';
 
     wireFriendsAdd();
