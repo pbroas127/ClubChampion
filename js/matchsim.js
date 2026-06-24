@@ -48,7 +48,7 @@
       var idxs = g[line], n = idxs.length;
       idxs.forEach(function (idx, k) {
         var x = xBase[line] + push[line] * phase;
-        var y = 0.16 + ((k + 1) / (n + 1)) * 0.68;
+        var y = 0.12 + ((k + 1) / (n + 1)) * 0.76;
         if (side === "B") x = 1 - x;
         out[idx] = { x: x, y: y };
       });
@@ -259,15 +259,16 @@
     if (!overlay && stage.appendChild) { overlay = document.createElement("div"); overlay.className = "goal-overlay"; stage.appendChild(overlay); }
 
     var W = 0, H = 0, dpr = Math.min(2, root.devicePixelRatio || 1);
+    var FL = 0, FR = 1, FT = 0, FB = 1;   // playing-field rect (grass + goals around it)
     function resize() {
       var rect = canvas.getBoundingClientRect();
       W = rect.width; H = rect.height;
       canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      FL = W * 0.075; FR = W * 0.925; FT = H * 0.07; FB = H * 0.93;  // leaves grass + goal depth
     }
-    var PAD = 14;
-    function px(x) { return PAD + x * (W - 2 * PAD); }
-    function py(y) { return PAD + y * (H - 2 * PAD); }
+    function px(x) { return FL + x * (FR - FL); }   // x may exceed [0,1] for the net
+    function py(y) { return FT + y * (FB - FT); }
     function adir(side) { return side === "A" ? 1 : -1; }
     function ownGoalX(side) { return side === "A" ? 0.04 : 0.96; }
 
@@ -291,15 +292,24 @@
     var ball = { x: 0.5, y: 0.5, p0: null, p1: null, p2: null, u: 1, len: 1, speed: 0.6, moving: false, dribble: false, dribT: 0, carrier: null };
     function speedFor(k) {
       switch (k) {
-        case "goal": case "shot": return 1.9;   // shots are fast
-        case "save": return 1.7;
-        case "cross": return 0.92;
-        case "corner": return 0.85;
-        case "pass": return 0.62;                // build-up, slow
-        case "dribble": return 0.24;             // carried
-        case "kickoff": case "foul": return 1.1;
-        default: return 0.78;                    // through balls
+        case "goal": return 1.45;                // driven into the net
+        case "shot": return 1.3;                 // shots are fastest in play
+        case "save": return 1.05;
+        case "cross": return 0.58;
+        case "corner": return 0.5;
+        case "pass": return 0.5;                 // build-up, slow
+        case "dribble": return 0.24;             // carried at the player's feet
+        case "kickoff": case "foul": return 0.7;
+        default: return 0.58;                    // through balls
       }
+    }
+    // The intended receiver of this beat (so passes land on a player, not in space).
+    function pickReceiver(b) {
+      if (/^(shot|goal|miss|post)$/.test(b.kind)) return null;          // a strike — no receiver
+      if (b.kind === "save") return playersOf(b.posSide === "A" ? "B" : "A").filter(function (p) { return p.ptype === "GK"; })[0] || null;
+      var pool = playersOf(b.posSide).filter(function (p) { return p.ptype !== "GK" && p !== ball.carrier; });
+      if (!pool.length) pool = playersOf(b.posSide);
+      return nearest(pool, b.ball);
     }
 
     var bi = -1, dwell = 0, celebrating = false, celebrateUntil = 0;
@@ -316,17 +326,20 @@
       if (b.kind === "kickoff") { initPlayers(true); ball.x = 0.5; ball.y = 0.5; ball.moving = false; ball.dribble = false; ball.carrier = null; dwell = 0.7; return; }
       if (b.kind === "fulltime") { ball.moving = false; ball.dribble = false; dwell = 1.2; return; }
       ball.carrier = (b.kind === "dribble") ? nearest(playersOf(b.posSide).filter(function (p) { return p.ptype !== "GK"; }), { x: ball.x, y: ball.y }) : null;
+      b._recv = (b.kind === "dribble") ? null : pickReceiver(b);
       startBall(b);
     }
 
     function startBall(b) {
       ball.p0 = { x: ball.x, y: ball.y };
-      ball.p2 = { x: b.ball.x, y: b.ball.y };
+      var tgt = { x: b.ball.x, y: b.ball.y };
+      if (b.kind === "goal") tgt = { x: b.posSide === "A" ? 1.04 : -0.04, y: clamp(b.ball.y, 0.44, 0.56) };  // into the net
+      ball.p2 = tgt;
       var dx = ball.p2.x - ball.p0.x, dy = ball.p2.y - ball.p0.y, len = Math.hypot(dx, dy) || 0.001;
-      var curve = b.kind === "cross" ? 0.12 : (b.kind === "shot" || b.kind === "goal") ? 0.05 : (len > 0.4 ? 0.07 : 0.015);
+      var curve = b.kind === "cross" ? 0.1 : (b.kind === "shot" || b.kind === "goal") ? 0.04 : (len > 0.4 ? 0.06 : 0.015);
       curve *= (((b.minute || 1) % 2) ? 1 : -1);   // alternate swerve so paths aren't all straight
       ball.p1 = { x: (ball.p0.x + ball.p2.x) / 2 - dy / len * curve, y: (ball.p0.y + ball.p2.y) / 2 + dx / len * curve };
-      ball.len = len; ball.speed = speedFor(b.kind); ball.u = 0; ball.dribT = 0;
+      ball.len = len; ball.speed = speedFor(b.kind); ball.u = 0; ball.dribT = 0; ball.t = 0;
       ball.dribble = (b.kind === "dribble"); ball.moving = !ball.dribble; dwell = 0;
     }
 
@@ -367,12 +380,20 @@
 
     function updateBall(dt) {
       var b = tl.beats[bi]; if (!b) return;
-      if (ball.dribble && ball.carrier) {                    // ball glued to the dribbler
-        ball.x = ball.carrier.pos.x; ball.y = ball.carrier.pos.y; ball.dribT += dt;
-        if ((d2({ x: ball.x, y: ball.y }, b.ball) < 0.0016 || ball.dribT > 2.2) && dwell <= 0) { ball.dribble = false; onArrive(); }
+      ball.t = (ball.t || 0) + dt;
+      if (ball.dribble && ball.carrier) {                    // ball at the dribbler's feet, just in front
+        var off = adir(b.posSide) * 0.022;
+        ball.x = ball.carrier.pos.x + off; ball.y = ball.carrier.pos.y;
+        if ((d2({ x: ball.carrier.pos.x, y: ball.y }, b.ball) < 0.0016 || ball.t > 2.4) && dwell <= 0) { ball.dribble = false; onArrive(); }
         return;
       }
-      if (ball.moving) {
+      if (ball.moving && b._recv) {                          // pass/cross: HOME onto the receiver so it lands on a player
+        var tg = b._recv.pos, dx = tg.x - ball.x, dy = tg.y - ball.y, d = Math.hypot(dx, dy) || 1e-4, step = ball.speed * dt;
+        if (d <= step + 0.02 || ball.t > 2.8) { ball.x = tg.x; ball.y = tg.y; ball.moving = false; onArrive(); }
+        else { ball.x += dx / d * step; ball.y += dy / d * step; }
+        return;
+      }
+      if (ball.moving) {                                     // strike toward a fixed point (shot/goal) along a slight arc
         ball.u += (ball.speed * dt) / ball.len;
         if (ball.u >= 1) { ball.u = 1; ball.moving = false; ball.x = ball.p2.x; ball.y = ball.p2.y; onArrive(); }
         else { var u = ball.u, iu = 1 - u; ball.x = iu * iu * ball.p0.x + 2 * iu * u * ball.p1.x + u * u * ball.p2.x; ball.y = iu * iu * ball.p0.y + 2 * iu * u * ball.p1.y + u * u * ball.p2.y; }
@@ -394,15 +415,16 @@
         }
         if (p.side === poss) {
           if (p === ball.carrier) return steer(p, b.ball.x, b.ball.y, 0.2, dt);
-          var ahead = p.ptype === "FWD" ? 0.22 : p.ptype === "MID" ? 0.05 : -0.20;
-          // hold a WIDTH lane (pos0.y) so the team spreads across the pitch instead of swarming the ball
-          return steer(p, clamp(ball.x + ahead * adir(poss), 0.1, 0.9), clamp(p.pos0.y * 0.82 + ball.y * 0.18, 0.08, 0.92), p.ptype === "FWD" ? 0.19 : 0.16, dt);
+          if (p === b._recv) return steer(p, b.ball.x, b.ball.y, 0.24, dt);   // run to receive the pass
+          var ahead = p.ptype === "FWD" ? 0.28 : p.ptype === "MID" ? 0.04 : -0.26;
+          // hold a wide lane (pos0.y), barely pulled to the ball, so the team really spreads out
+          return steer(p, clamp(ball.x + ahead * adir(poss), 0.08, 0.92), clamp(p.pos0.y * 0.9 + ball.y * 0.1, 0.06, 0.94), p.ptype === "FWD" ? 0.19 : 0.16, dt);
         }
         var rank = dfO.indexOf(p);
-        if (rank === 0) return steer(p, ball.x, ball.y, 0.28, dt);                          // presser closes the ball
+        if (rank === 0) return steer(p, ball.x, ball.y, 0.3, dt);                            // presser closes the ball
         if (rank === 1) return steer(p, (ball.x + ownGoalX(p.side)) / 2, ball.y, 0.22, dt);  // cover drops between ball & goal
-        var back = p.ptype === "DEF" ? 0.16 : 0.05;
-        return steer(p, clamp(ball.x - back * adir(p.side), 0.08, 0.92), clamp(p.pos0.y * 0.80 + ball.y * 0.20, 0.08, 0.92), 0.16, dt);
+        var back = p.ptype === "DEF" ? 0.24 : 0.1;                                           // hold a deeper, spread line
+        return steer(p, clamp(ball.x - back * adir(p.side), 0.06, 0.94), clamp(p.pos0.y * 0.9 + ball.y * 0.1, 0.06, 0.94), 0.16, dt);
       });
     }
 
@@ -438,25 +460,32 @@
     }
 
     function drawPitch() {
+      // grass everywhere (the surround = out of bounds)
       var g = ctx.createLinearGradient(0, 0, 0, H);
-      g.addColorStop(0, "#15512f"); g.addColorStop(1, "#0f3f25");
+      g.addColorStop(0, "#16542f"); g.addColorStop(1, "#103f24");
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-      // stripes
-      ctx.fillStyle = "rgba(255,255,255,.03)";
-      for (var s = 0; s < 8; s++) if (s % 2) ctx.fillRect(px(s / 8), 0, (W - 2 * PAD) / 8, H);
-      ctx.strokeStyle = "rgba(255,255,255,.25)"; ctx.lineWidth = 2;
-      ctx.strokeRect(px(0), py(0), W - 2 * PAD, H - 2 * PAD);
-      // halfway + circle
-      ctx.beginPath(); ctx.moveTo(px(0.5), py(0)); ctx.lineTo(px(0.5), py(1)); ctx.stroke();
-      ctx.beginPath(); ctx.arc(px(0.5), py(0.5), (H - 2 * PAD) * 0.13, 0, 7); ctx.stroke();
-      // boxes + goals
-      var bh = (H - 2 * PAD), bw = (W - 2 * PAD);
-      [[0, 1], [1, -1]].forEach(function (gg) {
-        var gx = px(gg[0]);
-        ctx.strokeRect(gx - (gg[0] === 0 ? 0 : bw * 0.16), py(0.28), bw * 0.16, bh * 0.44);
-        ctx.fillStyle = "rgba(255,255,255,.18)";
-        ctx.fillRect(gg[0] === 0 ? px(0) - 3 : px(1) - 1, py(0.4), 4, bh * 0.2);
+      var fw = FR - FL, fh = FB - FT;
+      // mowing stripes within the field
+      ctx.fillStyle = "rgba(255,255,255,.04)";
+      for (var s = 0; s < 10; s++) if (s % 2) ctx.fillRect(px(s / 10), FT, fw / 10, fh);
+      ctx.strokeStyle = "rgba(255,255,255,.75)"; ctx.lineWidth = 2;
+      ctx.strokeRect(FL, FT, fw, fh);                                   // boundary / touchlines
+      ctx.beginPath(); ctx.moveTo(px(0.5), FT); ctx.lineTo(px(0.5), FB); ctx.stroke();  // halfway
+      ctx.beginPath(); ctx.arc(px(0.5), py(0.5), fh * 0.13, 0, 7); ctx.stroke();         // centre circle
+      // penalty + 6-yard boxes
+      ctx.strokeRect(FL, py(0.26), fw * 0.13, fh * 0.48);
+      ctx.strokeRect(FR - fw * 0.13, py(0.26), fw * 0.13, fh * 0.48);
+      ctx.strokeRect(FL, py(0.38), fw * 0.05, fh * 0.24);
+      ctx.strokeRect(FR - fw * 0.05, py(0.38), fw * 0.05, fh * 0.24);
+      // corner arcs
+      [[FL, FT, 1, 1], [FR, FT, -1, 1], [FL, FB, 1, -1], [FR, FB, -1, -1]].forEach(function (c) {
+        ctx.beginPath(); ctx.arc(c[0], c[1], 7, 0, 7); ctx.stroke();
       });
+      // GOALS (drawn outside the touchlines so you can see the ball go IN)
+      var gd = Math.max(10, fw * 0.045), gy1 = py(0.42), gy2 = py(0.58);
+      ctx.fillStyle = "rgba(255,255,255,.16)"; ctx.lineWidth = 2.5; ctx.strokeStyle = "#fff";
+      ctx.fillRect(FL - gd, gy1, gd, gy2 - gy1); ctx.strokeRect(FL - gd, gy1, gd, gy2 - gy1);
+      ctx.fillRect(FR, gy1, gd, gy2 - gy1); ctx.strokeRect(FR, gy1, gd, gy2 - gy1);
     }
 
     function drawHud(beat) {

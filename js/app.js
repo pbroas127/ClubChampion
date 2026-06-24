@@ -129,16 +129,26 @@
           return BE.auth.signUpEmail(email, pass);
         }).then(function (r) {
           if (r.error) throw r.error;
-          // store desired username; profile row is created once a session exists
           state.pendingUsername = uname;
-          return BE.profile.setUsername(uname).catch(function () {});
-        }).then(function () {
-          toast("Account created!"); closeAuth();
-        }).catch(function (e) { showErr(e.message || "Sign-up failed."); $("auth-submit").disabled = false; });
+          if (r.data && r.data.session) {           // signed in immediately (email confirmation OFF)
+            return BE.profile.setUsername(uname).then(function () { toast("Welcome, " + uname + "!"); closeAuth(); });
+          }
+          // email confirmation is ON in Supabase — user can't log in until they confirm
+          showErr("Account made — but Supabase has ‘Confirm email’ ON, so check your inbox to confirm, then sign in. (Turn it off in Supabase → Auth for instant login.)");
+          $("auth-submit").disabled = false;
+        }).catch(function (e) {
+          var msg = (e && e.message) || "Sign-up failed.";
+          if (/already registered/i.test(msg)) msg = "That email already has an account — try Sign in instead.";
+          showErr(msg); $("auth-submit").disabled = false;
+        });
       } else {
         BE.auth.signInEmail(email, pass).then(function (r) {
           if (r.error) throw r.error; toast("Signed in!"); closeAuth();
-        }).catch(function (e) { showErr(e.message || "Sign-in failed."); $("auth-submit").disabled = false; });
+        }).catch(function (e) {
+          var msg = (e && e.message) || "Sign-in failed.";
+          if (/invalid login/i.test(msg)) msg = "Wrong email/password — or your email isn’t confirmed yet.";
+          showErr(msg); $("auth-submit").disabled = false;
+        });
       }
     }
     setMode(m);
