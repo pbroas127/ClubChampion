@@ -142,7 +142,7 @@
       function gkIdx(sd) { return groups[sd].GK[0]; }
 
       function finishGoal() {
-        var type = pick(rand, ["through", "through", "cross", "cross", "solo", "freekick", "penalty"]);
+        var type = pick(rand, ["through", "through", "cross", "cross", "cross", "solo", "solo"]);
         var scorer, assist = last;
         if (type === "cross") {
           var winger = pick(rand, g.MID.concat(g.FWD));
@@ -156,16 +156,6 @@
           add(minute, 340, posOf(side, scorer, 1), side, "dribble", null, false, { _carrier: scorer });
           st[scorer].touches++;
           add(minute, 340, goalMouth(side, rand, false), side, "goal", "GOAL! Solo finish!", true, { _scorerIdx: scorer });
-          assist = null;
-        } else if (type === "penalty") {
-          add(minute, 460, { x: side === "A" ? 0.85 : 0.15, y: 0.5 }, side, "foul", "Penalty!", false);
-          scorer = attacker(function (i) { return Math.pow(squads[side][i].r.at, 2); });
-          add(minute, 420, goalMouth(side, rand, false), side, "goal", "GOAL! From the spot.", true, { _scorerIdx: scorer });
-          assist = null;
-        } else if (type === "freekick") {
-          add(minute, 460, { x: side === "A" ? 0.78 : 0.22, y: 0.5 }, side, "foul", "Free-kick…", false);
-          scorer = attacker(function (i) { return Math.pow(squads[side][i].r.cr, 2); });
-          add(minute, 420, goalMouth(side, rand, false), side, "goal", "GOAL! Top corner!", true, { _scorerIdx: scorer });
           assist = null;
         } else {
           add(minute, 300, { x: side === "A" ? 0.7 : 0.3, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) }, side, "pass", null, false);
@@ -184,7 +174,7 @@
       }
 
       function finishNoGoal() {
-        var type = pick(rand, ["save", "save", "miss", "block", "corner", "tackle", "tackle", "post", "offside"]);
+        var type = pick(rand, ["save", "save", "miss", "block", "corner", "corner", "tackle", "tackle", "post"]);
         var shooter = attacker();
 
         if (type === "save") {
@@ -248,13 +238,6 @@
             add(minute, 0, { x: side === "A" ? 0.13 : 0.87, y: 0.5 }, def, "goalkickSetup", "Goal Kick", false);
             add(minute, 480, { x: side === "A" ? 0.45 : 0.55, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) }, def, "goalkick", null, false);
           }
-        } else if (type === "offside") {
-          var offX = side === "A" ? clamp(0.66 + (rand() - 0.5) * 0.08, 0.62, 0.74) :
-                                    clamp(0.34 + (rand() - 0.5) * 0.08, 0.26, 0.38);
-          var offY = clamp(0.5 + (rand() - 0.5) * 0.5, 0.18, 0.82);
-          add(minute, 300, { x: offX, y: offY }, side, "offside", "Offside", false);
-          st[shooter].touches++;
-          add(minute, 360, { x: side === "A" ? 0.30 : 0.70, y: offY }, def, "freekickRestart", null, false);
         } else {
           var tk = pick(rand, dg.DEF.concat(dg.MID));
           add(minute, 260, posOf(side, pick(rand, g.MID.concat(g.FWD)), 0.6), side, "dribble", null, false);
