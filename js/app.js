@@ -1,9 +1,5 @@
 /* ============================================================================
  * CLUB CHAMPION — App shell: navigation, accounts, Stats, Friends, Ranked
- * ----------------------------------------------------------------------------
- * Wraps the gameplay (ui.js) with a top nav and tabbed pages. Uses CC_BACKEND
- * (Supabase) when configured; otherwise everything still works offline —
- * seasons save to localStorage, and account-gated tabs prompt to sign in.
  * ==========================================================================*/
 (function (root) {
   "use strict";
@@ -15,7 +11,6 @@
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
   function toast(m) { if (root.CC_TOAST) root.CC_TOAST(m); }
 
-  /* ----------------------------------------------------------- nav ------ */
   function setTab(tab) {
     var prevTab = state.tab;
     state.tab = tab;
@@ -47,7 +42,6 @@
     else btn.innerHTML = "Sign in";
   }
 
-  /* --------------------------------------------------------- account menu */
   function toggleAccountMenu() {
     var existing = $("acc-menu");
     if (existing) { existing.remove(); return; }
@@ -68,7 +62,6 @@
     setTimeout(function () { document.addEventListener("click", function h(e) { if (!m.contains(e.target) && e.target.id !== "nav-account") { m.remove(); document.removeEventListener("click", h); } }); }, 0);
   }
 
-  /* ---------------------------------------------------- settings (P4) --- */
   function openSettings() {
     if (!state.user) return;
     var ov = el("div", "modal"); ov.id = "settings-modal";
@@ -105,12 +98,12 @@
       $("set-uname-btn").disabled = true; $("set-err").textContent = "";
       BE.profile.changeUsername(v).then(function () {
         toast("Username updated to " + v); if (state.profile) state.profile.username = v; refreshAccountButton(); ov.remove();
-      }).catch(function (e) { $("set-err").textContent = (e && e.message) || "Couldn’t change username."; $("set-uname-btn").disabled = false; });
+      }).catch(function (e) { $("set-err").textContent = (e && e.message) || "Couldn't change username."; $("set-uname-btn").disabled = false; });
     };
     $("set-pass").onclick = function () {
       var email = (state.user && state.user.email) || "";
       if (!email) { $("set-err").textContent = "No email on this account (signed in with Google?)."; return; }
-      BE.auth.resetPassword(email).then(function () { toast("Reset email sent to " + email); }).catch(function (e) { $("set-err").textContent = (e && e.message) || "Couldn’t send email."; });
+      BE.auth.resetPassword(email).then(function () { toast("Reset email sent to " + email); }).catch(function (e) { $("set-err").textContent = (e && e.message) || "Couldn't send email."; });
     };
     $("set-pro").onchange = function (e) {
       BE.profile.setProDefault(e.target.checked);
@@ -118,28 +111,27 @@
       if (root.CC_UI && root.CC_UI.setProDefault) root.CC_UI.setProDefault(e.target.checked);
     };
     $("set-wipe").onclick = function () {
-      if (confirm("Delete ALL your saved stats (every mode)? This can’t be undone.")) {
+      if (confirm("Delete ALL your saved stats (every mode)? This can't be undone.")) {
         BE.account.wipeStats().then(function () { toast("All stats wiped."); ov.remove(); if (state.tab === "stats") renderStats(); });
       }
     };
     $("set-delete").onclick = function () {
-      if (confirm("Permanently delete your account, stats, and friends? This can’t be undone.")) {
-        BE.account.deleteAccount().then(function () { toast("Account deleted."); ov.remove(); }).catch(function (e) { $("set-err").textContent = (e && e.message) || "Couldn’t delete account."; });
+      if (confirm("Permanently delete your account, stats, and friends? This can't be undone.")) {
+        BE.account.deleteAccount().then(function () { toast("Account deleted."); ov.remove(); }).catch(function (e) { $("set-err").textContent = (e && e.message) || "Couldn't delete account."; });
       }
     };
   }
 
-  /* ------------------------------------------------------- help (P4) ---- */
   function openHelp() {
     var faqs = [
       ["What is Club Champion?", "Spin a club &amp; an exact year (or a World Cup nation), draft a 7-player squad, and chase an unbeaten season or a knockout title."],
-      ["How are players rated?", "Each player has Attack, Creativity, Defence, Physical and Goalkeeping. Your squad’s totals run through a non-linear engine — one weak category caps your whole season."],
-      ["What is Pro Mode?", "Ratings are hidden during the draft so you pick on football knowledge alone. Player choices are ordered by position, not quality."],
-      ["What do the Swap buttons do?", "Swap Club/Nation rolls a different side (same year); Swap Year rolls a different year (same side). Tournaments give you 2 of each."],
+      ["How are players rated?", "Each player has Attack, Creativity, Defence, Physical and Goalkeeping. Your squad's totals run through a non-linear engine — one weak category caps your whole season."],
+      ["What is Pro Mode?", "Ratings are hidden during the draft so you pick on football knowledge alone."],
+      ["What do the Swap buttons do?", "Swap Club rolls a different side (same year); Swap Year rolls a different year (same side)."],
       ["How do UCL Climb &amp; World Cup work?", "Keep one drafted squad and win single-leg knockouts to advance. Opponents get tougher each round."],
-      ["Are my stats saved?", "Yes — when you’re signed in, every game is saved to your account and shown per mode in the Stats tab."],
-      ["How do friends work?", "Add players by username, accept requests, and see who’s online. Head-to-head and live matches are rolling out."],
-      ["Found a bug or a wrong rating?", "Ratings are subjective and for fun. Email us anything below and we’ll take a look."],
+      ["Are my stats saved?", "Yes — when you're signed in, every game is saved to your account and shown per mode in the Stats tab."],
+      ["How do friends work?", "Add players by username, accept requests, and see who's online. Head-to-head and live matches are rolling out."],
+      ["Found a bug or a wrong rating?", "Ratings are subjective and for fun. Email us anything below and we'll take a look."],
     ];
     var howto = [
       ["Season", "Solo. Draft a balanced XI and try to finish 38-0."],
@@ -166,7 +158,6 @@
     $("help-close").onclick = function () { ov.remove(); };
   }
 
-  /* ------------------------------------------------------- auth modal --- */
   function openAuth(mode) {
     if (!BE.configured) { toast("Accounts aren't set up yet (add Supabase keys)."); return; }
     closeAuth();
@@ -257,7 +248,6 @@
   }
   function closeAuth() { var a = $("auth-modal"); if (a) a.remove(); }
 
-  /* --------------------------------------------------- auth state sync -- */
   function onAuth(user) {
     state.user = user;
     if (!user) {
@@ -283,7 +273,6 @@
     });
   }
 
-  /* ----------------------------------------------------- presence (P2) -- */
   var heartbeatTimer = null;
   function startHeartbeat() {
     if (!BE.profile.heartbeat) return;
@@ -292,7 +281,7 @@
     heartbeatTimer = setInterval(function () { if (state.user) BE.profile.heartbeat(); }, 60000);
   }
   function stopHeartbeat() { if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; } }
-  // "online now" / "5m ago" / "2h ago" / "3d ago" from a last_seen timestamp.
+
   function presence(lastSeen) {
     if (!lastSeen) return { online: false, text: "offline" };
     var diff = Date.now() - new Date(lastSeen).getTime();
@@ -356,26 +345,17 @@
         if (!/^[a-z0-9_]+$/i.test(v)) { $("auth-err").textContent = "Letters, numbers, and underscores only."; return; }
         $("auth-err").textContent = "";
         $("auth-submit").disabled = true;
-
         BE.auth.getUser().then(function (currentUser) {
-          if (!currentUser) {
-            throw new Error("Session expired — please sign in again.");
-          }
+          if (!currentUser) throw new Error("Session expired — please sign in again.");
           state.user = currentUser;
           return BE.profile.available(v);
         }).then(function (ok) {
-          if (!ok) {
-            $("auth-err").textContent = "That username is taken — try another.";
-            $("auth-submit").disabled = false;
-            return null;
-          }
+          if (!ok) { $("auth-err").textContent = "That username is taken — try another."; $("auth-submit").disabled = false; return null; }
           return BE.profile.setUsername(v);
         }).then(function (r) {
           if (!r) return;
           if (r.error) throw r.error;
-          closeAuth();
-          onAuth(state.user);
-          toast("Welcome, " + v + "!");
+          closeAuth(); onAuth(state.user); toast("Welcome, " + v + "!");
         }).catch(function (e) {
           $("auth-err").textContent = (e && e.message) || "Couldn't save username.";
           $("auth-submit").disabled = false;
@@ -393,16 +373,11 @@
     input.value = tryName;
     status.className = "auth-uname-status"; status.textContent = "Checking…";
     BE.profile.available(tryName).then(function (ok) {
-      if (ok) {
-        status.textContent = "✓ available";
-        status.classList.add("ok");
-      } else {
-        findAvailableVariation(base, attempt + 1);
-      }
+      if (ok) { status.textContent = "✓ available"; status.classList.add("ok"); }
+      else findAvailableVariation(base, attempt + 1);
     });
   }
 
-  /* ----------------------------------------------------- seasons -------- */
   function recordSeason(R) {
     if (!state.user || !BE.configured) { toast("Sign in to save your stats"); return; }
     var ss = R.seasonStats || (UI && UI.seasonStatsFor ? UI.seasonStatsFor(R.squad, R.you, 1) : null);
@@ -444,7 +419,6 @@
     })[0] || null;
   }
 
-  /* -------------------------------------------------------- STATS tab --- */
   var statsSub = "solo", statsData = null;
   var STATS_TABS = [["solo", "🏆 Season"], ["cpu", "🆚 vs CPU"], ["ucl", "⭐ UCL"], ["wc", "🌍 World Cup"]];
 
@@ -526,16 +500,11 @@
       '<div class="stat-list stat-list--full" style="margin-top:12px">' + rows + "</div></div>";
   }
 
-  /* ------------------------------------------------------- FRIENDS tab -- */
   var friendsChannel = null, invitesChannel = null, inviteTick = null;
 
   function teardownFriendsRealtime() {
-    if (friendsChannel && BE.friends && BE.friends.unsubscribe) {
-      BE.friends.unsubscribe(friendsChannel); friendsChannel = null;
-    }
-    if (invitesChannel && BE.invites && BE.invites.unsubscribe) {
-      BE.invites.unsubscribe(invitesChannel); invitesChannel = null;
-    }
+    if (friendsChannel && BE.friends && BE.friends.unsubscribe) { BE.friends.unsubscribe(friendsChannel); friendsChannel = null; }
+    if (invitesChannel && BE.invites && BE.invites.unsubscribe) { BE.invites.unsubscribe(invitesChannel); invitesChannel = null; }
     if (inviteTick) { clearInterval(inviteTick); inviteTick = null; }
   }
 
@@ -546,31 +515,21 @@
     if (!state.user) { wrap.innerHTML = head + signInCard("Sign in to add friends."); wireSignInCard(); teardownFriendsRealtime(); return; }
 
     wrap.innerHTML = head +
-      // Card 1 — Your Friends
-      '<div class="card" id="friend-list-card">' +
-        '<h3>Your Friends</h3>' +
-        '<div id="friend-list"><div class="muted-line" style="text-align:left">Loading…</div></div>' +
-      '</div>' +
-      // Card 2 — Game Invites (live)
+      '<div class="card" id="friend-list-card"><h3>Your Friends</h3>' +
+        '<div id="friend-list"><div class="muted-line" style="text-align:left">Loading…</div></div></div>' +
       '<div class="card" id="game-invites-card"><h3>Game Invites</h3>' +
-        '<div id="game-invites"><div class="muted-line" style="text-align:left;padding:4px 2px">Loading…</div></div>' +
-      '</div>' +
-      // Card 3 — Add Friend
+        '<div id="game-invites"><div class="muted-line" style="text-align:left;padding:4px 2px">Loading…</div></div></div>' +
       '<div class="card"><h3>Add a Friend</h3>' +
         '<div class="friend-add">' +
           '<input class="inp" id="friend-search" placeholder="Friend\'s username" maxlength="20" autocomplete="off" />' +
           '<button class="btn btn--kickoff btn--sm" id="friend-add-btn">Add</button>' +
         '</div>' +
-        '<div class="friend-msg" id="friend-msg"></div>' +
-      '</div>' +
-      // Card 4 — Requests (Incoming + Sent)
-      '<div class="card" id="friend-requests-card">' +
-        '<h3>Requests</h3>' +
+        '<div class="friend-msg" id="friend-msg"></div></div>' +
+      '<div class="card" id="friend-requests-card"><h3>Requests</h3>' +
         '<div class="friend-sub-head">Incoming</div>' +
         '<div id="friend-incoming"><div class="muted-line" style="text-align:left">Loading…</div></div>' +
         '<div class="friend-sub-head" style="margin-top:14px">Sent</div>' +
-        '<div id="friend-outgoing"><div class="muted-line" style="text-align:left">Loading…</div></div>' +
-      '</div>';
+        '<div id="friend-outgoing"><div class="muted-line" style="text-align:left">Loading…</div></div></div>';
 
     wireFriendsAdd();
     loadFriendsData();
@@ -583,7 +542,6 @@
     if (BE.invites && BE.invites.subscribe) {
       invitesChannel = BE.invites.subscribe(function () { if (state.tab === "friends") renderInvites(); });
     }
-    // re-render invite cards once a second to drive the countdowns
     inviteTick = setInterval(function () { if (state.tab === "friends") updateInviteCountdowns(); }, 1000);
   }
 
@@ -613,24 +571,15 @@
       var box = $("friend-incoming"); if (!box) return;
       if (!reqs.length) { box.innerHTML = '<div class="muted-line" style="text-align:left">No pending requests.</div>'; return; }
       box.innerHTML = reqs.map(function (r) {
-        return '<div class="friend-row">' +
-          '<b>' + esc(r.username) + '</b>' +
-          '<span>' +
-            '<button class="mini-btn ok" data-acc="' + r.id + '">Accept</button>' +
-            '<button class="mini-btn" data-dec="' + r.id + '">Decline</button>' +
-          '</span></div>';
+        return '<div class="friend-row"><b>' + esc(r.username) + '</b><span>' +
+          '<button class="mini-btn ok" data-acc="' + r.id + '">Accept</button>' +
+          '<button class="mini-btn" data-dec="' + r.id + '">Decline</button></span></div>';
       }).join("");
       box.querySelectorAll("[data-acc]").forEach(function (b) {
-        b.onclick = function () {
-          b.disabled = true;
-          BE.friends.accept(b.dataset.acc).then(function () { loadFriendsData(); });
-        };
+        b.onclick = function () { b.disabled = true; BE.friends.accept(b.dataset.acc).then(function () { loadFriendsData(); }); };
       });
       box.querySelectorAll("[data-dec]").forEach(function (b) {
-        b.onclick = function () {
-          b.disabled = true;
-          BE.friends.decline(b.dataset.dec).then(function () { loadFriendsData(); });
-        };
+        b.onclick = function () { b.disabled = true; BE.friends.decline(b.dataset.dec).then(function () { loadFriendsData(); }); };
       });
     });
 
@@ -638,17 +587,12 @@
       var box = $("friend-outgoing"); if (!box) return;
       if (!reqs.length) { box.innerHTML = '<div class="muted-line" style="text-align:left">No requests sent.</div>'; return; }
       box.innerHTML = reqs.map(function (r) {
-        return '<div class="friend-row">' +
-          '<b>' + esc(r.username) + '</b>' +
+        return '<div class="friend-row"><b>' + esc(r.username) + '</b>' +
           '<span><span class="dim" style="font-size:12px">Pending</span>' +
-            '<button class="mini-btn" data-cancel="' + r.id + '">Cancel</button>' +
-          '</span></div>';
+          '<button class="mini-btn" data-cancel="' + r.id + '">Cancel</button></span></div>';
       }).join("");
       box.querySelectorAll("[data-cancel]").forEach(function (b) {
-        b.onclick = function () {
-          b.disabled = true;
-          BE.friends.cancelRequest(b.dataset.cancel).then(function () { loadFriendsData(); });
-        };
+        b.onclick = function () { b.disabled = true; BE.friends.cancelRequest(b.dataset.cancel).then(function () { loadFriendsData(); }); };
       });
     });
 
@@ -683,7 +627,6 @@
     });
   }
 
-  /* ----------------------------------------------- game invites (P5) ---- */
   function poolLabel(p) { return p === "wc" ? "World Cup" : "Clubs"; }
 
   function openInvitePopup(btn, userId, name) {
@@ -704,7 +647,7 @@
       $("ip-send").disabled = true;
       BE.invites.send(userId, { pool: $("ip-pool").value, pro: $("ip-pro").checked }).then(function () {
         m.remove(); toast("Challenge sent to " + name + "!"); renderInvites();
-      }).catch(function (e) { toast((e && e.message) || "Couldn’t send invite."); $("ip-send").disabled = false; });
+      }).catch(function (e) { toast((e && e.message) || "Couldn't send invite."); $("ip-send").disabled = false; });
     };
     setTimeout(function () { document.addEventListener("click", function h(e) { if (!m.contains(e.target) && e.target !== btn) { m.remove(); document.removeEventListener("click", h); } }); }, 0);
   }
@@ -724,12 +667,18 @@
       if (inv.incoming.length) html += '<div class="friend-sub-head">Incoming</div>' + inv.incoming.map(function (x) { return row(x, false); }).join("");
       if (inv.outgoing.length) html += '<div class="friend-sub-head"' + (inv.incoming.length ? ' style="margin-top:12px"' : "") + ">Sent</div>" + inv.outgoing.map(function (x) { return row(x, true); }).join("");
       box.innerHTML = html || '<div class="muted-line" style="text-align:left;padding:4px 2px">No invites. Hit <b>Challenge</b> on a friend to start a match.</div>';
-      box.querySelectorAll("[data-acc-inv]").forEach(function (b) { b.onclick = function () { b.disabled = true; BE.invites.accept(b.dataset.accInv).then(function () { onInviteAccepted(); }); }; });
+      box.querySelectorAll("[data-acc-inv]").forEach(function (b) {
+        b.onclick = function () {
+          b.disabled = true;
+          BE.invites.accept(b.dataset.accInv).then(function (r) { onInviteAccepted(r && r.data); });
+        };
+      });
       box.querySelectorAll("[data-dec-inv]").forEach(function (b) { b.onclick = function () { b.disabled = true; BE.invites.decline(b.dataset.decInv).then(function () { renderInvites(); }); }; });
       box.querySelectorAll("[data-cancel-inv]").forEach(function (b) { b.onclick = function () { b.disabled = true; BE.invites.cancel(b.dataset.cancelInv).then(function () { renderInvites(); }); }; });
       updateInviteCountdowns();
     }).catch(function () {});
   }
+
   function updateInviteCountdowns() {
     var rows = document.querySelectorAll(".invite-row"); var expired = false;
     rows.forEach(function (rw) {
@@ -740,18 +689,27 @@
     });
     if (expired && state.tab === "friends") renderInvites();
   }
-  function onInviteAccepted() {
-    // Phase 6+ (match lobby) lands here next. For now confirm the handshake.
-    toast("Match accepted! The live match screen is coming next.");
-    renderInvites();
+
+  function onInviteAccepted(inviteRow) {
+    if (!inviteRow) { setTimeout(function () { tryEnterLobby(); }, 400); return; }
+    BE.lobby.createFromInvite(inviteRow).then(function (r) {
+      if (r && r.data) enterLobby(r.data.id, true);
+      else tryEnterLobby();
+    }).catch(function () { tryEnterLobby(); });
   }
 
-  /* ------------------------------------------------ friend stats viewer -- */
+  function tryEnterLobby() {
+    BE.lobby.mine().then(function (lobbyRow) {
+      if (lobbyRow) enterLobby(lobbyRow.id, lobbyRow.host === state.user.id);
+      else toast("Couldn't find match lobby — try again.");
+    });
+  }
+
   function renderFriendStats(userId, name) {
     var wrap = $("screen-friends"); if (!wrap) return;
     teardownFriendsRealtime();
     wrap.innerHTML = '<div class="page-head"><button class="link-btn" id="fs-back" style="margin:0 0 10px">← Back to Friends</button>' +
-      "<h2>" + esc(name) + "’s Stats</h2><p>Their best run in each mode.</p></div>" +
+      "<h2>" + esc(name) + "'s Stats</h2><p>Their best run in each mode.</p></div>" +
       '<div id="fs-body" class="muted-line">Loading…</div>';
     $("fs-back").onclick = function () { renderFriends(); };
     BE.data.userSeasons(userId).then(function (seasons) {
@@ -764,11 +722,10 @@
       if (by.wc.length) html += '<h3 class="fs-sec">🌍 World Cup</h3>' + runCard(bestRun(by.wc));
       var body = $("fs-body"); if (!body) return;
       body.className = "";
-      body.innerHTML = html || emptyMini("📊", esc(name) + " hasn’t played any tracked games yet.");
+      body.innerHTML = html || emptyMini("📊", esc(name) + " hasn't played any tracked games yet.");
     });
   }
 
-  /* --------------------------------------------------- friend ⋮ menu ----- */
   function openFriendMenu(btn, userId, name) {
     var ex = $("friend-pop"); if (ex) { ex.remove(); return; }
     var m = el("div", "acc-menu"); m.id = "friend-pop";
@@ -803,40 +760,11 @@
       $("rep-submit").disabled = true;
       BE.friends.report(userId, $("rep-reason").value, $("rep-comment").value.trim()).then(function () {
         ov.remove(); toast("Report submitted. Thank you.");
-      }).catch(function (e) { $("rep-err").textContent = (e && e.message) || "Couldn’t submit report."; $("rep-submit").disabled = false; });
+      }).catch(function (e) { $("rep-err").textContent = (e && e.message) || "Couldn't submit report."; $("rep-submit").disabled = false; });
     };
   }
 
-  /* -------------------------------------------------------- RANKED tab -- */
   function renderRanked() {
     var wrap = $("screen-ranked"); if (!wrap) return;
     wrap.innerHTML =
-      '<div class="page-head"><h2>Ranked <span class="tag-soon">COMING SOON</span></h2><p>Climb the ladder against real managers.</p></div>' +
-      '<div class="card ranked-teaser">' +
-        '<div class="ranked-badge">🏅</div>' +
-        '<h3>Draft. Watch. Climb.</h3>' +
-        '<p>Ranked mode will match you against other players\' saved squads. Draft your XI, watch the match play out, and win <b>ELO</b> based on the result, your goal difference, and your season record. Lose and you\'ll drop — every placement counts.</p>' +
-        '<ul class="ranked-list"><li>Seeded matchmaking by rating</li><li>Seasonal divisions &amp; leaderboards</li><li>ELO rewards for unbeaten runs</li></ul>' +
-        '<div class="ranked-cta">In the works — check back soon.</div>' +
-      "</div>";
-  }
-
-  /* --------------------------------------------------------- helpers ---- */
-  function emptyCard(t, sub) { return '<div class="card empty-card"><div class="empty-emoji">⚽</div><h3>' + t + "</h3><p>" + sub + "</p></div>"; }
-  function signInCard(t) { return '<div class="card empty-card"><div class="empty-emoji">🔒</div><h3>' + t + '</h3><button class="btn btn--kickoff btn--sm" id="signin-cta" style="max-width:200px;margin:14px auto 0">Sign in</button></div>'; }
-  function wireSignInCard() { var b = $("signin-cta"); if (b) b.onclick = function () { openAuth("in"); }; }
-
-  /* ----------------------------------------------------------- init ----- */
-  function init() {
-    UI = root.CC_UI;
-    if (!BE) { BE = root.CC_BACKEND || { configured: false, auth: {}, profile: {}, data: {}, friends: {} }; }
-    wireNav();
-    refreshAccountButton();
-    if (BE.configured) {
-      BE.auth.onChange(onAuth);
-      BE.auth.getUser().then(function (u) { if (u) onAuth(u); });
-    }
-  }
-
-  root.CC_APP = { init: init, onScreen: onScreen, recordSeason: recordSeason, recordRun: recordRun, openAuth: openAuth, setTab: setTab };
-})(window);
+      '<div class="page-head"><h2>Ranked <span class="tag-soon">COMING SOON</span
