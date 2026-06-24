@@ -26,7 +26,6 @@
 
   function byPos(squad) { var g = { GK: [], DEF: [], MID: [], FWD: [] }; squad.forEach(function (p, i) { g[p.pos].push(i); }); return g; }
 
-  // Balanced spread — not edge-hugging, not bunched.
   function layout(squad, side, phase) {
     var g = byPos(squad), out = new Array(squad.length);
     var xBase  = { GK: 0.06, DEF: 0.23, MID: 0.46, FWD: 0.70 };
@@ -76,15 +75,18 @@
       var spread = wide ? 0.34 : 0.12;
       return { x: x, y: clamp(0.5 + (rand() - 0.5) * spread, 0.12, 0.88) };
     }
-    function add(minute, dur, ball, posSide, kind, label, flash) {
-      beats.push({ minute: minute, dur: dur, ball: { x: ball.x, y: ball.y }, posSide: posSide,
-        kind: kind, label: label, flash: !!flash, scoreA: score.A, scoreB: score.B });
+    function add(minute, dur, ball, posSide, kind, label, flash, extra) {
+      var b = { minute: minute, dur: dur, ball: { x: ball.x, y: ball.y }, posSide: posSide,
+        kind: kind, label: label, flash: !!flash, scoreA: score.A, scoreB: score.B };
+      if (extra) for (var k in extra) b[k] = extra[k];
+      beats.push(b);
+      return b;
     }
 
-    add(0, 600, { x: 0.5, y: 0.5 }, "A", "kickoff", "Kick-off at " + (result.stadium || "the stadium") + "!", false);
+    add(0, 600, { x: 0.5, y: 0.5 }, "A", "kickoff", "Kick-off!", false);
 
-    var nPoss = ri(rand, 20, 26);
-    var minutes = []; for (var i = 0; i < nPoss; i++) minutes.push(ri(rand, 2, 89));
+    var nPoss = ri(rand, 14, 18);
+    var minutes = []; for (var i = 0; i < nPoss; i++) minutes.push(ri(rand, 3, 88));
     minutes.sort(function (a, b) { return a - b; });
     var pA = atkA / (atkA + atkB);
     var sides = minutes.map(function () { return rand() < pA ? "A" : "B"; });
@@ -104,7 +106,7 @@
       buildPossession(side, !!goalAssign[pIdx], minutes[pIdx]);
     }
 
-    add(90, 1000, { x: 0.5, y: 0.5 }, "A", "fulltime", "Full time", false);
+    add(90, 900, { x: 0.5, y: 0.5 }, "A", "fulltime", "Full Time", false);
 
     ["A", "B"].forEach(function (sd) {
       var won = (sd === "A" && result.winner === "A") || (sd === "B" && result.winner === "B");
@@ -121,13 +123,13 @@
       var g = groups[side], dg = groups[def];
       var st = stats[side], dst = stats[def];
 
-      var nPass = ri(rand, 1, 3);
+      var nPass = ri(rand, 1, 2);
       var carriers = shuffle(g.DEF.concat(g.MID), rand);
       var last = null;
       for (var k = 0; k < nPass; k++) {
         var who = carriers[k % carriers.length];
         var pp = posOf(side, who, 0.2 + 0.2 * k);
-        add(minute, ri(rand, 320, 460), pp, side, "pass", null, false);
+        add(minute, ri(rand, 280, 380), pp, side, "pass", null, false);
         st[who].touches++; st[who].passes++; last = who;
       }
 
@@ -144,31 +146,31 @@
         var scorer, assist = last;
         if (type === "cross") {
           var winger = pick(rand, g.MID.concat(g.FWD));
-          add(minute, 360, posOf(side, winger, 1), side, "pass", "Out to the wing…", false);
+          add(minute, 320, posOf(side, winger, 1), side, "pass", null, false);
           st[winger].touches++; st[winger].passes++; assist = winger;
-          add(minute, 340, { x: side === "A" ? 0.86 : 0.14, y: 0.84 }, side, "cross", "Whipped in…", false);
           scorer = attacker(function (i) { return Math.pow(squads[side][i].r.ph, 2) * (squads[side][i].pos === "FWD" ? 2 : 1); });
-          add(minute, 380, goalMouth(side, rand, false), side, "goal", headerOrFinish(true), true);
+          add(minute, 320, { x: side === "A" ? 0.86 : 0.14, y: 0.84 }, side, "cross", null, false, { _crosser: winger });
+          add(minute, 360, goalMouth(side, rand, false), side, "goal", headerOrFinish(true), true, { _scorerIdx: scorer });
         } else if (type === "solo") {
           scorer = attacker(function (i) { return Math.pow(squads[side][i].r.at, 2.2); });
-          add(minute, 360, posOf(side, scorer, 1), side, "dribble", "Jinks past one…", false);
+          add(minute, 340, posOf(side, scorer, 1), side, "dribble", null, false, { _carrier: scorer });
           st[scorer].touches++;
-          add(minute, 360, goalMouth(side, rand, false), side, "goal", "GOAL! A brilliant solo finish!", true);
+          add(minute, 340, goalMouth(side, rand, false), side, "goal", "GOAL! Solo finish!", true, { _scorerIdx: scorer });
           assist = null;
         } else if (type === "penalty") {
-          add(minute, 500, { x: side === "A" ? 0.85 : 0.15, y: 0.5 }, side, "foul", "Penalty given!", false);
+          add(minute, 460, { x: side === "A" ? 0.85 : 0.15, y: 0.5 }, side, "foul", "Penalty!", false);
           scorer = attacker(function (i) { return Math.pow(squads[side][i].r.at, 2); });
-          add(minute, 460, goalMouth(side, rand, false), side, "goal", "GOAL! Tucked away from the spot.", true);
+          add(minute, 420, goalMouth(side, rand, false), side, "goal", "GOAL! From the spot.", true, { _scorerIdx: scorer });
           assist = null;
         } else if (type === "freekick") {
-          add(minute, 500, { x: side === "A" ? 0.78 : 0.22, y: 0.5 }, side, "foul", "Free-kick in a dangerous spot…", false);
+          add(minute, 460, { x: side === "A" ? 0.78 : 0.22, y: 0.5 }, side, "foul", "Free-kick…", false);
           scorer = attacker(function (i) { return Math.pow(squads[side][i].r.cr, 2); });
-          add(minute, 440, goalMouth(side, rand, false), side, "goal", "GOAL! Curled into the top corner!", true);
+          add(minute, 420, goalMouth(side, rand, false), side, "goal", "GOAL! Top corner!", true, { _scorerIdx: scorer });
           assist = null;
         } else {
-          add(minute, 320, { x: side === "A" ? 0.7 : 0.3, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) }, side, "pass", "Threaded through!", false);
+          add(minute, 300, { x: side === "A" ? 0.7 : 0.3, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) }, side, "pass", null, false);
           scorer = attacker();
-          add(minute, 360, goalMouth(side, rand, false), side, "goal", "GOAL! Clinical finish!", true);
+          add(minute, 340, goalMouth(side, rand, false), side, "goal", "GOAL! Clinical finish!", true, { _scorerIdx: scorer });
         }
         score[side]++;
         st[scorer].touches++; st[scorer].shots++; st[scorer].goals++;
@@ -178,7 +180,7 @@
       }
 
       function headerOrFinish(goal) {
-        return goal ? pick(rand, ["GOAL! Towering header!", "GOAL! Headed home at the back post!", "GOAL! Tap-in from the cross!"]) : "Header just wide.";
+        return goal ? pick(rand, ["GOAL! Towering header!", "GOAL! Headed home!", "GOAL! Tap-in!"]) : null;
       }
 
       function finishNoGoal() {
@@ -186,88 +188,77 @@
         var shooter = attacker();
 
         if (type === "save") {
-          add(minute, 300, posOf(side, shooter, 1), side, "shot", "Shot!", false);
+          add(minute, 280, posOf(side, shooter, 1), side, "shot", null, false, { _shooterIdx: shooter });
           st[shooter].touches++; st[shooter].shots++;
           var caught = rand() < 0.55;
-          add(minute, 360, goalMouth(side, rand, false), side, "save",
-              pick(rand, ["Great save!", "Tipped over!", "Keeper holds it."]), false);
+          add(minute, 340, goalMouth(side, rand, false), side, "save", "Great save!", false);
           dst[gkIdx(def)].saves++;
           if (!caught) {
-            var rebX = side === "A" ? 0.78 : 0.22;
-            var rebY = clamp(0.5 + (rand() - 0.5) * 0.4, 0.25, 0.75);
-            add(minute, 380, { x: rebX, y: rebY }, def, "parry", "Parried clear!", false);
+            add(minute, 360, { x: side === "A" ? 0.78 : 0.22, y: clamp(0.5 + (rand() - 0.5) * 0.4, 0.25, 0.75) }, def, "parry", null, false);
           } else {
-            add(minute, 420, { x: side === "A" ? 0.32 : 0.68, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) },
-              def, "goalkick", null, false);
+            add(minute, 0, { x: side === "A" ? 0.13 : 0.87, y: 0.5 }, def, "goalkickSetup", "Goal Kick", false);
+            add(minute, 480, { x: side === "A" ? 0.45 : 0.55, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) }, def, "goalkick", null, false);
           }
         } else if (type === "miss") {
-          add(minute, 300, posOf(side, shooter, 1), side, "shot", "Shoots…", false);
+          add(minute, 280, posOf(side, shooter, 1), side, "shot", null, false, { _shooterIdx: shooter });
           st[shooter].touches++; st[shooter].shots++;
           var wideTop = rand() < 0.5;
-          var missY = wideTop ? 0.18 : 0.82;
-          var outX = side === "A" ? 1.02 : -0.02;
-          add(minute, 380, { x: outX, y: missY }, side, "miss",
-              pick(rand, ["Just wide!", "Over the bar!", "Inches off target."]), false);
-          add(minute, 460, { x: side === "A" ? 0.32 : 0.68, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) },
-            def, "goalkick", null, false);
+          add(minute, 360, { x: side === "A" ? 1.02 : -0.02, y: wideTop ? 0.18 : 0.82 }, side, "miss", null, false);
+          add(minute, 0, { x: side === "A" ? 0.13 : 0.87, y: 0.5 }, def, "goalkickSetup", "Goal Kick", false);
+          add(minute, 480, { x: side === "A" ? 0.45 : 0.55, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) }, def, "goalkick", null, false);
         } else if (type === "post") {
-          add(minute, 300, posOf(side, shooter, 1), side, "shot", "Lets fly…", false);
+          add(minute, 280, posOf(side, shooter, 1), side, "shot", null, false, { _shooterIdx: shooter });
           st[shooter].touches++; st[shooter].shots++;
           var hitTop = rand() < 0.5;
-          var postY = hitTop ? 0.42 : 0.58;
-          var postX = side === "A" ? 0.985 : 0.015;
-          add(minute, 280, { x: postX, y: postY }, side, "postHit", "OFF THE POST!", false);
+          add(minute, 260, { x: side === "A" ? 0.985 : 0.015, y: hitTop ? 0.42 : 0.58 }, side, "postHit", "Off the post!", false);
           if (rand() < 0.5) {
-            var cornerX = side === "A" ? 1.01 : -0.01;
-            var cornerY = hitTop ? 0.04 : 0.96;
-            add(minute, 360, { x: cornerX, y: cornerY }, side, "postBounce", "Out for a corner!", false);
-            add(minute, 460, { x: side === "A" ? 0.985 : 0.015, y: hitTop ? 0.06 : 0.94 },
-              side, "corner", "Corner kick…", false);
+            add(minute, 320, { x: side === "A" ? 1.01 : -0.01, y: hitTop ? 0.04 : 0.96 }, side, "postBounce", null, false);
+            add(minute, 0, { x: side === "A" ? 0.985 : 0.015, y: hitTop ? 0.06 : 0.94 }, side, "cornerSetup", "Corner Kick", false);
+            add(minute, 420, { x: side === "A" ? 0.985 : 0.015, y: hitTop ? 0.06 : 0.94 }, side, "corner", null, false);
             var head = attacker(function (i) { return squads[side][i].r.ph; });
             var res = pick(rand, ["save", "miss", "miss"]);
-            add(minute, 380, res === "save" ? goalMouth(side, rand, false) : goalMouth(side, rand, true),
+            add(minute, 340, res === "save" ? goalMouth(side, rand, false) : goalMouth(side, rand, true),
               side, res === "save" ? "save" : "miss",
-              res === "save" ? "Header saved!" : "Header off target.", false);
+              res === "save" ? "Header saved!" : null, false, { _shooterIdx: head });
             st[head].touches++; st[head].shots++;
             if (res === "save") dst[gkIdx(def)].saves++;
             else {
-              add(minute, 420, { x: side === "A" ? 0.32 : 0.68, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) },
-                def, "goalkick", null, false);
+              add(minute, 0, { x: side === "A" ? 0.13 : 0.87, y: 0.5 }, def, "goalkickSetup", "Goal Kick", false);
+              add(minute, 480, { x: side === "A" ? 0.45 : 0.55, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) }, def, "goalkick", null, false);
             }
           } else {
-            var bounceY = hitTop ? 0.30 : 0.70;
-            var bounceX = side === "A" ? 0.80 : 0.20;
-            add(minute, 360, { x: bounceX, y: bounceY }, def, "postBounce", "Back into play!", false);
+            add(minute, 340, { x: side === "A" ? 0.80 : 0.20, y: hitTop ? 0.30 : 0.70 }, def, "postBounce", null, false);
           }
         } else if (type === "block") {
-          add(minute, 300, posOf(side, shooter, 1), side, "shot", "Shot blocked!", false);
+          add(minute, 280, posOf(side, shooter, 1), side, "shot", null, false, { _shooterIdx: shooter });
           st[shooter].touches++; st[shooter].shots++;
           var blk = pick(rand, dg.DEF); dst[blk].tackles++;
-          add(minute, 320, posOf(def, blk, 0.2), def, "blockOut", null, false);
+          add(minute, 300, posOf(def, blk, 0.2), def, "blockOut", null, false);
         } else if (type === "corner") {
-          add(minute, 440, { x: side === "A" ? 0.985 : 0.015, y: 0.04 }, side, "corner", "Corner kick…", false);
+          add(minute, 0, { x: side === "A" ? 0.985 : 0.015, y: 0.05 }, side, "cornerSetup", "Corner Kick", false);
+          add(minute, 420, { x: side === "A" ? 0.985 : 0.015, y: 0.05 }, side, "corner", null, false);
           var head2 = attacker(function (i) { return squads[side][i].r.ph; });
           var res2 = pick(rand, ["save", "miss", "miss"]);
-          add(minute, 380, res2 === "save" ? goalMouth(side, rand, false) : goalMouth(side, rand, true),
+          add(minute, 340, res2 === "save" ? goalMouth(side, rand, false) : goalMouth(side, rand, true),
             side, res2 === "save" ? "save" : "miss",
-            res2 === "save" ? "Header saved!" : "Header off target.", false);
+            res2 === "save" ? "Header saved!" : null, false, { _shooterIdx: head2 });
           st[head2].touches++; st[head2].shots++;
           if (res2 === "save") dst[gkIdx(def)].saves++;
           else {
-            add(minute, 420, { x: side === "A" ? 0.32 : 0.68, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) },
-              def, "goalkick", null, false);
+            add(minute, 0, { x: side === "A" ? 0.13 : 0.87, y: 0.5 }, def, "goalkickSetup", "Goal Kick", false);
+            add(minute, 480, { x: side === "A" ? 0.45 : 0.55, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) }, def, "goalkick", null, false);
           }
         } else if (type === "offside") {
           var offX = side === "A" ? clamp(0.66 + (rand() - 0.5) * 0.08, 0.62, 0.74) :
                                     clamp(0.34 + (rand() - 0.5) * 0.08, 0.26, 0.38);
           var offY = clamp(0.5 + (rand() - 0.5) * 0.5, 0.18, 0.82);
-          add(minute, 320, { x: offX, y: offY }, side, "offside", "Flag's up — offside.", false);
+          add(minute, 300, { x: offX, y: offY }, side, "offside", "Offside", false);
           st[shooter].touches++;
-          add(minute, 380, { x: side === "A" ? 0.35 : 0.65, y: offY }, def, "goalkick", null, false);
+          add(minute, 360, { x: side === "A" ? 0.30 : 0.70, y: offY }, def, "freekickRestart", null, false);
         } else {
           var tk = pick(rand, dg.DEF.concat(dg.MID));
-          add(minute, 280, posOf(side, pick(rand, g.MID.concat(g.FWD)), 0.6), side, "dribble", null, false);
-          add(minute, 300, posOf(def, tk, 0.1), def, "tackle", pick(rand, ["Won back!", "Crunching tackle!", "Intercepted."]), false);
+          add(minute, 260, posOf(side, pick(rand, g.MID.concat(g.FWD)), 0.6), side, "dribble", null, false);
+          add(minute, 280, posOf(def, tk, 0.1), def, "tackle", null, false);
           dst[tk].tackles++;
         }
       }
@@ -317,10 +308,11 @@
       if (snap) players.forEach(function (p) { p.pos.x = p.pos0.x; p.pos.y = p.pos0.y; p.vel.x = 0; p.vel.y = 0; });
     }
     function playersOf(side) { return players.filter(function (p) { return p.side === side; }); }
+    function playerByIdx(side, idx) { for (var i = 0; i < players.length; i++) if (players[i].side === side && players[i].idx === idx) return players[i]; return null; }
     function d2(a, b) { var dx = a.x - b.x, dy = a.y - b.y; return dx * dx + dy * dy; }
     function nearest(list, pt) { var best = null, bd = 1e9; list.forEach(function (p) { var d = d2(p.pos, pt); if (d < bd) { bd = d; best = p; } }); return best; }
 
-    var ball = { x: 0.5, y: 0.5, p0: null, p1: null, p2: null, u: 1, len: 1, speed: 0.6, moving: false, dribble: false, dribT: 0, carrier: null, t: 0 };
+    var ball = { x: 0.5, y: 0.5, p0: null, p1: null, p2: null, u: 1, len: 1, speed: 0.6, moving: false, dribble: false, carrier: null, t: 0 };
     function speedFor(k) {
       switch (k) {
         case "goal":       return 1.50;
@@ -329,15 +321,16 @@
         case "postBounce": return 0.85;
         case "save":       return 1.10;
         case "parry":      return 0.75;
-        case "cross":      return 0.62;
-        case "corner":     return 0.55;
-        case "pass":       return 0.58;
-        case "dribble":    return 0.26;
-        case "goalkick":   return 0.85;
+        case "cross":      return 0.70;
+        case "corner":     return 0.65;
+        case "pass":       return 0.60;
+        case "dribble":    return 0.28;
+        case "goalkick":   return 0.95;
         case "blockOut":   return 0.55;
+        case "freekickRestart": return 0.70;
         case "kickoff":
-        case "foul":       return 0.75;
-        default:           return 0.60;
+        case "foul":       return 0.80;
+        default:           return 0.62;
       }
     }
 
@@ -349,8 +342,69 @@
       return nearest(pool, b.ball);
     }
 
+    /* Setpiece formations — return target {x,y} for each player */
+    function setpieceTargets(b) {
+      if (b.kind !== "cornerSetup" && b.kind !== "goalkickSetup") return null;
+      var targets = {};
+      var atk = b.posSide, def = atk === "A" ? "B" : "A";
+
+      if (b.kind === "cornerSetup") {
+        var top = b.ball.y < 0.5;
+        var goalX = ownGoalX(def);
+        var cornerX = atk === "A" ? 0.985 : 0.015;
+        var cornerY = top ? 0.06 : 0.94;
+
+        var atkOut = playersOf(atk).filter(function (p) { return p.ptype !== "GK"; });
+        var taker = nearest(atkOut, { x: cornerX, y: cornerY });
+        var others = atkOut.filter(function (p) { return p !== taker; });
+
+        playersOf(atk).forEach(function (p) {
+          if (p.ptype === "GK") { targets[p.side + p.idx] = { x: ownGoalX(atk) + adir(atk) * 0.02, y: 0.5 }; return; }
+          if (p === taker) { targets[p.side + p.idx] = { x: cornerX, y: cornerY }; return; }
+          var i = others.indexOf(p);
+          targets[p.side + p.idx] = { x: (atk === "A" ? 0.84 : 0.16) + (i % 2 ? 0.04 : -0.02) * adir(atk), y: clamp(0.36 + (i * 0.10), 0.30, 0.70) };
+        });
+
+        var defOut = playersOf(def).filter(function (p) { return p.ptype !== "GK"; });
+        playersOf(def).forEach(function (p) {
+          if (p.ptype === "GK") { targets[p.side + p.idx] = { x: goalX, y: 0.5 }; return; }
+          var i = defOut.indexOf(p);
+          targets[p.side + p.idx] = { x: (atk === "A" ? 0.90 : 0.10) + (i % 2 ? 0.03 : -0.01) * adir(atk), y: clamp(0.32 + (i * 0.09), 0.30, 0.70) };
+        });
+      } else { /* goalkickSetup */
+        var gkX = atk === "A" ? 0.13 : 0.87;
+        players.forEach(function (p) {
+          if (p.side === atk && p.ptype === "GK") {
+            targets[p.side + p.idx] = { x: gkX, y: 0.5 };
+          } else {
+            // everyone else spreads at their home position
+            targets[p.side + p.idx] = { x: p.pos0.x, y: p.pos0.y };
+          }
+        });
+      }
+      return targets;
+    }
+
     var bi = -1, dwell = 0, celebrating = false, celebrateUntil = 0;
-    var banner = null, bannerT = 0, flash = 0, raf = null, last = 0, finished = false;
+    var banner = null, bannerIcon = null, bannerT = 0, flash = 0, raf = null, last = 0, finished = false;
+
+    function setBanner(b) {
+      // Only show banners for "real" events. Skip plain misses/passes/tackles.
+      var map = {
+        "corner":     { i: "🚩", t: b.label || "Corner Kick" },
+        "cornerSetup":{ i: "🚩", t: b.label || "Corner Kick" },
+        "goalkick":   { i: "🥅", t: b.label || "Goal Kick" },
+        "goalkickSetup":{ i: "🥅", t: b.label || "Goal Kick" },
+        "postHit":    { i: "❗", t: b.label || "Off the Post!" },
+        "offside":    { i: "🚩", t: b.label || "Offside" },
+        "foul":       { i: "🟨", t: b.label || "Foul" },
+        "save":       { i: "🧤", t: b.label || "Save!" },
+        "kickoff":    { i: "⚽", t: b.label || "Kick-off" },
+        "fulltime":   { i: "⏱️", t: b.label || "Full Time" },
+      };
+      var m = map[b.kind];
+      if (m) { banner = m.t; bannerIcon = m.i; bannerT = 1.4; }
+    }
 
     function start() { initPlayers(true); last = performance.now(); enterBeat(0); raf = requestAnimationFrame(loop); }
     function finish() { if (finished) return; finished = true; if (raf) cancelAnimationFrame(raf); if (overlay) overlay.classList.remove("show"); onDone({ stats: tl.stats, scorers: tl.scorers }); }
@@ -359,28 +413,36 @@
       bi = i;
       if (i >= tl.beats.length) return finish();
       var b = tl.beats[i];
-      if (/^(save|parry|postHit|postBounce|tackle|corner|foul|offside|miss|kickoff|fulltime)$/.test(b.kind)) {
-        banner = b.label; bannerT = b.label ? 1 : 0;
-      }
+      setBanner(b);
+
       if (b.kind === "kickoff") { initPlayers(true); ball.x = 0.5; ball.y = 0.5; ball.moving = false; ball.dribble = false; ball.carrier = null; dwell = 0.5; return; }
       if (b.kind === "fulltime") { ball.moving = false; ball.dribble = false; dwell = 1.0; return; }
 
-      if (b.kind === "goalkick") {
-        var gk = playersOf(b.posSide).filter(function (p) { return p.ptype === "GK"; })[0];
-        if (gk) { ball.x = gk.pos.x; ball.y = gk.pos.y; }
+      // Setpiece "setup" beats: snap ball, players move into formation, pause.
+      if (b.kind === "cornerSetup") {
+        ball.x = b.ball.x; ball.y = b.ball.y; ball.moving = false; ball.dribble = false; ball.carrier = null;
+        b._formation = true; dwell = 1.3; return;
+      }
+      if (b.kind === "goalkickSetup") {
+        ball.x = b.posSide === "A" ? 0.13 : 0.87; ball.y = 0.5;
+        ball.moving = false; ball.dribble = false; ball.carrier = null;
+        b._formation = true; dwell = 1.1; return;
       }
 
-      ball.carrier = null;
-      b._recv = null;
-      b._shooter = null;
-      b._preShot = false;
+      ball.carrier = null; b._recv = null; b._shooter = null; b._preShot = false;
 
       if (b.kind === "dribble") {
-        ball.carrier = nearest(playersOf(b.posSide).filter(function (p) { return p.ptype !== "GK"; }), { x: ball.x, y: ball.y });
+        if (b._carrier != null) ball.carrier = playerByIdx(b.posSide, b._carrier);
+        else ball.carrier = nearest(playersOf(b.posSide).filter(function (p) { return p.ptype !== "GK"; }), { x: ball.x, y: ball.y });
       } else if (/^(shot|goal|miss|postHit)$/.test(b.kind)) {
-        var pool = playersOf(b.posSide).filter(function (p) { return p.ptype === "FWD" || p.ptype === "MID"; });
-        if (!pool.length) pool = playersOf(b.posSide).filter(function (p) { return p.ptype !== "GK"; });
-        b._shooter = nearest(pool, { x: b.ball.x, y: b.ball.y });
+        // Use named scorer/shooter, not "nearest" — fixes wrong-scorer bug.
+        var idx = (b._scorerIdx != null) ? b._scorerIdx : b._shooterIdx;
+        if (idx != null) b._shooter = playerByIdx(b.posSide, idx);
+        if (!b._shooter) {
+          var pool = playersOf(b.posSide).filter(function (p) { return p.ptype === "FWD" || p.ptype === "MID"; });
+          if (!pool.length) pool = playersOf(b.posSide).filter(function (p) { return p.ptype !== "GK"; });
+          b._shooter = nearest(pool, { x: b.ball.x, y: b.ball.y });
+        }
         b._preShot = !!b._shooter;
       } else {
         b._recv = pickReceiver(b);
@@ -397,18 +459,18 @@
       var curve = b.kind === "cross" ? 0.10 : (b.kind === "shot" || b.kind === "goal" || b.kind === "postHit") ? 0.04 : (len > 0.4 ? 0.06 : 0.015);
       curve *= (((b.minute || 1) % 2) ? 1 : -1);
       ball.p1 = { x: (ball.p0.x + ball.p2.x) / 2 - dy / len * curve, y: (ball.p0.y + ball.p2.y) / 2 + dx / len * curve };
-      ball.len = len; ball.speed = speedFor(b.kind); ball.u = 0; ball.dribT = 0; ball.t = 0;
+      ball.len = len; ball.speed = speedFor(b.kind); ball.u = 0; ball.t = 0;
       ball.dribble = (b.kind === "dribble"); ball.moving = !ball.dribble; dwell = 0;
     }
 
     function onArrive() {
       var b = tl.beats[bi];
       if (b.kind === "goal") return celebrate(b);
-      dwell = /^(save|parry|corner|foul|postHit|miss|tackle|offside|goalkick)$/.test(b.kind) ? 0.32 : 0.10;
+      dwell = /^(save|parry|corner|foul|postHit|miss|tackle|offside|goalkick|freekickRestart)$/.test(b.kind) ? 0.22 : 0.06;
     }
 
     function celebrate(b) {
-      celebrating = true; celebrateUntil = performance.now() + 2200; flash = 1;
+      celebrating = true; celebrateUntil = performance.now() + 2000; flash = 1;
       var who = b.scorer ? lastName(b.scorer.name) : "";
       if (overlay) {
         overlay.style.setProperty("--goalcol", b.posSide === "A" ? colorA : colorB);
@@ -440,6 +502,9 @@
       var b = tl.beats[bi]; if (!b) return;
       ball.t = (ball.t || 0) + dt;
 
+      // Setpiece setups: ball doesn't move, just sits.
+      if (b._formation) return;
+
       if (b._preShot && b._shooter) {
         var sp = b._shooter.pos;
         var dx = sp.x - ball.x, dy = sp.y - ball.y, d = Math.hypot(dx, dy);
@@ -465,7 +530,7 @@
       }
       if (ball.moving && b._recv) {
         var tg = b._recv.pos, dx3 = tg.x - ball.x, dy3 = tg.y - ball.y, d3 = Math.hypot(dx3, dy3) || 1e-4, step = ball.speed * dt;
-        if (d3 <= step + 0.02 || ball.t > 2.8) { ball.x = tg.x; ball.y = tg.y; ball.moving = false; onArrive(); }
+        if (d3 <= step + 0.02 || ball.t > 2.5) { ball.x = tg.x; ball.y = tg.y; ball.moving = false; onArrive(); }
         else { ball.x += dx3 / d3 * step; ball.y += dy3 / d3 * step; }
         return;
       }
@@ -478,6 +543,17 @@
 
     function updatePlayers(dt) {
       var b = tl.beats[bi]; if (!b) return;
+
+      // Setpiece formation override
+      var sp = setpieceTargets(b);
+      if (sp) {
+        players.forEach(function (p) {
+          var t = sp[p.side + p.idx];
+          if (t) steer(p, t.x, t.y, 0.40, dt);
+        });
+        return;
+      }
+
       var poss = b.posSide, def = poss === "A" ? "B" : "A";
       var bp = { x: ball.x, y: ball.y };
       var dfO = playersOf(def).filter(function (p) { return p.ptype !== "GK"; })
@@ -524,6 +600,18 @@
       p.pos.y = clamp(p.pos.y + p.vel.y * dt + (Math.random() - 0.5) * 0.0006, 0.06, 0.94);
     }
 
+    /* Interpolated clock — smooth tick between beats */
+    function getDisplayMinute() {
+      if (bi < 0 || bi >= tl.beats.length) return 0;
+      var b = tl.beats[bi];
+      if (bi + 1 >= tl.beats.length) return Math.min(90, b.minute);
+      var nb = tl.beats[bi + 1];
+      if (nb.minute <= b.minute) return Math.min(90, b.minute);
+      var animDur = Math.max(0.4, (b.dur || 400) / 1000);
+      var prog = clamp((ball.t || 0) / (animDur + 0.25), 0, 1);
+      return Math.min(90, Math.round(b.minute + (nb.minute - b.minute) * prog));
+    }
+
     function draw() {
       ctx.clearRect(0, 0, W, H);
       drawPitch();
@@ -532,8 +620,8 @@
       var bx = px(ball.x), by = py(ball.y);
       ctx.beginPath(); ctx.arc(bx, by, 5.5, 0, 7); ctx.fillStyle = "#fff";
       ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 6; ctx.fill(); ctx.shadowBlur = 0;
-      drawHud(tl.beats[Math.max(0, Math.min(bi, tl.beats.length - 1))]);
-      if (banner && bannerT > 0 && !celebrating) { drawBanner(banner, bannerT); bannerT = Math.max(0, bannerT - 0.01); }
+      drawHud();
+      if (banner && bannerT > 0 && !celebrating) { drawBanner(banner, bannerIcon, bannerT); bannerT = Math.max(0, bannerT - 0.012); }
     }
 
     function drawPlayer(p) {
@@ -570,7 +658,8 @@
       ctx.fillRect(FR, gy1, gd, gy2 - gy1); ctx.strokeRect(FR, gy1, gd, gy2 - gy1);
     }
 
-    function drawHud(beat) {
+    function drawHud() {
+      var beat = tl.beats[Math.max(0, Math.min(bi, tl.beats.length - 1))];
       ctx.fillStyle = "rgba(7,20,13,.78)"; ctx.fillRect(0, 0, W, 30);
       ctx.textBaseline = "middle"; ctx.font = "800 14px Archivo, Inter, sans-serif";
       ctx.textAlign = "left"; ctx.fillStyle = colorA; ctx.fillText(nameA, 12, 15);
@@ -578,17 +667,31 @@
       ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.font = "900 16px Archivo, Inter, sans-serif";
       ctx.fillText(beat.scoreA + " - " + beat.scoreB, W / 2, 15);
       ctx.font = "700 11px Inter, sans-serif"; ctx.fillStyle = "#9fcfb4";
-      ctx.fillText(Math.min(90, beat.minute) + "'", W / 2, 40);
+      ctx.fillText(getDisplayMinute() + "'", W / 2, 40);
     }
 
-    function drawBanner(text, a) {
-      ctx.globalAlpha = clamp(a, 0, 1);
-      ctx.fillStyle = "rgba(7,20,13,.82)";
-      ctx.font = "800 15px Archivo, Inter, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      var w = ctx.measureText(text).width + 28;
-      ctx.fillRect(W / 2 - w / 2, H - 40, w, 26);
-      ctx.fillStyle = "#ffd24a"; ctx.fillText(text, W / 2, H - 27);
+    /* Top-center notification banner with emoji icon */
+    function drawBanner(text, icon, a) {
+      var alpha = clamp(a, 0, 1);
+      ctx.globalAlpha = alpha;
+      var label = (icon ? icon + "  " : "") + text;
+      ctx.font = "800 14px Archivo, Inter, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      var w = ctx.measureText(label).width + 28;
+      var x = W / 2 - w / 2, y = 50;
+      // pill background
+      ctx.fillStyle = "rgba(20,40,28,.92)";
+      ctx.strokeStyle = "rgba(255,210,74,.9)"; ctx.lineWidth = 1.5;
+      roundRect(ctx, x, y, w, 28, 14); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#ffd24a"; ctx.fillText(label, W / 2, y + 14);
       ctx.globalAlpha = 1;
+    }
+
+    function roundRect(c, x, y, w, h, r) {
+      c.beginPath();
+      c.moveTo(x + r, y); c.lineTo(x + w - r, y); c.quadraticCurveTo(x + w, y, x + w, y + r);
+      c.lineTo(x + w, y + h - r); c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      c.lineTo(x + r, y + h); c.quadraticCurveTo(x, y + h, x, y + h - r);
+      c.lineTo(x, y + r); c.quadraticCurveTo(x, y, x + r, y);
     }
 
     resize();
