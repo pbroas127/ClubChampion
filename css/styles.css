@@ -396,11 +396,30 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .sim-head { text-align: center; font-family: "Archivo"; font-weight: 700; color: var(--gold);
   font-style: italic; margin-bottom: 12px; font-size: 14px; }
 .sim-stage {
+  position: relative;
   width: 100%; aspect-ratio: 3 / 2; border-radius: var(--radius); overflow: hidden;
   border: 2px solid #1c6b3e; box-shadow: var(--shadow); background: #0f3f25;
 }
 #sim-canvas { width: 100%; height: 100%; display: block; }
 .sim-skip { max-width: 280px; margin: 16px auto 0; }
+
+/* goal celebration overlay */
+.goal-overlay {
+  position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  background: radial-gradient(circle at 50% 45%, rgba(7,20,13,.30), rgba(7,20,13,.66));
+}
+.goal-overlay.show { opacity: 1; animation: goalfade .35s ease; }
+.go-big {
+  font-family: "Archivo", sans-serif; font-weight: 900; letter-spacing: .04em;
+  font-size: clamp(46px, 13vw, 104px); color: #fff;
+  text-shadow: 0 0 26px var(--goalcol, #2ee87f), 0 0 58px var(--goalcol, #2ee87f), 0 4px 0 rgba(0,0,0,.45);
+  animation: goalpop .5s ease;
+}
+.go-name { font-family: "Archivo", sans-serif; font-weight: 800; font-size: clamp(20px, 5.5vw, 36px); color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.7); }
+.go-min { font-weight: 800; font-size: 16px; color: var(--gold); letter-spacing: .04em; }
+@keyframes goalfade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes goalpop { 0% { transform: scale(.35); opacity: 0; } 60% { transform: scale(1.14); } 100% { transform: scale(1); opacity: 1; } }
 
 /* ====================================================== SCOREBOARD ======= */
 .scorebar {

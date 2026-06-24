@@ -244,10 +244,19 @@
   function create(canvas, opts) {
     opts = opts || {};
     var tl = generate(opts.squadA, opts.squadB, opts.result, opts.seed || 1);
+    // Attach each goal's scorer (in generation order) for the celebration callout.
+    (function () { var c = { A: 0, B: 0 }; tl.beats.forEach(function (b) { if (b.kind === "goal") b.scorer = tl.scorers[b.posSide][c[b.posSide]++] || { name: "", minute: b.minute }; }); })();
+
     var ctx = canvas.getContext("2d");
     var colorA = opts.colorA || "#2ee87f", colorB = opts.colorB || "#ff5d73";
     var nameA = opts.teamAName || "Your XI", nameB = opts.teamBName || "CPU";
     var onDone = opts.onDone || function () {};
+    var squads = { A: opts.squadA, B: opts.squadB };
+
+    // DOM goal-celebration overlay inside the stage
+    var stage = canvas.parentNode || canvas;
+    var overlay = stage.querySelector ? stage.querySelector(".goal-overlay") : null;
+    if (!overlay && stage.appendChild) { overlay = document.createElement("div"); overlay.className = "goal-overlay"; stage.appendChild(overlay); }
 
     var W = 0, H = 0, dpr = Math.min(2, root.devicePixelRatio || 1);
     function resize() {
@@ -256,85 +265,176 @@
       canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
-
-    // pitch padding
     var PAD = 14;
     function px(x) { return PAD + x * (W - 2 * PAD); }
     function py(y) { return PAD + y * (H - 2 * PAD); }
+    function adir(side) { return side === "A" ? 1 : -1; }
+    function ownGoalX(side) { return side === "A" ? 0.04 : 0.96; }
 
-    // smoothed player positions
-    var rendered = { A: layout(opts.squadA, "A", 0), B: layout(opts.squadB, "B", 0) };
-    rendered.A = rendered.A.map(function (p) { return { x: p.x, y: p.y }; });
-    rendered.B = rendered.B.map(function (p) { return { x: p.x, y: p.y }; });
+    /* ---- player + ball physics state ---- */
+    var players = [];
+    function initPlayers(snap) {
+      if (!players.length) {
+        ["A", "B"].forEach(function (side) {
+          layout(squads[side], side, 0).forEach(function (p, i) {
+            players.push({ side: side, idx: i, ptype: squads[side][i].pos,
+              pos: { x: p.x, y: p.y }, pos0: { x: p.x, y: p.y }, vel: { x: 0, y: 0 } });
+          });
+        });
+      }
+      if (snap) players.forEach(function (p) { p.pos.x = p.pos0.x; p.pos.y = p.pos0.y; p.vel.x = 0; p.vel.y = 0; });
+    }
+    function playersOf(side) { return players.filter(function (p) { return p.side === side; }); }
+    function d2(a, b) { var dx = a.x - b.x, dy = a.y - b.y; return dx * dx + dy * dy; }
+    function nearest(list, pt) { var best = null, bd = 1e9; list.forEach(function (p) { var d = d2(p.pos, pt); if (d < bd) { bd = d; best = p; } }); return best; }
 
-    var idx = 0, beatStart = 0, prevBall = tl.beats[0].ball, raf = null, started = 0, finished = false;
-    var flash = 0, banner = null, bannerT = 0;
+    var ball = { x: 0.5, y: 0.5, p0: null, p1: null, p2: null, u: 1, len: 1, speed: 0.6, moving: false, dribble: false, dribT: 0, carrier: null };
+    function speedFor(k) {
+      switch (k) {
+        case "goal": case "shot": return 1.9;   // shots are fast
+        case "save": return 1.7;
+        case "cross": return 0.92;
+        case "corner": return 0.85;
+        case "pass": return 0.62;                // build-up, slow
+        case "dribble": return 0.24;             // carried
+        case "kickoff": case "foul": return 1.1;
+        default: return 0.78;                    // through balls
+      }
+    }
 
-    function start() { started = performance.now(); beatStart = started; raf = requestAnimationFrame(loop); }
+    var bi = -1, dwell = 0, celebrating = false, celebrateUntil = 0;
+    var banner = null, bannerT = 0, flash = 0, raf = null, last = 0, finished = false;
 
-    function finish() {
-      if (finished) return; finished = true;
-      if (raf) cancelAnimationFrame(raf);
-      onDone({ stats: tl.stats, scorers: tl.scorers });
+    function start() { initPlayers(true); last = performance.now(); enterBeat(0); raf = requestAnimationFrame(loop); }
+    function finish() { if (finished) return; finished = true; if (raf) cancelAnimationFrame(raf); if (overlay) overlay.classList.remove("show"); onDone({ stats: tl.stats, scorers: tl.scorers }); }
+
+    function enterBeat(i) {
+      bi = i;
+      if (i >= tl.beats.length) return finish();
+      var b = tl.beats[i];
+      if (/^(save|post|tackle|corner|foul|offside|miss|kickoff|fulltime)$/.test(b.kind)) { banner = b.label; bannerT = b.label ? 1 : 0; }
+      if (b.kind === "kickoff") { initPlayers(true); ball.x = 0.5; ball.y = 0.5; ball.moving = false; ball.dribble = false; ball.carrier = null; dwell = 0.7; return; }
+      if (b.kind === "fulltime") { ball.moving = false; ball.dribble = false; dwell = 1.2; return; }
+      ball.carrier = (b.kind === "dribble") ? nearest(playersOf(b.posSide).filter(function (p) { return p.ptype !== "GK"; }), { x: ball.x, y: ball.y }) : null;
+      startBall(b);
+    }
+
+    function startBall(b) {
+      ball.p0 = { x: ball.x, y: ball.y };
+      ball.p2 = { x: b.ball.x, y: b.ball.y };
+      var dx = ball.p2.x - ball.p0.x, dy = ball.p2.y - ball.p0.y, len = Math.hypot(dx, dy) || 0.001;
+      var curve = b.kind === "cross" ? 0.12 : (b.kind === "shot" || b.kind === "goal") ? 0.05 : (len > 0.4 ? 0.07 : 0.015);
+      curve *= (((b.minute || 1) % 2) ? 1 : -1);   // alternate swerve so paths aren't all straight
+      ball.p1 = { x: (ball.p0.x + ball.p2.x) / 2 - dy / len * curve, y: (ball.p0.y + ball.p2.y) / 2 + dx / len * curve };
+      ball.len = len; ball.speed = speedFor(b.kind); ball.u = 0; ball.dribT = 0;
+      ball.dribble = (b.kind === "dribble"); ball.moving = !ball.dribble; dwell = 0;
+    }
+
+    function onArrive() {
+      var b = tl.beats[bi];
+      if (b.kind === "goal") return celebrate(b);
+      dwell = /^(save|corner|foul|post|miss|tackle|offside)$/.test(b.kind) ? 0.45 : 0.12;
+    }
+
+    function celebrate(b) {
+      celebrating = true; celebrateUntil = performance.now() + 2500; flash = 1;
+      var who = b.scorer ? lastName(b.scorer.name) : "";
+      if (overlay) {
+        overlay.style.setProperty("--goalcol", b.posSide === "A" ? colorA : colorB);
+        overlay.innerHTML = '<div class="go-big">GOAL!</div>' + (who ? '<div class="go-name">' + who + "</div>" : "") +
+          '<div class="go-min">' + (b.scorer ? b.scorer.minute : b.minute) + "'</div>";
+        overlay.classList.add("show");
+      }
     }
 
     function loop(now) {
       if (finished) return;
       try {
-        var beat = tl.beats[idx];
-        var t = clamp((now - beatStart) / beat.dur, 0, 1);
-        if (t >= 1) {
-          prevBall = beat.ball; idx++; beatStart = now;
-          if (idx >= tl.beats.length) { draw(beat, 1); return finish(); }
-          var nb = tl.beats[idx];
-          if (nb.flash) { flash = 1; banner = nb.label; bannerT = 1; }
-          else if (nb.kind === "save" || nb.kind === "post" || nb.kind === "tackle") { banner = nb.label; bannerT = 1; }
-          beat = nb; t = 0;
+        var dt = Math.min(0.05, (now - last) / 1000); last = now;
+        if (celebrating) {
+          flash = Math.max(0, flash - 0.02);
+          if (now > celebrateUntil) {
+            celebrating = false; if (overlay) overlay.classList.remove("show");
+            initPlayers(true); ball.x = 0.5; ball.y = 0.5; ball.moving = false; ball.carrier = null; enterBeat(bi + 1);
+          }
+          draw(); raf = requestAnimationFrame(loop); return;
         }
-        draw(beat, t);
-        raf = requestAnimationFrame(loop);
+        updateBall(dt); updatePlayers(dt);
+        if (dwell > 0) { dwell -= dt; if (dwell <= 0) enterBeat(bi + 1); }
+        draw(); raf = requestAnimationFrame(loop);
       } catch (e) { finish(); }
     }
 
-    function draw(beat, t) {
-      // possession phase targets
-      var tgtA = layout(opts.squadA, "A", beat.posSide === "A" ? 1 : -0.35);
-      var tgtB = layout(opts.squadB, "B", beat.posSide === "B" ? 1 : -0.35);
-      smooth(rendered.A, tgtA); smooth(rendered.B, tgtB);
-
-      ctx.clearRect(0, 0, W, H);
-      drawPitch();
-
-      // players
-      drawTeam(rendered.B, opts.squadB, colorB);
-      drawTeam(rendered.A, opts.squadA, colorA);
-
-      // ball
-      var bx = px(lerp(prevBall.x, beat.ball.x, easeInOut(t)));
-      var by = py(lerp(prevBall.y, beat.ball.y, easeInOut(t)));
-      if (flash > 0) {
-        ctx.fillStyle = "rgba(255,210,74," + (flash * 0.28) + ")";
-        ctx.fillRect(0, 0, W, H); flash = Math.max(0, flash - 0.03);
+    function updateBall(dt) {
+      var b = tl.beats[bi]; if (!b) return;
+      if (ball.dribble && ball.carrier) {                    // ball glued to the dribbler
+        ball.x = ball.carrier.pos.x; ball.y = ball.carrier.pos.y; ball.dribT += dt;
+        if ((d2({ x: ball.x, y: ball.y }, b.ball) < 0.0016 || ball.dribT > 2.2) && dwell <= 0) { ball.dribble = false; onArrive(); }
+        return;
       }
-      ctx.beginPath(); ctx.arc(bx, by, 5.5, 0, 7); ctx.fillStyle = "#fff";
-      ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 6; ctx.fill(); ctx.shadowBlur = 0;
-
-      drawHud(beat);
-      if (banner && bannerT > 0) { drawBanner(banner, bannerT); bannerT = Math.max(0, bannerT - 0.012); }
+      if (ball.moving) {
+        ball.u += (ball.speed * dt) / ball.len;
+        if (ball.u >= 1) { ball.u = 1; ball.moving = false; ball.x = ball.p2.x; ball.y = ball.p2.y; onArrive(); }
+        else { var u = ball.u, iu = 1 - u; ball.x = iu * iu * ball.p0.x + 2 * iu * u * ball.p1.x + u * u * ball.p2.x; ball.y = iu * iu * ball.p0.y + 2 * iu * u * ball.p1.y + u * u * ball.p2.y; }
+      }
     }
 
-    function smooth(arr, tgt) { for (var i = 0; i < arr.length; i++) { arr[i].x += (tgt[i].x - arr[i].x) * 0.12; arr[i].y += (tgt[i].y - arr[i].y) * 0.12; } }
+    // Role-aware steering: players roam relative to the ball, not glued to formation.
+    function updatePlayers(dt) {
+      var b = tl.beats[bi]; if (!b) return;
+      var poss = b.posSide, def = poss === "A" ? "B" : "A";
+      var bp = { x: ball.x, y: ball.y };
+      var dfO = playersOf(def).filter(function (p) { return p.ptype !== "GK"; }).sort(function (a, c) { return d2(a.pos, bp) - d2(c.pos, bp); });
+      players.forEach(function (p) {
+        if (p.ptype === "GK") {
+          var gx = ownGoalX(p.side);
+          var tx = gx + adir(p.side) * 0.02, ty = clamp(0.5 + (ball.y - 0.5) * 0.5, 0.33, 0.67);
+          if (def === p.side && (b.kind === "shot" || b.kind === "goal" || b.kind === "save")) { tx = gx + adir(p.side) * 0.06; ty = clamp(ball.y, 0.35, 0.65); }
+          return steer(p, tx, ty, 0.24, dt);
+        }
+        if (p.side === poss) {
+          if (p === ball.carrier) return steer(p, b.ball.x, b.ball.y, 0.2, dt);
+          var ahead = p.ptype === "FWD" ? 0.22 : p.ptype === "MID" ? 0.05 : -0.20;
+          // hold a WIDTH lane (pos0.y) so the team spreads across the pitch instead of swarming the ball
+          return steer(p, clamp(ball.x + ahead * adir(poss), 0.1, 0.9), clamp(p.pos0.y * 0.82 + ball.y * 0.18, 0.08, 0.92), p.ptype === "FWD" ? 0.19 : 0.16, dt);
+        }
+        var rank = dfO.indexOf(p);
+        if (rank === 0) return steer(p, ball.x, ball.y, 0.28, dt);                          // presser closes the ball
+        if (rank === 1) return steer(p, (ball.x + ownGoalX(p.side)) / 2, ball.y, 0.22, dt);  // cover drops between ball & goal
+        var back = p.ptype === "DEF" ? 0.16 : 0.05;
+        return steer(p, clamp(ball.x - back * adir(p.side), 0.08, 0.92), clamp(p.pos0.y * 0.80 + ball.y * 0.20, 0.08, 0.92), 0.16, dt);
+      });
+    }
 
-    function drawTeam(positions, squad, color) {
-      for (var i = 0; i < positions.length; i++) {
-        var p = positions[i], x = px(p.x), y = py(p.y), isGK = squad[i].pos === "GK";
-        ctx.beginPath(); ctx.arc(x, y, isGK ? 8.5 : 9.5, 0, 7);
-        ctx.fillStyle = isGK ? "#13314a" : color;
-        ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.stroke();
-        ctx.fillStyle = isGK ? "#cfe8ff" : "rgba(4,20,12,.9)";
-        ctx.font = "700 9px Inter, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.fillText(squad[i].pos === "GK" ? "GK" : lastName(squad[i].n).slice(0, 3), x, y);
-      }
+    function steer(p, tx, ty, maxSp, dt) {
+      var dx = tx - p.pos.x, dy = ty - p.pos.y, d = Math.hypot(dx, dy) || 0.0001;
+      var want = Math.min(maxSp, d * 3.0);
+      p.vel.x += (dx / d * want - p.vel.x) * 0.18;
+      p.vel.y += (dy / d * want - p.vel.y) * 0.18;
+      p.pos.x = clamp(p.pos.x + p.vel.x * dt + (Math.random() - 0.5) * 0.0006, 0.03, 0.97);
+      p.pos.y = clamp(p.pos.y + p.vel.y * dt + (Math.random() - 0.5) * 0.0006, 0.06, 0.94);
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      drawPitch();
+      players.forEach(drawPlayer);
+      if (flash > 0) { ctx.fillStyle = "rgba(255,210,74," + (flash * 0.3) + ")"; ctx.fillRect(0, 0, W, H); if (!celebrating) flash = Math.max(0, flash - 0.03); }
+      var bx = px(ball.x), by = py(ball.y);
+      ctx.beginPath(); ctx.arc(bx, by, 5.5, 0, 7); ctx.fillStyle = "#fff";
+      ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 6; ctx.fill(); ctx.shadowBlur = 0;
+      drawHud(tl.beats[Math.max(0, Math.min(bi, tl.beats.length - 1))]);
+      if (banner && bannerT > 0 && !celebrating) { drawBanner(banner, bannerT); bannerT = Math.max(0, bannerT - 0.01); }
+    }
+
+    function drawPlayer(p) {
+      var x = px(p.pos.x), y = py(p.pos.y), isGK = p.ptype === "GK";
+      ctx.beginPath(); ctx.arc(x, y, isGK ? 8.5 : 9.5, 0, 7);
+      ctx.fillStyle = isGK ? "#13314a" : (p.side === "A" ? colorA : colorB);
+      ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.stroke();
+      ctx.fillStyle = isGK ? "#cfe8ff" : "rgba(4,20,12,.9)";
+      ctx.font = "700 9px Inter, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(isGK ? "GK" : lastName(squads[p.side][p.idx].n).slice(0, 3), x, y);
     }
 
     function drawPitch() {
@@ -386,7 +486,7 @@
     return {
       start: start,
       skip: finish,
-      destroy: function () { if (raf) cancelAnimationFrame(raf); root.removeEventListener("resize", resize); finished = true; },
+      destroy: function () { if (raf) cancelAnimationFrame(raf); root.removeEventListener("resize", resize); if (overlay) overlay.classList.remove("show"); finished = true; },
     };
   }
 

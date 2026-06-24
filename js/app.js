@@ -8,7 +8,6 @@
 (function (root) {
   "use strict";
   var BE = root.CC_BACKEND, UI = null;
-  var LS_KEY = "cc_seasons_v1";
   var state = { user: null, profile: null, tab: "home" };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -157,7 +156,6 @@
       // If they signed in via Google and have no username yet, ask for one.
       if (!p) { promptUsername(); }
       state.profile = p; refreshAccountButton();
-      syncLocalSeasons();
       if (state.tab === "stats") renderStats();
       if (state.tab === "friends") renderFriends();
     });
@@ -185,10 +183,10 @@
   }
 
   /* ----------------------------------------------------- seasons -------- */
-  function localSeasons() { try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch (e) { return []; } }
-  function saveLocal(s) { var a = localSeasons(); a.push(s); localStorage.setItem(LS_KEY, JSON.stringify(a.slice(-50))); }
-
+  // Seasons are saved to your ACCOUNT only — you can play signed out, but you
+  // must be signed in for stats to be tracked.
   function recordSeason(R) {
+    if (!state.user || !BE.configured) { toast("Sign in to save your stats"); return; }
     var ss = R.seasonStats || (UI && UI.seasonStatsFor ? UI.seasonStatsFor(R.squad, R.you, 1) : null);
     var rec = R.you.record;
     var season = {
@@ -200,16 +198,7 @@
       player_stats: ss ? ss.players : [],
       created_at: new Date().toISOString(),
     };
-    saveLocal(season);
-    if (state.user && BE.configured) BE.data.saveSeason(season).catch(function () {});
-  }
-
-  function syncLocalSeasons() {
-    if (!state.user || !BE.configured) return;
-    var local = localSeasons();
-    if (!local.length) return;
-    Promise.all(local.map(function (s) { return BE.data.saveSeason(s).catch(function () {}); }))
-      .then(function () { localStorage.removeItem(LS_KEY); });
+    BE.data.saveSeason(season).catch(function () {});
   }
 
   function bestOf(list) {
@@ -219,16 +208,15 @@
   /* -------------------------------------------------------- STATS tab --- */
   function renderStats() {
     var wrap = $("screen-stats"); if (!wrap) return;
-    function paint(seasons) {
+    var head = '<div class="page-head"><h2>Your Stats</h2><p>' +
+      (state.user ? "Saved to your account." : "Sign in to save and track your seasons.") + "</p></div>";
+    if (!state.user) { wrap.innerHTML = head + signInCard("Sign in to save &amp; track your stats."); wireSignInCard(); return; }
+    BE.data.mySeasons().then(function (seasons) {
       var best = bestOf(seasons);
-      var head = '<div class="page-head"><h2>Your Stats</h2><p>' +
-        (state.user ? "Saved to your account." : (BE.configured ? "Sign in to save across devices." : "Saved on this device.")) + "</p></div>";
       if (!best) { wrap.innerHTML = head + emptyCard("No seasons yet", "Play a game and your best season &amp; player stats show up here."); return; }
       wrap.innerHTML = head + bestSeasonCard(best, "Your best season") +
         '<div class="muted-line">' + seasons.length + " season" + (seasons.length > 1 ? "s" : "") + " played</div>";
-    }
-    if (state.user && BE.configured) BE.data.mySeasons().then(function (r) { paint(r.length ? r : localSeasons()); });
-    else paint(localSeasons());
+    });
   }
 
   function bestSeasonCard(s, title) {
