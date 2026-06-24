@@ -658,3 +658,7 @@ body[data-screen="draft"] .topnav, body[data-screen="sim"] .topnav, body[data-sc
   .ts-ovr b { font-size: 24px; }
   .lineup-actions { gap: 8px; }
 }
+
+/* Friends page — more breathing room between cards */
+#screen-friends .card { margin-bottom: 16px; }
+#screen-friends .card:last-child { margin-bottom: 0; }
