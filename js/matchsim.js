@@ -1,15 +1,5 @@
 /* ============================================================================
  * CLUB CHAMPION — Match Simulation (head-to-head)
- * ----------------------------------------------------------------------------
- * Two layers:
- *  1) generate(): a SEEDED timeline of timed "beats" (passes, dribbles, shots,
- *     saves, corners, headers, free-kicks, tackles…) that resolves to EXACTLY
- *     the precomputed scoreline from ENGINE.playMatch(). Variety comes from a
- *     library of randomly-chosen sequence templates, so no two games look alike.
- *     Per-player match stats fall out as a byproduct.
- *  2) a canvas renderer that tweens the ball + 7-a-side player circles between
- *     beats with easing — running clock, live score, goal/save FX, and a Skip
- *     button. The score is precomputed, so the animation can never desync.
  * ==========================================================================*/
 (function (root) {
   "use strict";
@@ -27,8 +17,6 @@
   function ri(rand, a, b) { return a + Math.floor(rand() * (b - a + 1)); }
   function pick(rand, arr) { return arr[Math.floor(rand() * arr.length)]; }
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
-  function lerp(a, b, t) { return a + (b - a) * t; }
-  function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
   function shuffle(arr, rand) {
     arr = arr.slice();
     for (var i = arr.length - 1; i > 0; i--) { var j = Math.floor(rand() * (i + 1)); var t = arr[i]; arr[i] = arr[j]; arr[j] = t; }
@@ -38,14 +26,12 @@
 
   function byPos(squad) { var g = { GK: [], DEF: [], MID: [], FWD: [] }; squad.forEach(function (p, i) { g[p.pos].push(i); }); return g; }
 
-  // Normalised pitch position for every player of a side at attacking `phase`
-  // (-1 = sat deep, +1 = pushed up). x: 0 = A's goal line, 1 = B's goal line.
-  // PATCH 1: wide ySpread so players actually fill the pitch top-to-bottom.
+  // PATCH: Balanced spread — not hugging the edges, not bunched middle.
   function layout(squad, side, phase) {
     var g = byPos(squad), out = new Array(squad.length);
-    var xBase  = { GK: 0.05, DEF: 0.22, MID: 0.46, FWD: 0.72 };
+    var xBase  = { GK: 0.06, DEF: 0.23, MID: 0.46, FWD: 0.70 };
     var push   = { GK: 0.00, DEF: 0.06, MID: 0.10, FWD: 0.15 };
-    var ySpread = { GK: 0.00, DEF: 0.66, MID: 0.74, FWD: 0.58 };
+    var ySpread = { GK: 0.00, DEF: 0.50, MID: 0.55, FWD: 0.40 };
     ["GK", "DEF", "MID", "FWD"].forEach(function (line) {
       var idxs = g[line], n = idxs.length, spr = ySpread[line];
       idxs.forEach(function (idx, k) {
@@ -53,10 +39,8 @@
         var y;
         if (n === 1) y = 0.5;
         else y = 0.5 - spr / 2 + (k / (n - 1)) * spr;
-        // tiny stagger so two players in same line don't read as a straight bar
-        y += (k % 2 ? 0.02 : -0.02);
         if (side === "B") x = 1 - x;
-        out[idx] = { x: x, y: clamp(y, 0.08, 0.92) };
+        out[idx] = { x: x, y: clamp(y, 0.10, 0.90) };
       });
     });
     return out;
@@ -98,9 +82,10 @@
         kind: kind, label: label, flash: !!flash, scoreA: score.A, scoreB: score.B });
     }
 
-    add(0, 800, { x: 0.5, y: 0.5 }, "A", "kickoff", "Kick-off at " + (result.stadium || "the stadium") + "!", false);
+    add(0, 600, { x: 0.5, y: 0.5 }, "A", "kickoff", "Kick-off at " + (result.stadium || "the stadium") + "!", false);
 
-    var nPoss = ri(rand, 26, 34);
+    // PATCH: fewer possessions = shorter match (was 26-34).
+    var nPoss = ri(rand, 20, 26);
     var minutes = []; for (var i = 0; i < nPoss; i++) minutes.push(ri(rand, 2, 89));
     minutes.sort(function (a, b) { return a - b; });
     var pA = atkA / (atkA + atkB);
@@ -121,9 +106,8 @@
       buildPossession(side, !!goalAssign[pIdx], minutes[pIdx]);
     }
 
-    add(90, 1400, { x: 0.5, y: 0.5 }, "A", "fulltime", "Full time", false);
+    add(90, 1000, { x: 0.5, y: 0.5 }, "A", "fulltime", "Full time", false);
 
-    // ----- ratings from tallies -----
     ["A", "B"].forEach(function (sd) {
       var won = (sd === "A" && result.winner === "A") || (sd === "B" && result.winner === "B");
       stats[sd].forEach(function (s) {
@@ -134,20 +118,19 @@
 
     return { beats: beats, stats: stats, scorers: scorers, result: result };
 
-    // ---- possession builder (closure over the above) ----
     function buildPossession(side, isGoal, minute) {
       var def = side === "A" ? "B" : "A";
       var g = groups[side], dg = groups[def];
       var st = stats[side], dst = stats[def];
 
-      // PATCH 6: slower build-up (500–720ms) so it feels deliberate.
+      // PATCH: faster build-up (was 500-720).
       var nPass = ri(rand, 1, 3);
       var carriers = shuffle(g.DEF.concat(g.MID), rand);
       var last = null;
       for (var k = 0; k < nPass; k++) {
         var who = carriers[k % carriers.length];
         var pp = posOf(side, who, 0.2 + 0.2 * k);
-        add(minute, ri(rand, 500, 720), pp, side, "pass", null, false);
+        add(minute, ri(rand, 320, 460), pp, side, "pass", null, false);
         st[who].touches++; st[who].passes++; last = who;
       }
 
@@ -161,34 +144,34 @@
 
       function finishGoal() {
         var type = pick(rand, ["through", "through", "cross", "cross", "solo", "freekick", "penalty"]);
-        var scorer, assist = last, lbl;
+        var scorer, assist = last;
         if (type === "cross") {
           var winger = pick(rand, g.MID.concat(g.FWD));
-          add(minute, 500, posOf(side, winger, 1), side, "pass", "Out to the wing…", false);
+          add(minute, 360, posOf(side, winger, 1), side, "pass", "Out to the wing…", false);
           st[winger].touches++; st[winger].passes++; assist = winger;
-          add(minute, 460, { x: side === "A" ? 0.86 : 0.14, y: 0.86 }, side, "cross", "Whipped in…", false);
+          add(minute, 340, { x: side === "A" ? 0.86 : 0.14, y: 0.84 }, side, "cross", "Whipped in…", false);
           scorer = attacker(function (i) { return Math.pow(squads[side][i].r.ph, 2) * (squads[side][i].pos === "FWD" ? 2 : 1); });
-          add(minute, 560, goalMouth(side, rand, false), side, "goal", lbl = headerOrFinish(true), true);
+          add(minute, 380, goalMouth(side, rand, false), side, "goal", headerOrFinish(true), true);
         } else if (type === "solo") {
           scorer = attacker(function (i) { return Math.pow(squads[side][i].r.at, 2.2); });
-          add(minute, 540, posOf(side, scorer, 1), side, "dribble", "Jinks past one…", false);
+          add(minute, 360, posOf(side, scorer, 1), side, "dribble", "Jinks past one…", false);
           st[scorer].touches++;
-          add(minute, 520, goalMouth(side, rand, false), side, "goal", "GOAL! A brilliant solo finish!", true);
+          add(minute, 360, goalMouth(side, rand, false), side, "goal", "GOAL! A brilliant solo finish!", true);
           assist = null;
         } else if (type === "penalty") {
-          add(minute, 800, { x: side === "A" ? 0.85 : 0.15, y: 0.5 }, side, "foul", "Penalty given!", false);
+          add(minute, 500, { x: side === "A" ? 0.85 : 0.15, y: 0.5 }, side, "foul", "Penalty given!", false);
           scorer = attacker(function (i) { return Math.pow(squads[side][i].r.at, 2); });
-          add(minute, 650, goalMouth(side, rand, false), side, "goal", "GOAL! Tucked away from the spot.", true);
+          add(minute, 460, goalMouth(side, rand, false), side, "goal", "GOAL! Tucked away from the spot.", true);
           assist = null;
         } else if (type === "freekick") {
-          add(minute, 800, { x: side === "A" ? 0.78 : 0.22, y: 0.5 }, side, "foul", "Free-kick in a dangerous spot…", false);
+          add(minute, 500, { x: side === "A" ? 0.78 : 0.22, y: 0.5 }, side, "foul", "Free-kick in a dangerous spot…", false);
           scorer = attacker(function (i) { return Math.pow(squads[side][i].r.cr, 2); });
-          add(minute, 600, goalMouth(side, rand, false), side, "goal", "GOAL! Curled into the top corner!", true);
+          add(minute, 440, goalMouth(side, rand, false), side, "goal", "GOAL! Curled into the top corner!", true);
           assist = null;
-        } else { // through ball
-          add(minute, 440, { x: side === "A" ? 0.7 : 0.3, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) }, side, "pass", "Threaded through!", false);
+        } else {
+          add(minute, 320, { x: side === "A" ? 0.7 : 0.3, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) }, side, "pass", "Threaded through!", false);
           scorer = attacker();
-          add(minute, 500, goalMouth(side, rand, false), side, "goal", "GOAL! Clinical finish!", true);
+          add(minute, 360, goalMouth(side, rand, false), side, "goal", "GOAL! Clinical finish!", true);
         }
         score[side]++;
         st[scorer].touches++; st[scorer].shots++; st[scorer].goals++;
@@ -201,58 +184,102 @@
         return goal ? pick(rand, ["GOAL! Towering header!", "GOAL! Headed home at the back post!", "GOAL! Tap-in from the cross!"]) : "Header just wide.";
       }
 
-      // PATCH 4+5: post bounces out, saves can be parried.
+      // PATCH: misses + post hits now have follow-through beats so the ball
+      // doesn't just freeze in the goal box.
       function finishNoGoal() {
         var type = pick(rand, ["save", "save", "miss", "block", "corner", "tackle", "tackle", "post", "offside"]);
         var shooter = attacker();
+
         if (type === "save") {
-          add(minute, 400, posOf(side, shooter, 1), side, "shot", "Shot!", false);
+          add(minute, 300, posOf(side, shooter, 1), side, "shot", "Shot!", false);
           st[shooter].touches++; st[shooter].shots++;
           var caught = rand() < 0.55;
-          add(minute, 460, goalMouth(side, rand, false), side, "save",
+          add(minute, 360, goalMouth(side, rand, false), side, "save",
               pick(rand, ["Great save!", "Tipped over!", "Keeper holds it."]), false);
           dst[gkIdx(def)].saves++;
           if (!caught) {
-            // parry — ball rebounds into the box, a defender collects
-            var rebX = side === "A" ? 0.82 : 0.18;
+            var rebX = side === "A" ? 0.78 : 0.22;
             var rebY = clamp(0.5 + (rand() - 0.5) * 0.4, 0.25, 0.75);
-            add(minute, 450, { x: rebX, y: rebY }, def, "parry", "Parried clear!", false);
+            add(minute, 380, { x: rebX, y: rebY }, def, "parry", "Parried clear!", false);
+          } else {
+            // GK catches → throws/kicks it out to a defender.
+            add(minute, 420, { x: side === "A" ? 0.32 : 0.68, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) },
+              def, "goalkick", null, false);
           }
         } else if (type === "miss") {
-          add(minute, 420, posOf(side, shooter, 1), side, "shot", "Shoots…", false);
+          add(minute, 300, posOf(side, shooter, 1), side, "shot", "Shoots…", false);
           st[shooter].touches++; st[shooter].shots++;
-          add(minute, 480, goalMouth(side, rand, true), side, "miss", pick(rand, ["Just wide!", "Over the bar!", "Inches off target."]), false);
+          // Ball flies wide & out — past the goal line clearly.
+          var wideTop = rand() < 0.5;
+          var missY = wideTop ? 0.18 : 0.82;
+          var outX = side === "A" ? 1.02 : -0.02;
+          add(minute, 380, { x: outX, y: missY }, side, "miss",
+              pick(rand, ["Just wide!", "Over the bar!", "Inches off target."]), false);
+          // Goal kick — ball teleports to GK then long ball to a defender.
+          add(minute, 460, { x: side === "A" ? 0.32 : 0.68, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) },
+            def, "goalkick", null, false);
         } else if (type === "post") {
-          add(minute, 420, posOf(side, shooter, 1), side, "shot", "Lets fly…", false);
+          add(minute, 300, posOf(side, shooter, 1), side, "shot", "Lets fly…", false);
           st[shooter].touches++; st[shooter].shots++;
-          // Real post target — top or bottom of frame.
           var hitTop = rand() < 0.5;
-          var postY = hitTop ? 0.43 : 0.57;
+          var postY = hitTop ? 0.42 : 0.58;
           var postX = side === "A" ? 0.985 : 0.015;
-          add(minute, 360, { x: postX, y: postY }, side, "postHit", "OFF THE POST!", false);
-          // Rebound back into play, opposite vertical.
-          var bounceY = hitTop ? 0.30 : 0.70;
-          var bounceX = side === "A" ? 0.84 : 0.16;
-          add(minute, 520, { x: bounceX, y: bounceY }, def, "postBounce", null, false);
+          add(minute, 280, { x: postX, y: postY }, side, "postHit", "OFF THE POST!", false);
+          // 50/50 — bounces out for a corner OR back into play to a defender.
+          if (rand() < 0.5) {
+            var cornerX = side === "A" ? 1.01 : -0.01;
+            var cornerY = hitTop ? 0.04 : 0.96;
+            add(minute, 360, { x: cornerX, y: cornerY }, side, "postBounce", "Out for a corner!", false);
+            add(minute, 460, { x: side === "A" ? 0.985 : 0.015, y: hitTop ? 0.06 : 0.94 },
+              side, "corner", "Corner kick…", false);
+            var head = attacker(function (i) { return squads[side][i].r.ph; });
+            var res = pick(rand, ["save", "miss", "miss"]);
+            add(minute, 380, res === "save" ? goalMouth(side, rand, false) : goalMouth(side, rand, true),
+              side, res === "save" ? "save" : "miss",
+              res === "save" ? "Header saved!" : "Header off target.", false);
+            st[head].touches++; st[head].shots++;
+            if (res === "save") dst[gkIdx(def)].saves++;
+            else {
+              add(minute, 420, { x: side === "A" ? 0.32 : 0.68, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) },
+                def, "goalkick", null, false);
+            }
+          } else {
+            var bounceY = hitTop ? 0.30 : 0.70;
+            var bounceX = side === "A" ? 0.80 : 0.20;
+            add(minute, 360, { x: bounceX, y: bounceY }, def, "postBounce", "Back into play!", false);
+          }
         } else if (type === "block") {
-          add(minute, 400, posOf(side, shooter, 1), side, "shot", "Shot blocked!", false);
+          add(minute, 300, posOf(side, shooter, 1), side, "shot", "Shot blocked!", false);
           st[shooter].touches++; st[shooter].shots++;
           var blk = pick(rand, dg.DEF); dst[blk].tackles++;
+          // Ball deflects to the blocker.
+          add(minute, 320, posOf(def, blk, 0.2), def, "blockOut", null, false);
         } else if (type === "corner") {
-          add(minute, 640, { x: side === "A" ? 0.985 : 0.015, y: 0.04 }, side, "corner", "Corner kick…", false);
-          var head = attacker(function (i) { return squads[side][i].r.ph; });
-          var res = pick(rand, ["save", "miss", "miss"]);
-          add(minute, 560, res === "save" ? goalMouth(side, rand, false) : goalMouth(side, rand, true), side, res === "save" ? "save" : "miss",
-            res === "save" ? "Header saved!" : "Header off target.", false);
-          st[head].touches++; st[head].shots++;
-          if (res === "save") dst[gkIdx(def)].saves++;
+          add(minute, 440, { x: side === "A" ? 0.985 : 0.015, y: 0.04 }, side, "corner", "Corner kick…", false);
+          var head2 = attacker(function (i) { return squads[side][i].r.ph; });
+          var res2 = pick(rand, ["save", "miss", "miss"]);
+          add(minute, 380, res2 === "save" ? goalMouth(side, rand, false) : goalMouth(side, rand, true),
+            side, res2 === "save" ? "save" : "miss",
+            res2 === "save" ? "Header saved!" : "Header off target.", false);
+          st[head2].touches++; st[head2].shots++;
+          if (res2 === "save") dst[gkIdx(def)].saves++;
+          else {
+            add(minute, 420, { x: side === "A" ? 0.32 : 0.68, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) },
+              def, "goalkick", null, false);
+          }
         } else if (type === "offside") {
-          add(minute, 460, posOf(side, shooter, 1.1), side, "offside", "Flag's up — offside.", false);
+          // PATCH: offsides only in the attacking third (just past defenders).
+          var offX = side === "A" ? clamp(0.66 + (rand() - 0.5) * 0.08, 0.62, 0.74) :
+                                    clamp(0.34 + (rand() - 0.5) * 0.08, 0.26, 0.38);
+          var offY = clamp(0.5 + (rand() - 0.5) * 0.5, 0.18, 0.82);
+          add(minute, 320, { x: offX, y: offY }, side, "offside", "Flag's up — offside.", false);
           st[shooter].touches++;
-        } else { // tackle / turnover
+          // Free kick back to defender.
+          add(minute, 380, { x: side === "A" ? 0.35 : 0.65, y: offY }, def, "goalkick", null, false);
+        } else {
           var tk = pick(rand, dg.DEF.concat(dg.MID));
-          add(minute, 420, posOf(side, pick(rand, g.MID.concat(g.FWD)), 0.6), side, "dribble", null, false);
-          add(minute, 400, posOf(def, tk, 0.1), def, "tackle", pick(rand, ["Won back!", "Crunching tackle!", "Intercepted."]), false);
+          add(minute, 280, posOf(side, pick(rand, g.MID.concat(g.FWD)), 0.6), side, "dribble", null, false);
+          add(minute, 300, posOf(def, tk, 0.1), def, "tackle", pick(rand, ["Won back!", "Crunching tackle!", "Intercepted."]), false);
           dst[tk].tackles++;
         }
       }
@@ -308,24 +335,26 @@
     var ball = { x: 0.5, y: 0.5, p0: null, p1: null, p2: null, u: 1, len: 1, speed: 0.6, moving: false, dribble: false, dribT: 0, carrier: null };
     function speedFor(k) {
       switch (k) {
-        case "goal":      return 1.45;
-        case "shot":      return 1.30;
-        case "postHit":   return 1.30;
-        case "postBounce":return 0.80;
-        case "save":      return 1.05;
-        case "parry":     return 0.70;
-        case "cross":     return 0.58;
-        case "corner":    return 0.50;
-        case "pass":      return 0.50;
-        case "dribble":   return 0.24;
+        case "goal":       return 1.50;
+        case "shot":       return 1.30;
+        case "postHit":    return 1.30;
+        case "postBounce": return 0.85;
+        case "save":       return 1.10;
+        case "parry":      return 0.75;
+        case "cross":      return 0.62;
+        case "corner":     return 0.55;
+        case "pass":       return 0.58;
+        case "dribble":    return 0.26;
+        case "goalkick":   return 0.85;
+        case "blockOut":   return 0.55;
         case "kickoff":
-        case "foul":      return 0.70;
-        default:          return 0.58;
+        case "foul":       return 0.75;
+        default:           return 0.60;
       }
     }
 
     function pickReceiver(b) {
-      if (/^(shot|goal|miss|post|postHit)$/.test(b.kind)) return null;
+      if (/^(shot|goal|miss|postHit)$/.test(b.kind)) return null;
       if (b.kind === "save") return playersOf(b.posSide === "A" ? "B" : "A").filter(function (p) { return p.ptype === "GK"; })[0] || null;
       var pool = playersOf(b.posSide).filter(function (p) { return p.ptype !== "GK" && p !== ball.carrier; });
       if (!pool.length) pool = playersOf(b.posSide);
@@ -338,16 +367,21 @@
     function start() { initPlayers(true); last = performance.now(); enterBeat(0); raf = requestAnimationFrame(loop); }
     function finish() { if (finished) return; finished = true; if (raf) cancelAnimationFrame(raf); if (overlay) overlay.classList.remove("show"); onDone({ stats: tl.stats, scorers: tl.scorers }); }
 
-    // PATCH 3: shot beats now wait for the shooter to arrive at the ball first.
     function enterBeat(i) {
       bi = i;
       if (i >= tl.beats.length) return finish();
       var b = tl.beats[i];
-      if (/^(save|post|postHit|tackle|corner|foul|offside|miss|kickoff|fulltime)$/.test(b.kind)) {
+      if (/^(save|parry|postHit|postBounce|tackle|corner|foul|offside|miss|kickoff|fulltime)$/.test(b.kind)) {
         banner = b.label; bannerT = b.label ? 1 : 0;
       }
-      if (b.kind === "kickoff") { initPlayers(true); ball.x = 0.5; ball.y = 0.5; ball.moving = false; ball.dribble = false; ball.carrier = null; dwell = 0.7; return; }
-      if (b.kind === "fulltime") { ball.moving = false; ball.dribble = false; dwell = 1.2; return; }
+      if (b.kind === "kickoff") { initPlayers(true); ball.x = 0.5; ball.y = 0.5; ball.moving = false; ball.dribble = false; ball.carrier = null; dwell = 0.5; return; }
+      if (b.kind === "fulltime") { ball.moving = false; ball.dribble = false; dwell = 1.0; return; }
+
+      // PATCH: goal kick teleports ball to GK so it visibly comes from him.
+      if (b.kind === "goalkick") {
+        var gk = playersOf(b.posSide).filter(function (p) { return p.ptype === "GK"; })[0];
+        if (gk) { ball.x = gk.pos.x; ball.y = gk.pos.y; }
+      }
 
       ball.carrier = null;
       b._recv = null;
@@ -356,12 +390,10 @@
 
       if (b.kind === "dribble") {
         ball.carrier = nearest(playersOf(b.posSide).filter(function (p) { return p.ptype !== "GK"; }), { x: ball.x, y: ball.y });
-      } else if (/^(shot|goal|miss|post|postHit)$/.test(b.kind)) {
-        // Find the shooter — nearest attacker to current ball position — and wait.
-        b._shooter = nearest(
-          playersOf(b.posSide).filter(function (p) { return p.ptype !== "GK"; }),
-          { x: ball.x, y: ball.y }
-        );
+      } else if (/^(shot|goal|miss|postHit)$/.test(b.kind)) {
+        // PATCH: shooter MUST be FWD or MID — never DEF/GK (no own goals).
+        var pool = playersOf(b.posSide).filter(function (p) { return p.ptype === "FWD" || p.ptype === "MID"; });
+        b._shooter = nearest(pool, { x: b.ball.x, y: b.ball.y });
         b._preShot = !!b._shooter;
       } else {
         b._recv = pickReceiver(b);
@@ -385,12 +417,12 @@
     function onArrive() {
       var b = tl.beats[bi];
       if (b.kind === "goal") return celebrate(b);
-      // PATCH 6: more settle time after key beats
-      dwell = /^(save|parry|corner|foul|post|postHit|postBounce|miss|tackle|offside)$/.test(b.kind) ? 0.55 : 0.22;
+      // PATCH: tighter dwell times = faster overall match.
+      dwell = /^(save|parry|corner|foul|postHit|miss|tackle|offside|goalkick)$/.test(b.kind) ? 0.32 : 0.10;
     }
 
     function celebrate(b) {
-      celebrating = true; celebrateUntil = performance.now() + 2500; flash = 1;
+      celebrating = true; celebrateUntil = performance.now() + 2200; flash = 1;
       var who = b.scorer ? lastName(b.scorer.name) : "";
       if (overlay) {
         overlay.style.setProperty("--goalcol", b.posSide === "A" ? colorA : colorB);
@@ -422,15 +454,14 @@
       var b = tl.beats[bi]; if (!b) return;
       ball.t = (ball.t || 0) + dt;
 
-      // PATCH 3: hold ball at shooter's feet until he gets there.
+      // PATCH: smoother eased homing on shooter before strike.
       if (b._preShot && b._shooter) {
         var sp = b._shooter.pos;
         var dx = sp.x - ball.x, dy = sp.y - ball.y, d = Math.hypot(dx, dy);
-        var pull = Math.min(1, dt * 4);
+        var pull = Math.min(1, dt * 5);
         ball.x += dx * pull; ball.y += dy * pull;
-        if (d < 0.025 || ball.t > 1.4) {
+        if (d < 0.025 || ball.t > 1.0) {
           b._preShot = false;
-          // Re-anchor the strike trajectory from the shooter's current foot position.
           ball.p0 = { x: ball.x, y: ball.y };
           var dx2 = ball.p2.x - ball.p0.x, dy2 = ball.p2.y - ball.p0.y, len2 = Math.hypot(dx2, dy2) || 0.001;
           var curve2 = (b.kind === "shot" || b.kind === "goal" || b.kind === "postHit") ? 0.04 : 0.06;
@@ -443,153 +474,4 @@
 
       if (ball.dribble && ball.carrier) {
         var off = adir(b.posSide) * 0.022;
-        ball.x = ball.carrier.pos.x + off; ball.y = ball.carrier.pos.y;
-        if ((d2({ x: ball.carrier.pos.x, y: ball.y }, b.ball) < 0.0016 || ball.t > 2.4) && dwell <= 0) { ball.dribble = false; onArrive(); }
-        return;
-      }
-      if (ball.moving && b._recv) {
-        var tg = b._recv.pos, dx3 = tg.x - ball.x, dy3 = tg.y - ball.y, d3 = Math.hypot(dx3, dy3) || 1e-4, step = ball.speed * dt;
-        if (d3 <= step + 0.02 || ball.t > 2.8) { ball.x = tg.x; ball.y = tg.y; ball.moving = false; onArrive(); }
-        else { ball.x += dx3 / d3 * step; ball.y += dy3 / d3 * step; }
-        return;
-      }
-      if (ball.moving) {
-        ball.u += (ball.speed * dt) / ball.len;
-        if (ball.u >= 1) { ball.u = 1; ball.moving = false; ball.x = ball.p2.x; ball.y = ball.p2.y; onArrive(); }
-        else { var u = ball.u, iu = 1 - u; ball.x = iu * iu * ball.p0.x + 2 * iu * u * ball.p1.x + u * u * ball.p2.x; ball.y = iu * iu * ball.p0.y + 2 * iu * u * ball.p1.y + u * u * ball.p2.y; }
-      }
-    }
-
-    // PATCH 2: lane-holding steering. Players anchor to their pos0 and only
-    // softly blend toward the ball — no more everyone-chases-the-ball.
-    function updatePlayers(dt) {
-      var b = tl.beats[bi]; if (!b) return;
-      var poss = b.posSide, def = poss === "A" ? "B" : "A";
-      var bp = { x: ball.x, y: ball.y };
-      var dfO = playersOf(def).filter(function (p) { return p.ptype !== "GK"; })
-        .sort(function (a, c) { return d2(a.pos, bp) - d2(c.pos, bp); });
-
-      players.forEach(function (p) {
-        // Goalkeeper
-        if (p.ptype === "GK") {
-          var gx = ownGoalX(p.side);
-          var tx = gx + adir(p.side) * 0.025;
-          var ty = clamp(0.5 + (ball.y - 0.5) * 0.55, 0.36, 0.64);
-          if (def === p.side && /^(shot|goal|save|postHit)$/.test(b.kind)) {
-            tx = gx + adir(p.side) * 0.05;
-            ty = clamp(ball.y, 0.32, 0.68);
-          }
-          return steer(p, tx, ty, 0.32, dt);
-        }
-
-        // Attacking side
-        if (p.side === poss) {
-          if (p === ball.carrier) return steer(p, b.ball.x, b.ball.y, 0.22, dt);
-          if (p === b._recv)      return steer(p, b.ball.x, b.ball.y, 0.30, dt);
-          if (p === b._shooter && b._preShot) return steer(p, ball.x, ball.y, 0.34, dt); // shooter runs onto it
-          var ahead = p.ptype === "FWD" ? 0.30 : p.ptype === "MID" ? 0.05 : -0.28;
-          var tx2 = clamp(p.pos0.x + ahead * adir(poss) * 0.6 + (ball.x - 0.5) * 0.25, 0.06, 0.94);
-          var ty2 = clamp(p.pos0.y * 0.95 + ball.y * 0.05, 0.06, 0.94);
-          return steer(p, tx2, ty2, p.ptype === "FWD" ? 0.20 : 0.16, dt);
-        }
-
-        // Defending side
-        var rank = dfO.indexOf(p);
-        if (rank === 0) return steer(p, ball.x, ball.y, 0.34, dt);
-        if (rank === 1) return steer(p, (ball.x + ownGoalX(p.side)) / 2, ball.y, 0.24, dt);
-        var back = p.ptype === "DEF" ? 0.22 : 0.08;
-        var tx3 = clamp(p.pos0.x - back * adir(p.side) + (ball.x - 0.5) * 0.15, 0.06, 0.94);
-        var ty3 = clamp(p.pos0.y * 0.95 + ball.y * 0.05, 0.06, 0.94);
-        return steer(p, tx3, ty3, 0.16, dt);
-      });
-    }
-
-    function steer(p, tx, ty, maxSp, dt) {
-      var dx = tx - p.pos.x, dy = ty - p.pos.y, d = Math.hypot(dx, dy) || 0.0001;
-      var want = Math.min(maxSp, d * 3.0);
-      p.vel.x += (dx / d * want - p.vel.x) * 0.18;
-      p.vel.y += (dy / d * want - p.vel.y) * 0.18;
-      p.pos.x = clamp(p.pos.x + p.vel.x * dt + (Math.random() - 0.5) * 0.0006, 0.03, 0.97);
-      p.pos.y = clamp(p.pos.y + p.vel.y * dt + (Math.random() - 0.5) * 0.0006, 0.06, 0.94);
-    }
-
-    function draw() {
-      ctx.clearRect(0, 0, W, H);
-      drawPitch();
-      players.forEach(drawPlayer);
-      if (flash > 0) { ctx.fillStyle = "rgba(255,210,74," + (flash * 0.3) + ")"; ctx.fillRect(0, 0, W, H); if (!celebrating) flash = Math.max(0, flash - 0.03); }
-      var bx = px(ball.x), by = py(ball.y);
-      ctx.beginPath(); ctx.arc(bx, by, 5.5, 0, 7); ctx.fillStyle = "#fff";
-      ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 6; ctx.fill(); ctx.shadowBlur = 0;
-      drawHud(tl.beats[Math.max(0, Math.min(bi, tl.beats.length - 1))]);
-      if (banner && bannerT > 0 && !celebrating) { drawBanner(banner, bannerT); bannerT = Math.max(0, bannerT - 0.01); }
-    }
-
-    function drawPlayer(p) {
-      var x = px(p.pos.x), y = py(p.pos.y), isGK = p.ptype === "GK";
-      ctx.beginPath(); ctx.arc(x, y, isGK ? 8.5 : 9.5, 0, 7);
-      ctx.fillStyle = isGK ? "#13314a" : (p.side === "A" ? colorA : colorB);
-      ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.stroke();
-      ctx.fillStyle = isGK ? "#cfe8ff" : "rgba(4,20,12,.9)";
-      ctx.font = "700 9px Inter, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(isGK ? "GK" : lastName(squads[p.side][p.idx].n).slice(0, 3), x, y);
-    }
-
-    function drawPitch() {
-      var g = ctx.createLinearGradient(0, 0, 0, H);
-      g.addColorStop(0, "#16542f"); g.addColorStop(1, "#103f24");
-      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-      var fw = FR - FL, fh = FB - FT;
-      ctx.fillStyle = "rgba(255,255,255,.04)";
-      for (var s = 0; s < 10; s++) if (s % 2) ctx.fillRect(px(s / 10), FT, fw / 10, fh);
-      ctx.strokeStyle = "rgba(255,255,255,.75)"; ctx.lineWidth = 2;
-      ctx.strokeRect(FL, FT, fw, fh);
-      ctx.beginPath(); ctx.moveTo(px(0.5), FT); ctx.lineTo(px(0.5), FB); ctx.stroke();
-      ctx.beginPath(); ctx.arc(px(0.5), py(0.5), fh * 0.13, 0, 7); ctx.stroke();
-      ctx.strokeRect(FL, py(0.26), fw * 0.13, fh * 0.48);
-      ctx.strokeRect(FR - fw * 0.13, py(0.26), fw * 0.13, fh * 0.48);
-      ctx.strokeRect(FL, py(0.38), fw * 0.05, fh * 0.24);
-      ctx.strokeRect(FR - fw * 0.05, py(0.38), fw * 0.05, fh * 0.24);
-      [[FL, FT, 1, 1], [FR, FT, -1, 1], [FL, FB, 1, -1], [FR, FB, -1, -1]].forEach(function (c) {
-        ctx.beginPath(); ctx.arc(c[0], c[1], 7, 0, 7); ctx.stroke();
-      });
-      var gd = Math.max(10, fw * 0.045), gy1 = py(0.42), gy2 = py(0.58);
-      ctx.fillStyle = "rgba(255,255,255,.16)"; ctx.lineWidth = 2.5; ctx.strokeStyle = "#fff";
-      ctx.fillRect(FL - gd, gy1, gd, gy2 - gy1); ctx.strokeRect(FL - gd, gy1, gd, gy2 - gy1);
-      ctx.fillRect(FR, gy1, gd, gy2 - gy1); ctx.strokeRect(FR, gy1, gd, gy2 - gy1);
-    }
-
-    function drawHud(beat) {
-      ctx.fillStyle = "rgba(7,20,13,.78)"; ctx.fillRect(0, 0, W, 30);
-      ctx.textBaseline = "middle"; ctx.font = "800 14px Archivo, Inter, sans-serif";
-      ctx.textAlign = "left"; ctx.fillStyle = colorA; ctx.fillText(nameA, 12, 15);
-      ctx.textAlign = "right"; ctx.fillStyle = colorB; ctx.fillText(nameB, W - 12, 15);
-      ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.font = "900 16px Archivo, Inter, sans-serif";
-      ctx.fillText(beat.scoreA + " - " + beat.scoreB, W / 2, 15);
-      ctx.font = "700 11px Inter, sans-serif"; ctx.fillStyle = "#9fcfb4";
-      ctx.fillText(Math.min(90, beat.minute) + "'", W / 2, 40);
-    }
-
-    function drawBanner(text, a) {
-      ctx.globalAlpha = clamp(a, 0, 1);
-      ctx.fillStyle = "rgba(7,20,13,.82)";
-      ctx.font = "800 15px Archivo, Inter, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      var w = ctx.measureText(text).width + 28;
-      ctx.fillRect(W / 2 - w / 2, H - 40, w, 26);
-      ctx.fillStyle = "#ffd24a"; ctx.fillText(text, W / 2, H - 27);
-      ctx.globalAlpha = 1;
-    }
-
-    resize();
-    root.addEventListener("resize", resize);
-    return {
-      start: start,
-      skip: finish,
-      destroy: function () { if (raf) cancelAnimationFrame(raf); root.removeEventListener("resize", resize); if (overlay) overlay.classList.remove("show"); finished = true; },
-    };
-  }
-
-  var API = { create: create, generate: generate };
-  if (typeof module !== "undefined" && module.exports) module.exports = API;
-  root.CC_MATCHSIM = API;
-})(typeof window !== "undefined" ? window : globalThis);
+        ball.x = 
