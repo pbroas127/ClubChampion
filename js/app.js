@@ -526,12 +526,21 @@
     }
     if (BE.invites && BE.invites.subscribe) {
       invitesChannel = BE.invites.subscribe(function (payload) {
-        // LOBBY FIX: if MY outgoing invite was accepted, jump into the lobby
-        if (payload && payload.new && payload.new.status === "accepted" &&
-            payload.new.from_user === state.user.id) {
-          toast("Match accepted! Entering lobby...");
-          setTimeout(function () { tryEnterLobby(); }, 600);
-          return;
+        if (payload && payload.new) {
+          var inv = payload.new;
+          var iAmInThisInvite = inv.from_user === state.user.id || inv.to_user === state.user.id;
+
+          // If invite is accepted AND lobby_id is now attached, both users should enter
+          if (iAmInThisInvite && inv.status === "accepted" && inv.lobby_id) {
+            enterLobby(inv.lobby_id, inv.from_user === state.user.id);
+            return;
+          }
+
+          // Fallback if accepted arrives before lobby_id update
+          if (iAmInThisInvite && inv.status === "accepted" && !inv.lobby_id) {
+            retryEnterLobby(10, 500);
+            return;
+          }
         }
         if (state.tab === "friends") renderInvites();
       });
@@ -681,12 +690,22 @@
   }
 
   function onInviteAccepted(inviteRow) {
-    if (!inviteRow) { setTimeout(function () { tryEnterLobby(); }, 400); return; }
-    if (!BE.lobby) { toast("Lobby not loaded."); return; }
+    if (!inviteRow) {
+      retryEnterLobby(10, 500);
+      return;
+    }
+
+    var amHost = state.user && inviteRow.from_user === state.user.id;
+
     BE.lobby.createFromInvite(inviteRow).then(function (r) {
-      if (r && r.data) enterLobby(r.data.id, true);
-      else tryEnterLobby();
-    }).catch(function () { tryEnterLobby(); });
+      if (r && r.data) {
+        enterLobby(r.data.id, amHost);
+      } else {
+        retryEnterLobby(10, 500);
+      }
+    }).catch(function () {
+      retryEnterLobby(10, 500);
+    });
   }
 
   function tryEnterLobby() {
@@ -696,6 +715,34 @@
       else toast("Couldn't find lobby.");
     });
   }
+
+  function retryEnterLobby(tries, delay) {
+    tries = tries || 10;
+    delay = delay || 500;
+
+    function attempt(n) {
+      BE.lobby.mine().then(function (lobbyRow) {
+        if (lobbyRow) {
+          enterLobby(lobbyRow.id, lobbyRow.host === state.user.id);
+          return;
+        }
+        if (n > 0) {
+          setTimeout(function () { attempt(n - 1); }, delay);
+        } else {
+          toast("Couldn't find match lobby — try again.");
+        }
+      }).catch(function () {
+        if (n > 0) {
+          setTimeout(function () { attempt(n - 1); }, delay);
+        } else {
+          toast("Couldn't find match lobby — try again.");
+        }
+      });
+    }
+
+    attempt(tries);
+  }
+
 
   function renderFriendStats(userId, name) {
     var wrap = $("screen-friends"); if (!wrap) return;
