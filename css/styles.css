@@ -484,6 +484,13 @@ body[data-screen="draft"] .topnav, body[data-screen="sim"] .topnav, body[data-sc
 .mp-rematch-note b { color: var(--text); }
 .mp-rematch-note .mini-btn { margin-left: 8px; }
 
+/* C2: bigger, better-proportioned MP draft pitches */
+.mp-pitch { aspect-ratio: 3 / 4; min-height: 160px; }
+.mp-board .slot-chip { max-width: 64px; }
+.mp-board .slot-chip .chip-pos { font-size: 10px; }
+.mp-board .slot-chip .chip-name { font-size: 9px; line-height: 1.05; }
+.mp-board .slot-chip .chip-sub { font-size: 8px; }
+
 /* ========================================================= PAGES ======== */
 .screen--page { max-width: var(--maxw); margin: 0 auto; padding: 24px 16px 60px; }
 .page-head { margin-bottom: 16px; }

@@ -99,6 +99,9 @@ alter table public.profiles add column if not exists last_seen          timestam
 alter table public.profiles add column if not exists username_changed_at timestamptz;
 alter table public.profiles add column if not exists pro_default         boolean default false;
 
+-- ---------- MATCH LOBBY: grey "waiting for player" expiry (Phase B) -------
+alter table public.match_lobby add column if not exists lobby_expires_at timestamptz;
+
 -- ---------- HEAD-TO-HEAD (Phase 3.2) -------------------------------------
 -- One row per unordered pair (low_id < high_id). low_wins / high_wins.
 create table if not exists public.head_to_head (

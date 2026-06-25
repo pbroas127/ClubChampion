@@ -544,10 +544,6 @@
               retryEnterLobby(12, 500);
               return;
             }
-
-            // Extra safety: whenever anything changes on one of my invites,
-            // also check if a lobby already exists for me
-            maybeAutoJoinLobby();
           }
         }
 
@@ -555,10 +551,7 @@
       });
     }
     inviteTick = setInterval(function () {
-      if (state.tab === "friends") {
-        updateInviteCountdowns();
-        maybeAutoJoinLobby();
-      }
+      if (state.tab === "friends") updateInviteCountdowns();
     }, 1000);
   }
 
@@ -661,8 +654,16 @@
     m.style.left = Math.max(8, Math.min(r.left - 60, window.innerWidth - 250)) + "px";
     $("ip-send").onclick = function () {
       $("ip-send").disabled = true;
-      BE.invites.send(userId, { pool: $("ip-pool").value, pro: $("ip-pro").checked }).then(function () {
-        m.remove(); toast("Challenge sent to " + name + "!"); renderInvites();
+      BE.invites.send(userId, { pool: $("ip-pool").value, pro: $("ip-pro").checked }).then(function (r) {
+        m.remove(); toast("Challenge sent to " + name + "!");
+        var inv = r && r.data;
+        // A2: host immediately creates + enters the lobby, then waits (grey 30s timer).
+        if (inv) {
+          BE.lobby.createFromInvite(inv).then(function (lr) {
+            if (lr && lr.data) { enteredLobbyOnce = true; enterLobby(lr.data.id, true); }
+            else renderInvites();
+          }).catch(function () { renderInvites(); });
+        } else { renderInvites(); }
       }).catch(function (e) { toast((e && e.message) || "Couldn't send."); $("ip-send").disabled = false; });
     };
     setTimeout(function () { document.addEventListener("click", function h(e) { if (!m.contains(e.target) && e.target !== btn) { m.remove(); document.removeEventListener("click", h); } }); }, 0);
@@ -675,7 +676,8 @@
         return '<div class="friend-row invite-row" data-exp="' + x.expires_at + '">' +
           '<div class="friend-id"><b>' + esc(x.username) + "</b><small>" + poolLabel(x.pool) + (x.pro ? " · Pro" : "") + ' · <span class="inv-cd">...</span></small></div>' +
           '<span class="friend-acts">' + (sent
-            ? '<span class="dim" style="font-size:12px">Waiting...</span><button class="mini-btn" data-cancel-inv="' + x.id + '">Cancel</button>'
+            ? (x.lobby_id ? '<button class="mini-btn ok" data-join-inv="' + x.lobby_id + '">🎮 Join Lobby</button>' : '<span class="dim" style="font-size:12px">Sending…</span>') +
+              '<button class="mini-btn" data-cancel-inv="' + x.id + '">Cancel</button>'
             : '<button class="mini-btn ok" data-acc-inv="' + x.id + '">Accept</button><button class="mini-btn" data-dec-inv="' + x.id + '">Decline</button>') +
           "</span></div>";
       }
@@ -688,6 +690,7 @@
       });
       box.querySelectorAll("[data-dec-inv]").forEach(function (b) { b.onclick = function () { b.disabled = true; BE.invites.decline(b.dataset.decInv).then(function () { renderInvites(); }); }; });
       box.querySelectorAll("[data-cancel-inv]").forEach(function (b) { b.onclick = function () { b.disabled = true; BE.invites.cancel(b.dataset.cancelInv).then(function () { renderInvites(); }); }; });
+      box.querySelectorAll("[data-join-inv]").forEach(function (b) { b.onclick = function () { enteredLobbyOnce = true; enterLobby(b.dataset.joinInv, true); }; });   // A3
       updateInviteCountdowns();
     }).catch(function () {});
   }
@@ -720,22 +723,19 @@
   }
 
   function onInviteAccepted(inviteRow) {
-    if (!inviteRow) {
-      retryEnterLobby(12, 500);
+    if (!inviteRow) { retryEnterLobby(12, 500); return; }
+    var amHost = !!(state.user && inviteRow.from_user === state.user.id);
+    // Host already created the lobby on send → just join it (no duplicate lobby).
+    if (inviteRow.lobby_id) {
+      enteredLobbyOnce = true;
+      enterLobby(inviteRow.lobby_id, amHost);
       return;
     }
-
-    var amHost = !!(state.user && inviteRow.from_user === state.user.id);
-
+    // Fallback for older invites with no pre-made lobby.
     BE.lobby.createFromInvite(inviteRow).then(function (r) {
-      if (r && r.data) {
-        enterLobby(r.data.id, amHost);
-      } else {
-        retryEnterLobby(12, 500);
-      }
-    }).catch(function () {
-      retryEnterLobby(12, 500);
-    });
+      if (r && r.data) { enteredLobbyOnce = true; enterLobby(r.data.id, amHost); }
+      else retryEnterLobby(12, 500);
+    }).catch(function () { retryEnterLobby(12, 500); });
   }
 
   function tryEnterLobby() {
@@ -994,9 +994,11 @@
 
     $("mpl-leave").onclick = function () {
       if (confirm("Leave this lobby?")) {
-        BE.lobby.leave(lobbyState.lobbyId);
-        teardownLobby();
-        UI.showScreen("home");
+        var lid = lobbyState.lobbyId;
+        if (lid) BE.lobby.leave(lid);              // sets phase=done so lobby.mine() skips it
+        resetMpMatch(); teardownLobby();
+        enteredLobbyOnce = true;                   // don't get pulled back in
+        setTab("play");
       }
     };
 
@@ -1192,16 +1194,41 @@
     var meIsTurn = d.turn === mpDraft.row.host;
     var openSlots = meIsTurn ? d.host_open : d.guest_open;
     var drafted = meIsTurn ? d.host_drafted : d.guest_drafted;
-    // Use the shared rng to make spins deterministic across both clients
-    var spin = mpDraft.GAME.makeSpin(openSlots, drafted, mpDraft.rand);
+    var pool = mpDraft.row.pool || "club";
+    // C4: seed each spin from (matchSeed + pickCount) so spins are genuinely
+    // varied, never repeat from a stale re-seed, and are identical on both clients.
+    var picks = (d.host_squad || []).length + (d.guest_squad || []).length;
+    var seed = (((mpDraft.row.seed >>> 0) + picks * 0x9e3779b1) >>> 0) || 1;
+    var rand = mpDraft.GAME.mulberry32(seed);
+    // D3: branch the pool — World Cup nations vs Clubs.
+    var spin = pool === "wc"
+      ? mpDraft.GAME.makeNationSpin(openSlots, drafted, rand)
+      : mpDraft.GAME.makeSpin(openSlots, drafted, rand);
     if (!spin) return null;
     return {
-      clubIndex: spin.clubIndex,
+      pool: pool,
+      clubIndex: (spin.clubIndex != null ? spin.clubIndex : null),
+      teamName: spin.teamName || null,
       club: spin.club, short: spin.short, color: spin.color, country: spin.country,
       year: spin.year, label: spin.label,
       eligibleNames: spin.eligible.map(function (p) { return p.n; }),
     };
   }
+
+  // Resolve the player pool for a stored spin (Clubs era OR World Cup nation).
+  function mpSpinPlayers(spin) {
+    if (!spin) return [];
+    if (spin.pool === "wc") {
+      var N = root.CC_NATIONS; if (!N) return [];
+      var teams = N.teamsForYear(spin.year) || [];
+      var t = teams.filter(function (x) { return x.team === spin.teamName; })[0];
+      return t ? t.players : [];
+    }
+    var era = mpDraft.DATA.eraForYear(spin.clubIndex, spin.year);
+    return era ? era.players : [];
+  }
+  // Stable identity for the duplicate-lock rule (8.3): same side + year.
+  function mpSpinKey(spin) { return (spin.pool === "wc" ? spin.teamName : spin.clubIndex) + "|" + spin.year; }
 
   function renderMpDraft() {
     showLobbyScreen();
@@ -1252,23 +1279,36 @@
         '<div class="players' + (myTurn ? "" : " mp-locked") + '" id="mp-players"></div>' +
       '</div>';
 
-    renderMpPitches(mySquad, oppSquad);
+    renderMpPitches(mySquad, oppSquad,
+      mpDraft.meIsHost ? d.host_formation : d.guest_formation,
+      mpDraft.meIsHost ? d.guest_formation : d.host_formation);
     renderMpPlayers(d, myTurn, mySquad, oppSquad);
+
+    // C3: spin the reels whenever the roll changes (new pick number = new roll).
+    var spinId = d.current_spin ? (d.current_spin.short + "|" + d.current_spin.year + "|" + pickNum) : "";
+    if (spinId && spinId !== mpDraft.lastSpinId) {
+      mpDraft.lastSpinId = spinId;
+      var reels = wrap.querySelectorAll(".mp-spin-panel .reel");
+      reels.forEach(function (rl) { rl.classList.add("is-spinning"); });
+      setTimeout(function () { reels.forEach(function (rl) { rl.classList.remove("is-spinning"); }); }, 850);
+    }
   }
 
-  function renderMpPitches(mySquad, oppSquad) {
-    [["mp-pitch-me", mySquad], ["mp-pitch-opp", oppSquad]].forEach(function (pair) {
+  function renderMpPitches(mySquad, oppSquad, myFormationId, oppFormationId) {
+    var F = mpDraft.ENGINE.FORMATIONS;
+    function slotsFor(id) { var f = F.filter(function (x) { return x.id === id; })[0] || F[0]; return f.slots; }
+    [["mp-pitch-me", mySquad, myFormationId], ["mp-pitch-opp", oppSquad, oppFormationId]].forEach(function (pair) {
       var pitch = $(pair[0]); if (!pitch) return;
       pitch.innerHTML = "";
-      var slots = mpDraft.ENGINE.FORMATIONS[0].slots; // shape doesn't really matter visually
+      var slots = slotsFor(pair[2]);                 // C1: the player's CHOSEN formation
       var byPos = { GK: [], DEF: [], MID: [], FWD: [] };
       pair[1].forEach(function (p) { byPos[p.pos].push(p); });
       ["GK", "DEF", "MID", "FWD"].forEach(function (pos) {
+        var n = slots[pos] || 0; if (!n) return;     // exactly the slots this shape needs
         var line = el("div", "pitch-line");
-        var n = Math.max(byPos[pos].length, 1);
         for (var i = 0; i < n; i++) {
           var p = byPos[pos][i];
-          var chip = el("div", "slot-chip" + (p ? " is-filled" : ""));
+          var chip = el("div", "slot-chip" + (p ? " is-filled" : ""));   // empties stay dashed
           if (p) {
             chip.innerHTML = '<div class="chip-pos">' + pos + '</div>' +
               '<div class="chip-name">' + esc(lastName(p.n)) + '</div>' +
@@ -1289,8 +1329,8 @@
     var box = $("mp-players"); if (!box) return;
     box.innerHTML = "";
     if (!d.current_spin) { box.innerHTML = '<div class="muted-line">Spinning…</div>'; return; }
-    var era = mpDraft.DATA.eraForYear(d.current_spin.clubIndex, d.current_spin.year);
-    if (!era) { box.innerHTML = '<div class="muted-line">No era found.</div>'; return; }
+    var poolPlayers = mpSpinPlayers(d.current_spin);
+    if (!poolPlayers.length) { box.innerHTML = '<div class="muted-line">No players found.</div>'; return; }
 
     var openSlots = mpDraft.meIsHost ? d.host_open : d.guest_open;
     var drafted = mpDraft.meIsHost ? d.host_drafted : d.guest_drafted;
@@ -1298,7 +1338,7 @@
 
     // Filter to players that match this spin's eligible list (deterministic), then sort
     var nameSet = {}; d.current_spin.eligibleNames.forEach(function (n) { nameSet[n] = true; });
-    var list = era.players.filter(function (p) {
+    var list = poolPlayers.filter(function (p) {
       if (!nameSet[p.n]) return false;
       if (openSlots[p.pos] <= 0) return false;
       if (drafted[p.n]) return false;
@@ -1315,7 +1355,7 @@
 
     list.forEach(function (pl) {
       var ovr = Math.round(mpDraft.ENGINE.overall(pl));
-      var oppHasSame = !!oppDrafted[pl.n + "|" + d.current_spin.clubIndex + "|" + d.current_spin.year];
+      var oppHasSame = !!oppDrafted[pl.n + "|" + mpSpinKey(d.current_spin)];
       var card = el("button", "pcard" + (oppHasSame ? " mp-locked-card" : ""));
       card.innerHTML =
         '<div class="pos-badge pos-' + pl.pos + '">' + pl.pos + "</div>" +
@@ -1351,7 +1391,7 @@
     d[openKey][pl.pos] = Math.max(0, (d[openKey][pl.pos] || 0) - 1);
     d[draftedKey] = Object.assign({}, d[draftedKey]);
     d[draftedKey][pl.n] = true;
-    d[draftedKey][pl.n + "|" + spin.clubIndex + "|" + spin.year] = true;
+    d[draftedKey][pl.n + "|" + mpSpinKey(spin)] = true;
 
     // Swap turn
     d.turn = (d.turn === mpDraft.row.host) ? mpDraft.row.guest : mpDraft.row.host;
@@ -1404,18 +1444,17 @@
   function autoPickMp() {
     var d = mpDraft.row.draft;
     if (!d || !d.current_spin) return;
-    var era = mpDraft.DATA.eraForYear(d.current_spin.clubIndex, d.current_spin.year);
-    if (!era) return;
+    var poolPlayers = mpSpinPlayers(d.current_spin);
+    if (!poolPlayers.length) return;
     var openSlots = mpDraft.meIsHost ? d.host_open : d.guest_open;
     var drafted = mpDraft.meIsHost ? d.host_drafted : d.guest_drafted;
     var oppDrafted = mpDraft.meIsHost ? d.guest_drafted : d.host_drafted;
     var nameSet = {}; d.current_spin.eligibleNames.forEach(function (n) { nameSet[n] = true; });
-    var list = era.players.filter(function (p) {
+    var list = poolPlayers.filter(function (p) {
       if (!nameSet[p.n]) return false;
       if (openSlots[p.pos] <= 0) return false;
       if (drafted[p.n]) return false;
-      var key = p.n + "|" + d.current_spin.clubIndex + "|" + d.current_spin.year;
-      if (oppDrafted[key]) return false;
+      if (oppDrafted[p.n + "|" + mpSpinKey(d.current_spin)]) return false;
       return true;
     });
     if (!list.length) return;
@@ -1451,7 +1490,7 @@
   function onOpponentLeft() {
     if (!mpMatch.started && !lobbyState.lobbyId) return;
     toast("Your opponent left the match.");
-    resetMpMatch(); teardownLobby(); UI.showScreen("home");
+    resetMpMatch(); teardownLobby(); enteredLobbyOnce = true; setTab("play");
   }
 
   function enterMpMatch(row) {
@@ -1575,7 +1614,7 @@
         '<button class="btn btn--kickoff btn--sm flex1" id="mp-rematch">↻ Rematch</button>' +
       "</div>" +
       '<div class="mp-rematch-note" id="mp-rematch-note"></div>';
-    $("mp-home").onclick = function () { BE.lobby.leave(mpMatch.lobbyId); resetMpMatch(); teardownLobby(); UI.showScreen("home"); };
+    $("mp-home").onclick = function () { if (mpMatch.lobbyId) BE.lobby.leave(mpMatch.lobbyId); resetMpMatch(); teardownLobby(); enteredLobbyOnce = true; setTab("play"); };
     $("mp-rematch").onclick = requestRematch;
     handleRematchFlags(mpMatch.row);   // reflect any rematch request that already arrived
   }

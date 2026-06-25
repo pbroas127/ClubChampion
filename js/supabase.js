@@ -297,7 +297,7 @@
               var inc = [], out = [];
               rows.forEach(function (x) {
                 var other = x.from_user === u.id ? x.to_user : x.from_user;
-                var e = { id: x.id, userId: other, username: m[other] || "player", pool: x.pool, pro: x.pro, expires_at: x.expires_at };
+                var e = { id: x.id, userId: other, username: m[other] || "player", pool: x.pool, pro: x.pro, expires_at: x.expires_at, lobby_id: x.lobby_id };
                 if (x.to_user === u.id) inc.push(e); else out.push(e);
               });
               return { incoming: inc, outgoing: out };
@@ -325,6 +325,7 @@
         pool: invite.pool || "club",
         pro: !!invite.pro,
         phase: "formation",
+        lobby_expires_at: new Date(Date.now() + 30000).toISOString(),   // B2: grey 30s "waiting" timer
       }).select().single().then(function (r) {
         // Save the new lobby_id back onto the invite row so BOTH users can enter reliably
         if (r && r.data && invite.id) {
@@ -341,9 +342,13 @@
       if (!client) return Promise.resolve(null);
       return auth.getUser().then(function (u) {
         if (!u) return null;
+        // A1: only FRESH, still-active lobbies — never pull a player into a stale
+        // or finished one. (phase filter already excludes done/expired.)
+        var cutoff = new Date(Date.now() - 5 * 60000).toISOString();
         return client.from("match_lobby").select("*")
           .or("host.eq." + u.id + ",guest.eq." + u.id)
           .in("phase", ["formation", "reveal", "draft", "match"])
+          .gte("created_at", cutoff)
           .order("created_at", { ascending: false }).limit(1).maybeSingle()
           .then(function (r) { return r.data; });
       }).catch(function () { return null; });
