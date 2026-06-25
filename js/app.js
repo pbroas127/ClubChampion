@@ -487,7 +487,8 @@
   }
 
   var friendsChannel = null, invitesChannel = null, inviteTick = null;
-
+  var enteredLobbyOnce = false;
+  
   function teardownFriendsRealtime() {
     if (friendsChannel && BE.friends && BE.friends.unsubscribe) { BE.friends.unsubscribe(friendsChannel); friendsChannel = null; }
     if (invitesChannel && BE.invites && BE.invites.unsubscribe) { BE.invites.unsubscribe(invitesChannel); invitesChannel = null; }
@@ -530,22 +531,35 @@
           var inv = payload.new;
           var iAmInThisInvite = inv.from_user === state.user.id || inv.to_user === state.user.id;
 
-          // If invite is accepted AND lobby_id is now attached, both users should enter
-          if (iAmInThisInvite && inv.status === "accepted" && inv.lobby_id) {
-            enterLobby(inv.lobby_id, inv.from_user === state.user.id);
-            return;
-          }
+          if (iAmInThisInvite) {
+            // Best case: direct lobby pointer exists
+            if (inv.status === "accepted" && inv.lobby_id) {
+              enteredLobbyOnce = true;
+              enterLobby(inv.lobby_id, inv.from_user === state.user.id);
+              return;
+            }
 
-          // Fallback if accepted arrives before lobby_id update
-          if (iAmInThisInvite && inv.status === "accepted" && !inv.lobby_id) {
-            retryEnterLobby(10, 500);
-            return;
+            // Fallback: accepted but lobby_id not there yet
+            if (inv.status === "accepted") {
+              retryEnterLobby(12, 500);
+              return;
+            }
+
+            // Extra safety: whenever anything changes on one of my invites,
+            // also check if a lobby already exists for me
+            maybeAutoJoinLobby();
           }
         }
+
         if (state.tab === "friends") renderInvites();
       });
     }
-    inviteTick = setInterval(function () { if (state.tab === "friends") updateInviteCountdowns(); }, 1000);
+    inviteTick = setInterval(function () {
+      if (state.tab === "friends") {
+        updateInviteCountdowns();
+        maybeAutoJoinLobby();
+      }
+    }, 1000);
   }
 
   function wireFriendsAdd() {
@@ -678,6 +692,22 @@
     }).catch(function () {});
   }
 
+  
+  function maybeAutoJoinLobby() {
+    if (!state.user || !BE.lobby) return;
+    if (document.body.dataset.screen === "mplobby") return;
+    if (enteredLobbyOnce) return;
+
+    BE.lobby.mine().then(function (lobbyRow) {
+      if (lobbyRow) {
+        enteredLobbyOnce = true;
+        enterLobby(lobbyRow.id, lobbyRow.host === state.user.id);
+      }
+    }).catch(function () {});
+  }
+
+
+  
   function updateInviteCountdowns() {
     var rows = document.querySelectorAll(".invite-row"); var expired = false;
     rows.forEach(function (rw) {
@@ -691,20 +721,20 @@
 
   function onInviteAccepted(inviteRow) {
     if (!inviteRow) {
-      retryEnterLobby(10, 500);
+      retryEnterLobby(12, 500);
       return;
     }
 
-    var amHost = state.user && inviteRow.from_user === state.user.id;
+    var amHost = !!(state.user && inviteRow.from_user === state.user.id);
 
     BE.lobby.createFromInvite(inviteRow).then(function (r) {
       if (r && r.data) {
         enterLobby(r.data.id, amHost);
       } else {
-        retryEnterLobby(10, 500);
+        retryEnterLobby(12, 500);
       }
     }).catch(function () {
-      retryEnterLobby(10, 500);
+      retryEnterLobby(12, 500);
     });
   }
 
@@ -717,7 +747,7 @@
   }
 
   function retryEnterLobby(tries, delay) {
-    tries = tries || 10;
+    tries = tries || 12;
     delay = delay || 500;
 
     function attempt(n) {
@@ -1016,7 +1046,9 @@
     lobbyState.channel = null;
     stopLobbyTimer();
     lobbyState.lobbyId = null;
+    enteredLobbyOnce = false;
   }
+
 
   /* ================================================ PHASE 7 — FIRST PICK */
   // Show the slot-machine spin between both usernames, land on the server's
