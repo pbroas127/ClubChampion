@@ -768,3 +768,204 @@ body[data-screen="mplobby"] .topnav { display: none; }
   .mpl-players { grid-template-columns: 1fr 1fr; }
   .mpl-vs-mid { display: none; }
 }
+
+/* ============================================== PHASE 7 — FIRST PICK ==== */
+.fp-reel {
+  margin: 8px auto 24px;
+  max-width: 320px;
+  height: 80px;
+  background: var(--bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  box-shadow: inset 0 4px 16px rgba(0,0,0,.4);
+}
+.fp-reel span {
+  font-family: "Archivo";
+  font-weight: 900;
+  font-size: clamp(24px, 5vw, 38px);
+  color: var(--green);
+  letter-spacing: -.01em;
+  animation: fpSpin .12s linear infinite;
+}
+@keyframes fpSpin {
+  0%   { transform: translateY(-4px); filter: blur(1px); }
+  50%  { transform: translateY(2px);  filter: blur(2px); }
+  100% { transform: translateY(-4px); filter: blur(1px); }
+}
+.fp-result {
+  text-align: center;
+  margin: 8px 0 20px;
+  transition: opacity .3s ease;
+}
+.fp-winner-name {
+  font-family: "Archivo";
+  font-weight: 900;
+  font-size: clamp(32px, 7vw, 52px);
+  color: var(--gold);
+  text-shadow: 0 0 24px rgba(255,210,74,.4);
+  letter-spacing: -.01em;
+}
+.fp-winner-sub {
+  font-family: "Archivo";
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--muted);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  margin-top: 6px;
+}
+.fp-countdown {
+  font-family: "Archivo";
+  font-weight: 900;
+  font-size: clamp(72px, 16vw, 120px);
+  color: var(--gold);
+  line-height: 1;
+  text-shadow: 0 0 40px rgba(255,210,74,.5);
+  animation: fpPulse .9s ease;
+}
+@keyframes fpPulse {
+  0%   { transform: scale(.4); opacity: 0; }
+  40%  { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* =========================================== PHASE 8 — MP DRAFT BOARD === */
+.mp-timer-wrap { text-align: center; margin: -8px 0 12px; }
+.mp-timer {
+  display: inline-block;
+  font-family: "Archivo";
+  font-weight: 900;
+  font-size: 26px;
+  color: var(--gold);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 18px;
+}
+.mp-timer.warn {
+  color: var(--red);
+  border-color: var(--red);
+  animation: pulse .6s ease-in-out infinite alternate;
+}
+
+.mp-spin-panel {
+  background: linear-gradient(180deg, #0c2417, #07140d);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 14px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.mp-spin-panel .slot-reel { display: flex; gap: 10px; }
+.mp-spin-panel .slot-era { font-size: 12px; color: var(--gold); font-style: italic; margin-top: 8px; min-height: 16px; }
+
+.mp-board {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.mp-side {
+  background: linear-gradient(180deg, var(--panel), var(--bg-2));
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 12px;
+  opacity: .5;
+  transition: opacity .3s ease, border-color .3s ease;
+}
+.mp-side--active {
+  opacity: 1;
+  border-color: var(--green);
+  box-shadow: 0 0 0 2px rgba(46,232,127,.18);
+}
+.mp-side-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.mp-side-head b {
+  font-family: "Archivo";
+  font-weight: 800;
+  font-size: 14px;
+}
+.mp-side-head span {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.mp-pitch {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 5px;
+  background: repeating-linear-gradient(0deg, #15512f 0 12.5%, #12492a 12.5% 25%);
+  border: 1.5px solid #1c6b3e;
+  border-radius: 12px;
+  padding: 8px 6px;
+  aspect-ratio: 3 / 4;
+}
+.mp-pitch .pitch-line { gap: 4px; }
+.mp-pitch .slot-chip {
+  max-width: 46px;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  padding: 3px;
+}
+.mp-pitch .slot-chip .chip-pos { font-size: 8px; }
+.mp-pitch .slot-chip .chip-name { font-size: 8px; }
+.mp-pitch .slot-chip .chip-sub { font-size: 6.5px; }
+
+.mp-players-panel {
+  background: linear-gradient(180deg, var(--panel), var(--bg-2));
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow);
+}
+.mp-players-panel h3 {
+  font-family: "Archivo";
+  font-size: 13px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.mp-locked {
+  opacity: .5;
+  pointer-events: none;
+  filter: grayscale(.4);
+}
+.mp-locked-card {
+  opacity: .35;
+  filter: grayscale(.6);
+  cursor: not-allowed;
+}
+.mp-locked-card::after {
+  content: "Taken";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--red);
+  letter-spacing: .08em;
+}
+
+@media (max-width: 600px) {
+  .mp-board { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .mp-side { padding: 8px; }
+  .mp-pitch { aspect-ratio: 3 / 4; padding: 6px 4px; }
+  .mp-pitch .slot-chip { max-width: 36px; }
+  .mp-pitch .slot-chip .chip-pos,
+  .mp-pitch .slot-chip .chip-name { font-size: 7px; }
+  .mp-spin-panel .reel { height: 44px; }
+  .mp-spin-panel .reel span { font-size: 18px; }
+}
