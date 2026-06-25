@@ -898,6 +898,7 @@
     if (lobbyState.channel) BE.lobby.unsubscribe(lobbyState.channel);
     lobbyState.channel = BE.lobby.subscribe(lobbyId, function (newRow) {
       if (!newRow) return;
+      if (!lobbyState.lobbyId) return;              // #7: ignore late echoes after we've left
       lobbyState.lastRow = newRow;                  // B: tick reads the live row
       // Both players ready → host advances phase
       if (newRow.host_ready && newRow.guest_ready && newRow.phase === "formation") {
@@ -1039,13 +1040,14 @@
     }
 
     $("mpl-leave").onclick = function () {
-      if (confirm("Leave this lobby?")) {
-        var lid = lobbyState.lobbyId;
-        if (lid) BE.lobby.leave(lid);              // sets phase=done so lobby.mine() skips it
-        resetMpMatch(); teardownLobby();
-        enteredLobbyOnce = true;                   // don't get pulled back in
-        setTab("play");
-      }
+      if (!confirm("Leave this lobby?")) return;
+      var lid = lobbyState.lobbyId;
+      lobbyState.lobbyId = null;                    // #7: trip the subscription guard NOW so no
+                                                    // buffered echo can re-render the lobby behind us
+      if (lid) BE.lobby.leave(lid);                // tell the opponent (phase=done → "X left")
+      resetMpMatch(); teardownLobby();
+      enteredLobbyOnce = true;                      // don't get auto-pulled back in
+      setTab("play");
     };
 
     $("mpl-ready").onclick = function () {
@@ -1356,23 +1358,31 @@
       mpDraft.meIsHost ? d.guest_formation : d.host_formation);
     renderMpPlayers(d, myTurn, mySquad, oppSquad);
 
-    // #3: shuffle the reels through the pool, then land on the real roll.
+    // #3: spin the reels through the pool, then land on the real roll. Trigger off
+    // shownSpinId (set only when a spin FINISHES) so a realtime re-render mid-spin
+    // never skips it; animateMpReels ignores re-entrant calls for the same roll.
     var spinId = d.current_spin ? (d.current_spin.short + "|" + d.current_spin.year + "|" + pickNum) : "";
-    if (spinId && spinId !== mpDraft.lastSpinId) {
-      mpDraft.lastSpinId = spinId;
-      animateMpReels(d.current_spin);
+    if (spinId && spinId !== mpDraft.shownSpinId) {
+      animateMpReels(d.current_spin, spinId);
     }
   }
 
-  function animateMpReels(spin) {
-    var rc = $("mp-reel-club"), ry = $("mp-reel-year"); if (!rc || !ry || !spin) return;
-    var reels = document.querySelectorAll(".mp-spin-panel .reel");
-    reels.forEach(function (rl) { rl.classList.add("is-spinning"); });
+  function animateMpReels(spin, spinId) {
+    if (!spin) return;
+    if (mpDraft.animId === spinId) return;            // already spinning to this roll
+    if (mpDraft.spinTick) { clearInterval(mpDraft.spinTick); mpDraft.spinTick = null; }
+    mpDraft.animId = spinId;
     var pool = (mpDraft.row && mpDraft.row.pool) || "club";
     var N = root.CC_NATIONS, DATA = root.CC_DATA;
-    if (mpDraft.spinTick) clearInterval(mpDraft.spinTick);
     var ticks = 0;
-    mpDraft.spinTick = setInterval(function () {
+    function setSpinning(on) {
+      document.querySelectorAll(".mp-spin-panel .reel").forEach(function (rl) { rl.classList.toggle("is-spinning", on); });
+    }
+    function rand() {
+      // Re-query the reels each tick so a realtime re-render (fresh DOM) can't orphan
+      // the animation — this is why the watcher's reel used to snap instead of spin.
+      var rc = $("mp-reel-club"), ry = $("mp-reel-year");
+      if (!rc || !ry) return false;
       if (pool === "wc" && N) {
         rc.textContent = N.COMBOS[Math.floor(Math.random() * N.COMBOS.length)].short;
         ry.textContent = N.YEARS[Math.floor(Math.random() * N.YEARS.length)];
@@ -1380,12 +1390,22 @@
         rc.textContent = DATA.CLUBS[Math.floor(Math.random() * DATA.CLUBS.length)].short;
         ry.textContent = 1990 + Math.floor(Math.random() * 37);
       }
+      return true;
+    }
+    setSpinning(true);
+    rand();                                            // start spinning instantly (no flash of the answer)
+    mpDraft.spinTick = setInterval(function () {
       if (++ticks > 13) {
         clearInterval(mpDraft.spinTick); mpDraft.spinTick = null;
-        reels.forEach(function (rl) { rl.classList.remove("is-spinning"); });
-        rc.textContent = spin.short || spin.club;
-        ry.textContent = spin.year;
+        setSpinning(false);
+        var rc = $("mp-reel-club"), ry = $("mp-reel-year");
+        if (rc) rc.textContent = spin.short || spin.club;
+        if (ry) ry.textContent = spin.year;
+        mpDraft.shownSpinId = spinId;                 // mark this roll settled → won't re-animate
+        mpDraft.animId = null;
+        return;
       }
+      if (!rand()) { clearInterval(mpDraft.spinTick); mpDraft.spinTick = null; mpDraft.animId = null; }
     }, 70);
   }
 
@@ -1519,14 +1539,16 @@
       d.current_spin = null;
       d.turn = null;
       stopMpTurnTimer();
-      // Lock both squads AND flip phase to "match" in one write, so BOTH clients
-      // transition to the match together. #5: the picker also advances locally as
-      // soon as the write lands (don't rely only on the realtime echo); the
-      // opponent advances via its phase==="match" subscription. enterMpMatch is
-      // guarded against double-entry.
-      BE.lobby.finishDraft(mpDraft.lobbyId, d).then(function (r) {
-        if (r) { mpDraft.row = r; enterMpMatch(r); }
-      });
+      // Lock both squads AND flip phase to "match". #5: advance THIS client
+      // synchronously from a locally-built row — don't depend on the write's
+      // returned row or the realtime self-echo (either can be null/late, which
+      // left the last picker frozen on the draft). The opponent advances via its
+      // own phase==="match" echo. enterMpMatch guards re-entry and only the host
+      // writes H2H, so there's no double count.
+      var matchRow = Object.assign({}, mpDraft.row, { draft: d, phase: "match" });
+      mpDraft.row = matchRow;
+      BE.lobby.finishDraft(mpDraft.lobbyId, d);
+      enterMpMatch(matchRow);
       return;
     }
 
