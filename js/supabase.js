@@ -148,6 +148,10 @@
       return client.from("seasons").select("*").eq("user_id", userId)
         .order("created_at", { ascending: false }).then(function (r) { return r.data || []; }).catch(function () { return []; });
     },
+    recordMatch: function (m) {                       // multiplayer result (Phase 9)
+      if (!client) return Promise.resolve();
+      return client.from("matches").insert(m).catch(function () {});
+    },
   };
 
   function profilesByIds(ids) {
@@ -389,6 +393,22 @@
         Object.keys(draftPatch).forEach(function (k) { draft[k] = draftPatch[k]; });
         return client.from("match_lobby").update({ draft: draft }).eq("id", lobbyId).select().single().then(function (rr) { return rr.data; });
       });
+    },
+    // Phase 9: lock the final squads AND flip to "match" in one write, so BOTH
+    // clients transition together (avoids the opponent getting stuck on draft).
+    finishDraft: function (lobbyId, draft) {
+      need();
+      return client.from("match_lobby").update({ draft: draft, phase: "match" }).eq("id", lobbyId)
+        .select().single().then(function (rr) { return rr.data; });
+    },
+    // Phase 10: reset the lobby for a rematch (new seed, fresh formation pick).
+    rematch: function (lobbyId) {
+      need();
+      var seed = Math.floor(Math.random() * 2147483647);
+      return client.from("match_lobby").update({
+        phase: "formation", seed: seed, draft: {},
+        host_ready: false, guest_ready: false, first_pick: null,
+      }).eq("id", lobbyId).select().single().then(function (rr) { return rr.data; });
     },
     leave: function (lobbyId) {
       if (!client) return Promise.resolve();

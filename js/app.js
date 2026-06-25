@@ -887,6 +887,21 @@
         enterMpDraft(newRow);
         return;
       }
+      // Phase advanced to match → Phase 9 (lineup → live sim → results).
+      // Also handles rematch-flag updates while still in "match" (guarded inside).
+      if (newRow.phase === "match") {
+        stopLobbyTimer();
+        enterMpMatch(newRow);
+        return;
+      }
+      // A rematch reset bounces us back to formation → re-enter the lobby fresh.
+      if (newRow.phase === "formation" && mpMatch.started) {
+        resetMpMatch();
+        enterLobby(newRow.id, newRow.host === state.user.id);
+        return;
+      }
+      // Opponent left / match abandoned.
+      if (newRow.phase === "done") { onOpponentLeft(); return; }
       renderLobby(newRow);
     });
     startLobbyTimer();
@@ -1347,10 +1362,10 @@
     if (totalPicked >= (d.total_rounds || 7) * 2) {
       d.current_spin = null;
       d.turn = null;
-      BE.lobby.updateDraft(mpDraft.lobbyId, d).then(function () {
-        stopMpTurnTimer();
-        showMpDraftComplete();
-      });
+      stopMpTurnTimer();
+      // Lock both squads AND flip phase to "match" in one write, so BOTH clients
+      // transition to the match together (the old path only moved the picker).
+      BE.lobby.finishDraft(mpDraft.lobbyId, d);
       return;
     }
 
@@ -1409,29 +1424,203 @@
     mpPickPlayer(list[0]);
   }
 
-  function showMpDraftComplete() {
+  /* ============================================== PHASE 9 — LIVE MATCH == */
+  // Both clients hold the same drafted squads (in the lobby `draft`) and the same
+  // `seed`, so the match result is computed identically on each side; we just
+  // render it from each viewer's own perspective ("Your XI" = side A).
+  var mpMatch = {
+    started: false, lobbyId: null, meIsHost: false, row: null,
+    mySquad: null, oppSquad: null, meName: "", oppName: "",
+    canon: null, myResult: null, sim: null, out: null,
+    kickTimer: null, rematchTimer: null,
+  };
+
+  function resetMpMatch() {
+    if (mpMatch.sim) { try { mpMatch.sim.destroy(); } catch (e) {} }
+    if (mpMatch.kickTimer) clearInterval(mpMatch.kickTimer);
+    if (mpMatch.rematchTimer) clearInterval(mpMatch.rematchTimer);
+    mpMatch = { started: false, lobbyId: null, meIsHost: false, row: null, mySquad: null,
+      oppSquad: null, meName: "", oppName: "", canon: null, myResult: null, sim: null,
+      out: null, kickTimer: null, rematchTimer: null };
+    // clear draft state too, so a rematch's fresh draft isn't read as stale by the
+    // lobby subscribe patch (which intercepts draft-phase updates by lobby id).
+    stopMpTurnTimer();
+    mpDraft.lobbyId = null; mpDraft.row = null;
+  }
+
+  function onOpponentLeft() {
+    if (!mpMatch.started && !lobbyState.lobbyId) return;
+    toast("Your opponent left the match.");
+    resetMpMatch(); teardownLobby(); UI.showScreen("home");
+  }
+
+  function enterMpMatch(row) {
+    // Already watching this lobby's match → this update is a rematch flag.
+    if (mpMatch.started && mpMatch.lobbyId === row.id) { mpMatch.row = row; handleRematchFlags(row); return; }
+    mpMatch.started = true; mpMatch.lobbyId = row.id; mpMatch.row = row;
+    stopMpTurnTimer();
+    var E = root.CC_ENGINE, d = row.draft || {};
+    var meIsHost = row.host === state.user.id; mpMatch.meIsHost = meIsHost;
+    var hostSquad = d.host_squad || [], guestSquad = d.guest_squad || [];
+    if (!hostSquad.length || !guestSquad.length) { toast("Squad data missing."); onOpponentLeft(); return; }
+    mpMatch.mySquad = meIsHost ? hostSquad : guestSquad;
+    mpMatch.oppSquad = meIsHost ? guestSquad : hostSquad;
+    var hostP = lobbyState.profiles[row.host] || { username: "Host" };
+    var guestP = lobbyState.profiles[row.guest] || { username: "Guest" };
+    mpMatch.meName = meIsHost ? hostP.username : guestP.username;
+    mpMatch.oppName = meIsHost ? guestP.username : hostP.username;
+
+    var seed = (row.seed >>> 0) || 1;
+    var canon = E.playMatch(hostSquad, guestSquad, seed);   // host=A, guest=B
+    mpMatch.canon = canon;
+    mpMatch.myResult = meIsHost
+      ? { goalsA: canon.goalsA, goalsB: canon.goalsB, winner: canon.winner, pens: canon.pens }
+      : { goalsA: canon.goalsB, goalsB: canon.goalsA, winner: canon.winner === "A" ? "B" : "A",
+          pens: canon.pens ? { a: canon.pens.b, b: canon.pens.a } : null };
+
+    // The host writes the head-to-head + match row once, so it isn't double-counted.
+    if (meIsHost) {
+      var winnerId = canon.winner === "A" ? row.host : row.guest;
+      var loserId = canon.winner === "A" ? row.guest : row.host;
+      if (BE.friends.recordResult) BE.friends.recordResult(winnerId, loserId);
+      if (BE.data.recordMatch) BE.data.recordMatch({
+        lobby_id: row.id, player_a: row.host, player_b: row.guest,
+        goals_a: canon.goalsA, goals_b: canon.goalsB, winner: winnerId,
+      });
+    }
+    showMpLineupIntro();
+  }
+
+  function mpOvrClass(v) { return v >= 86 ? "ovr-hi" : v >= 78 ? "ovr-mid" : "ovr-lo"; }
+  function mpTeamSheet(side, name, which) {
+    var E = root.CC_ENGINE, CPU = root.CC_CPU, R = E.teamRatings(side);
+    var order = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
+    var rows = side.slice().sort(function (a, b) { return order[a.pos] - order[b.pos]; }).map(function (p) {
+      var ovr = Math.round(CPU.primaryRating(p));
+      return '<div class="ts-row"><div class="ts-pos pos-' + p.pos + '">' + p.pos + "</div>" +
+        '<div class="ts-name">' + esc(lastName(p.n)) + "<small>" + esc(p.short || p.club) + " " + p.year + "</small></div>" +
+        '<div class="ts-rtg ' + mpOvrClass(ovr) + '">' + ovr + "</div></div>";
+    }).join("");
+    function cat(k, v) { return '<div class="ts-cat"><span>' + k + '</span><b class="' + mpOvrClass(v) + '">' + v + "</b></div>"; }
+    return '<div class="card teamsheet ts-' + which + '">' +
+      '<div class="ts-head"><div class="ts-name-big">' + esc(name) + "</div>" +
+        '<div class="ts-ovr"><b>' + R.ovr + "</b><small>OVR</small></div>" +
+        '<div class="ts-cats">' + cat("ATT", R.att) + cat("DEF", R.def) + cat("GOA", R.gk) + "</div></div>" +
+      '<div class="ts-list">' + rows + "</div></div>";
+  }
+
+  function showMpLineupIntro() {
+    showLobbyScreen();
     var wrap = $("mpl-wrap"); if (!wrap) return;
-    var d = mpDraft.row.draft || {};
-    var hostP = lobbyState.profiles[mpDraft.row.host] || { username: "Host" };
-    var guestP = lobbyState.profiles[mpDraft.row.guest] || { username: "Guest" };
     wrap.innerHTML =
-      '<div class="mpl-head">' +
-        '<div class="mpl-kicker">Draft Complete</div>' +
-        '<div class="mpl-title">Both squads locked in</div>' +
-      '</div>' +
-      '<div class="mpl-panel" style="text-align:center;padding:32px">' +
-        '<div style="font-size:48px;margin-bottom:14px">⚽</div>' +
-        '<h3 style="font-family:Archivo;font-size:18px;color:var(--gold);margin:0">Match watching is next</h3>' +
-        '<p style="color:var(--muted);font-size:14px;margin-top:10px">Phases 9 + 10 (lineup, live sim, results, rematch) are shipping in the next batch.</p>' +
-      '</div>' +
-      '<div class="mpl-actions">' +
-        '<button class="btn btn--kickoff btn--sm flex1" id="mpl-back">Return Home</button>' +
-      '</div>';
-    $("mpl-back").onclick = function () {
-      BE.lobby.leave(lobbyState.lobbyId);
-      teardownLobby();
-      UI.showScreen("home");
-    };
+      '<div class="lineup-head"><div class="lineup-round">Champions Cup · Final</div>' +
+        "<h2>Team sheets</h2><p>Match starting in <b id=\"mp-kick\">0:10</b></p></div>" +
+      '<div class="lineup-sheets">' + mpTeamSheet(mpMatch.mySquad, mpMatch.meName + " (you)", "you") +
+        '<div class="lineup-vs">VS</div>' + mpTeamSheet(mpMatch.oppSquad, mpMatch.oppName, "opp") + "</div>" +
+      '<div class="mpl-actions"><button class="btn btn--kickoff flex1" id="mp-kick-now">Kick off now <span>→</span></button></div>';
+    var n = 10;
+    var go = function () { if (mpMatch.kickTimer) { clearInterval(mpMatch.kickTimer); mpMatch.kickTimer = null; } runMpSim(); };
+    mpMatch.kickTimer = setInterval(function () {
+      n--; var e = $("mp-kick"); if (e) e.textContent = "0:" + (n < 10 ? "0" : "") + Math.max(0, n);
+      if (n <= 0) { clearInterval(mpMatch.kickTimer); mpMatch.kickTimer = null; go(); }
+    }, 1000);
+    var kb = $("mp-kick-now"); if (kb) kb.onclick = go;
+  }
+
+  function runMpSim() {
+    var wrap = $("mpl-wrap"); if (!wrap) return;
+    wrap.innerHTML =
+      '<div class="sim-head">' + esc(mpMatch.meName) + " vs " + esc(mpMatch.oppName) + "</div>" +
+      '<div class="sim-stage"><canvas id="mp-canvas"></canvas></div>' +
+      '<button class="btn btn--ghost btn--sm sim-skip" id="mp-sim-skip">Skip to result →</button>';
+    var canvas = $("mp-canvas");
+    if (mpMatch.sim) { try { mpMatch.sim.destroy(); } catch (e) {} mpMatch.sim = null; }
+    try {
+      mpMatch.sim = root.CC_MATCHSIM.create(canvas, {
+        squadA: mpMatch.mySquad, squadB: mpMatch.oppSquad, result: mpMatch.myResult,
+        teamAName: "Your XI", teamBName: mpMatch.oppName,
+        colorA: "#2ee87f", colorB: "#ff5d73", seed: (mpMatch.row.seed >>> 0) || 1,
+        onDone: function (out) { mpMatch.sim = null; mpMatch.out = out; showMpResults(out); },
+      });
+      var sk = $("mp-sim-skip"); if (sk) sk.onclick = function () { if (mpMatch.sim) mpMatch.sim.skip(); };
+      mpMatch.sim.start();
+    } catch (e) { showMpResults({ stats: { A: [], B: [] }, scorers: { A: [], B: [] } }); }
+  }
+
+  function mpStatCard(stats, title) {
+    var rows = (stats || []).slice().sort(function (a, b) { return b.rating - a.rating; }).map(function (s) {
+      var line = (s.goals ? s.goals + "G " : "") + (s.assists ? s.assists + "A " : "") + (s.saves ? s.saves + "sv " : "");
+      var c = s.rating >= 7.5 ? "ovr-hi" : s.rating >= 6.8 ? "ovr-mid" : "ovr-lo";
+      return '<div class="st-row"><div class="st-pos pos-' + s.pos + '">' + s.pos + "</div>" +
+        '<div class="st-name">' + esc(lastName(s.n)) + "<small>" + (line || "&nbsp;") + "</small></div>" +
+        '<div class="st-rtg ' + c + '">' + (s.rating != null ? s.rating.toFixed(1) : "") + "</div></div>";
+    }).join("");
+    return '<div class="card"><h3>' + title + " · player ratings</h3><div class=\"stat-list\">" + rows + "</div></div>";
+  }
+
+  function showMpResults(out) {
+    var wrap = $("mpl-wrap"); if (!wrap) return;
+    var r = mpMatch.myResult, youWin = r.winner === "A";
+    var pens = r.pens ? " (pens " + r.pens.a + "–" + r.pens.b + ")" : "";
+    wrap.innerHTML =
+      '<div class="verdict ' + (youWin ? "verdict--win" : "") + '">' +
+        '<div class="verdict-kicker">Champions Cup · Multiplayer</div>' +
+        '<div class="verdict-title">' + (youWin ? "YOU WIN! 🏆" : "YOU LOSE") + "</div>" +
+        '<div class="verdict-record">' + r.goalsA + " – " + r.goalsB + "</div>" +
+        '<div class="verdict-sub">vs ' + esc(mpMatch.oppName) + pens + "</div>" +
+      "</div>" +
+      '<div class="res-grid">' + mpStatCard(out.stats.A, "Your XI") + mpStatCard(out.stats.B, esc(mpMatch.oppName)) + "</div>" +
+      '<div class="mpl-actions" style="margin-top:16px">' +
+        '<button class="btn btn--ghost btn--sm flex1" id="mp-home">Return Home</button>' +
+        '<button class="btn btn--kickoff btn--sm flex1" id="mp-rematch">↻ Rematch</button>' +
+      "</div>" +
+      '<div class="mp-rematch-note" id="mp-rematch-note"></div>';
+    $("mp-home").onclick = function () { BE.lobby.leave(mpMatch.lobbyId); resetMpMatch(); teardownLobby(); UI.showScreen("home"); };
+    $("mp-rematch").onclick = requestRematch;
+    handleRematchFlags(mpMatch.row);   // reflect any rematch request that already arrived
+  }
+
+  /* ================================================== PHASE 10 — REMATCH */
+  function requestRematch() {
+    var side = mpMatch.meIsHost ? "rematch_host" : "rematch_guest";
+    var patch = {}; patch[side] = true;
+    BE.lobby.updateDraft(mpMatch.lobbyId, patch);
+    var btn = $("mp-rematch"); if (btn) { btn.disabled = true; }
+    var note = $("mp-rematch-note"); if (note) note.textContent = "Waiting for " + mpMatch.oppName + " to accept…";
+    startRematchTimer();
+  }
+  function startRematchTimer() {
+    if (mpMatch.rematchTimer) clearInterval(mpMatch.rematchTimer);
+    var deadline = Date.now() + 20000;
+    mpMatch.rematchTimer = setInterval(function () {
+      var left = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+      var btn = $("mp-rematch"); if (btn) btn.textContent = "Rematch sent ⏱ 0:" + (left < 10 ? "0" : "") + left;
+      if (left <= 0) {
+        clearInterval(mpMatch.rematchTimer); mpMatch.rematchTimer = null;
+        var note = $("mp-rematch-note"); if (note) note.textContent = "No response. Return home for a new match.";
+        if (btn) { btn.disabled = true; btn.textContent = "Rematch expired"; }
+      }
+    }, 500);
+  }
+  function handleRematchFlags(row) {
+    if (!row) return;
+    var d = row.draft || {};
+    var oppWants = mpMatch.meIsHost ? d.rematch_guest : d.rematch_host;
+    var iWant = mpMatch.meIsHost ? d.rematch_host : d.rematch_guest;
+    if (d.rematch_host && d.rematch_guest) {
+      if (mpMatch.rematchTimer) { clearInterval(mpMatch.rematchTimer); mpMatch.rematchTimer = null; }
+      var note0 = $("mp-rematch-note"); if (note0) note0.textContent = "Rematch on — setting up…";
+      if (mpMatch.meIsHost) BE.lobby.rematch(row.id);   // formation reset re-enters both
+      return;
+    }
+    if (oppWants && !iWant) {
+      var note = $("mp-rematch-note");
+      if (note && !$("mp-accept-rematch")) {
+        note.innerHTML = "<b>" + esc(mpMatch.oppName) + "</b> wants a rematch! " +
+          '<button class="mini-btn ok" id="mp-accept-rematch">Accept</button>';
+        var ab = $("mp-accept-rematch"); if (ab) ab.onclick = requestRematch;
+      }
+    }
   }
 
   /* --- Hook the lobby channel to refresh during draft phase ---------------- */
