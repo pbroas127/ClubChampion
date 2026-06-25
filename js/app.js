@@ -487,11 +487,12 @@
       '<div class="stat-list stat-list--full" style="margin-top:12px">' + rows + "</div></div>";
   }
 
-  var friendsChannel = null, invitesChannel = null, inviteTick = null;
+  var friendsChannel = null, invitesChannel = null, inviteTick = null, h2hChannel = null;
   var enteredLobbyOnce = false;
   
   function teardownFriendsRealtime() {
     if (friendsChannel && BE.friends && BE.friends.unsubscribe) { BE.friends.unsubscribe(friendsChannel); friendsChannel = null; }
+    if (h2hChannel && BE.friends && BE.friends.unsubscribe) { BE.friends.unsubscribe(h2hChannel); h2hChannel = null; }
     if (inviteTick) { clearInterval(inviteTick); inviteTick = null; }
   }
 
@@ -557,6 +558,13 @@
     if (BE.friends && BE.friends.subscribe) {
       friendsChannel = BE.friends.subscribe(function () { if (state.tab === "friends") loadFriendsData(); });
     }
+    // BUG #3 FIX: subscribe to head_to_head so the friend rows update live when
+    // a match finishes (the host's record_h2h RPC fires after every game).
+    if (BE.friends.subscribeH2H) {
+      h2hChannel = BE.friends.subscribeH2H(function () {
+        if (state.tab === "friends") refreshAllH2H();
+      });
+    }
     setupInviteRealtime();   // #1: global subscription; safe no-op if already live
     inviteTick = setInterval(function () {
       if (state.tab === "friends") updateInviteCountdowns();
@@ -582,6 +590,21 @@
     input.onkeydown = function (e) { if (e.key === "Enter") send(); };
   }
 
+  function refreshAllH2H() {
+    if (!state.user || !BE.friends.list) return;
+    BE.friends.list().then(function (fr) {
+      fr.forEach(function (f) {
+        BE.friends.headToHead(f.userId).then(function (h) {
+          var e = $("h2h-" + f.userId); if (!e) return;
+          e.textContent = h.wins + "-" + h.losses;
+          e.classList.toggle("dim", (h.wins + h.losses) === 0);
+        });
+      });
+    });
+  }
+
+
+  
   function loadFriendsData() {
     if (!state.user) return;
     BE.friends.incoming().then(function (reqs) {
@@ -932,7 +955,13 @@
         return;
       }
       // Opponent left / match abandoned.
-      if (newRow.phase === "done") { onOpponentLeft(); return; }
+      if (newRow.phase === "done") {
+        // If WE were the one who left, lobbyState.lobbyId is already null and
+        // we've already navigated home. Don't re-trigger anything.
+        if (!lobbyState.lobbyId) return;
+        onOpponentLeft();
+        return;
+      }
       renderLobby(newRow);
     });
     startLobbyTimer();
@@ -1041,13 +1070,7 @@
 
     $("mpl-leave").onclick = function () {
       if (!confirm("Leave this lobby?")) return;
-      var lid = lobbyState.lobbyId;
-      lobbyState.lobbyId = null;                    // #7: trip the subscription guard NOW so no
-                                                    // buffered echo can re-render the lobby behind us
-      if (lid) BE.lobby.leave(lid);                // tell the opponent (phase=done → "X left")
-      resetMpMatch(); teardownLobby();
-      enteredLobbyOnce = true;                      // don't get auto-pulled back in
-      setTab("play");
+      doLeaveLobby();
     };
 
     $("mpl-ready").onclick = function () {
@@ -1061,6 +1084,50 @@
     };
   }
 
+  function doLeaveLobby() {
+    var lid = lobbyState.lobbyId;
+    // Trip ALL the guards BEFORE we do anything async
+    lobbyState.lobbyId = null;
+    mpDraft.lobbyId = null;
+    mpMatch.started = false;
+    mpMatch.lobbyId = null;
+    enteredLobbyOnce = true;
+
+    // Stop every timer
+    stopLobbyTimer();
+    stopMpTurnTimer();
+    if (mpMatch.kickTimer) { clearInterval(mpMatch.kickTimer); mpMatch.kickTimer = null; }
+    if (mpMatch.rematchTimer) { clearInterval(mpMatch.rematchTimer); mpMatch.rematchTimer = null; }
+    if (mpDraft.spinTick) { clearInterval(mpDraft.spinTick); mpDraft.spinTick = null; }
+
+    // Kill the sim if running
+    if (mpMatch.sim) { try { mpMatch.sim.destroy(); } catch (e) {} mpMatch.sim = null; }
+
+    // Tell server we left (best effort, don't await)
+    if (lid && BE.lobby && BE.lobby.leave) { try { BE.lobby.leave(lid); } catch (e) {} }
+
+    // Tear down the realtime channel so no late echo can re-enter
+    if (lobbyState.channel) {
+      try { BE.lobby.unsubscribe(lobbyState.channel); } catch (e) {}
+      lobbyState.channel = null;
+    }
+
+    // Reset state objects
+    resetMpMatch();
+
+    // Force navigate home — body data attr too so CSS doesn't keep lobby visible
+    document.body.dataset.screen = "home";
+    setTab("play");
+
+    // Belt-and-braces: a tick later, ensure home screen is showing
+    setTimeout(function () {
+      document.querySelectorAll(".screen").forEach(function (s) { s.classList.remove("is-active"); });
+      var home = $("screen-home"); if (home) home.classList.add("is-active");
+    }, 50);
+  }
+
+
+  
   function formationLabel(id, formations) {
     var f = formations.filter(function (x) { return x.id === id; })[0];
     return f ? f.name + " · " + f.tag : id;
@@ -1539,16 +1606,28 @@
       d.current_spin = null;
       d.turn = null;
       stopMpTurnTimer();
-      // Lock both squads AND flip phase to "match". #5: advance THIS client
-      // synchronously from a locally-built row — don't depend on the write's
-      // returned row or the realtime self-echo (either can be null/late, which
-      // left the last picker frozen on the draft). The opponent advances via its
-      // own phase==="match" echo. enterMpMatch guards re-entry and only the host
-      // writes H2H, so there's no double count.
-      var matchRow = Object.assign({}, mpDraft.row, { draft: d, phase: "match" });
-      mpDraft.row = matchRow;
-      BE.lobby.finishDraft(mpDraft.lobbyId, d);
-      enterMpMatch(matchRow);
+      // BUG #2 FIX: don't advance locally — wait for the DB write to come back
+      // via realtime so BOTH sides advance from the same source row. Show a
+      // "Finishing..." state immediately so the picker isn't visibly frozen.
+      var box = $("mp-players");
+      if (box) box.innerHTML = '<div class="muted-line" style="text-align:left;padding:18px">Locking in final squads...</div>';
+      var h3 = document.querySelector(".mp-players-panel h3");
+      if (h3) h3.textContent = "Draft complete — starting match...";
+
+      BE.lobby.finishDraft(mpDraft.lobbyId, d).then(function (rr) {
+        // Belt-and-braces: if realtime is slow, manually advance after 1.5s
+        setTimeout(function () {
+          if (!mpMatch.started && mpDraft.lobbyId) {
+            if (rr) enterMpMatch(rr);
+            else BE.lobby.get(mpDraft.lobbyId).then(function (r) { if (r) enterMpMatch(r); });
+          }
+        }, 1500);
+      }).catch(function () {
+        // If the write fails, force-fetch the lobby and try again
+        setTimeout(function () {
+          BE.lobby.get(mpDraft.lobbyId).then(function (r) { if (r) enterMpMatch(r); });
+        }, 1000);
+      });
       return;
     }
 
@@ -1774,11 +1853,22 @@
         "</div>" +
         '<div class="mp-rematch-note" id="mp-rematch-note"></div>' +
       "</div>";
-    // #10: show the head-to-head (host already wrote it at kickoff).
+    // BUG #3 FIX: fetch H2H AFTER a delay so the host's record_h2h RPC has time
+    // to commit. Retry once if first read shows stale 0-0.
     if (BE.friends.headToHead && mpMatch.oppId) {
-      BE.friends.headToHead(mpMatch.oppId).then(function (h) {
-        var e = $("mp-h2h"); if (e) e.textContent = "H2H vs " + mpMatch.oppName + ": " + h.wins + "–" + h.losses;
-      });
+      var fetchH2H = function (attempt) {
+        BE.friends.headToHead(mpMatch.oppId).then(function (h) {
+          var e = $("mp-h2h"); if (!e) return;
+          var youWonThisMatch = mpMatch.meIsHost ? (mpMatch.canon.winner === "A") : (mpMatch.canon.winner === "B");
+          // If we won but H2H wins didn't tick up yet, retry once
+          if (attempt < 2 && youWonThisMatch && h.wins === 0 && h.losses === 0) {
+            setTimeout(function () { fetchH2H(attempt + 1); }, 1200);
+            return;
+          }
+          e.textContent = "H2H vs " + mpMatch.oppName + ": " + h.wins + "–" + h.losses;
+        }).catch(function () {});
+      };
+      setTimeout(function () { fetchH2H(0); }, 800);
     }
     // #7: post-game Return Home tears down LOCALLY only — never yanks the opponent.
     $("mp-home").onclick = function () { resetMpMatch(); teardownLobby(); enteredLobbyOnce = true; setTab("play"); };
@@ -1841,8 +1931,12 @@
     BE.lobby.subscribe = function (lobbyId, cb) {
       return origSubscribe(lobbyId, function (newRow) {
         try {
-          // If we're in MP draft, keep mpDraft.row in sync and re-render
-          if (mpDraft.lobbyId && newRow && newRow.id === mpDraft.lobbyId && newRow.phase === "draft") {
+          if (!newRow) return cb(newRow);
+          // BUG #2 FIX: if phase has advanced past draft, ALWAYS let main handler
+          // route (don't intercept). Otherwise the last picker can get stuck.
+          if (newRow.phase !== "draft") return cb(newRow);
+          // We're in MP draft, keep mpDraft.row in sync and re-render
+          if (mpDraft.lobbyId && newRow.id === mpDraft.lobbyId) {
             mpDraft.row = newRow;
             renderMpDraft();
             startMpTurnTimer();
