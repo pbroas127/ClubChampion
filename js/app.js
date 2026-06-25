@@ -860,6 +860,10 @@
     showLobbyScreen();
     BE.lobby.get(lobbyId).then(function (row) {
       if (!row) { toast("Lobby missing."); UI.showScreen("home"); return; }
+      lobbyState.lastRow = row;
+      // B: mark my presence so the other side knows when BOTH have joined.
+      var meIsHost = row.host === state.user.id;
+      BE.lobby.updateDraft(lobbyId, meIsHost ? { host_in: true } : { guest_in: true }).catch(function () {});
       var ids = [row.host, row.guest];
       BE.profile.getMany(ids).then(function (pmap) {
         lobbyState.profiles = pmap;
@@ -869,6 +873,7 @@
     if (lobbyState.channel) BE.lobby.unsubscribe(lobbyState.channel);
     lobbyState.channel = BE.lobby.subscribe(lobbyId, function (newRow) {
       if (!newRow) return;
+      lobbyState.lastRow = newRow;                  // B: tick reads the live row
       // Both players ready → host advances phase
       if (newRow.host_ready && newRow.guest_ready && newRow.phase === "formation") {
         if (lobbyState.isHost) BE.lobby.start(lobbyId);
@@ -916,6 +921,7 @@
 
   function renderLobby(row) {
     var wrap = $("mpl-wrap"); if (!wrap) return;
+    lobbyState.lastRow = row;
     var me = state.user.id;
     var hostP = lobbyState.profiles[row.host] || { username: "Host" };
     var guestP = lobbyState.profiles[row.guest] || { username: "Guest" };
@@ -928,6 +934,7 @@
     var meFormation = meIsHost ? draft.host_formation : draft.guest_formation;
     var oppFormation = meIsHost ? draft.guest_formation : draft.host_formation;
     var formations = (root.CC_ENGINE && root.CC_ENGINE.FORMATIONS) || [];
+    var bothIn = !!(draft.host_in && draft.guest_in);
 
     wrap.innerHTML =
       '<div class="mpl-head">' +
@@ -949,8 +956,8 @@
         '</div>' +
       '</div>' +
       '<div class="mpl-timer-wrap">' +
-        '<div class="mpl-timer-label">Both players ready in</div>' +
-        '<div class="mpl-timer" id="mpl-timer">0:20</div>' +
+        '<div class="mpl-timer-label">' + (bothIn ? "Pick &amp; ready up" : "Waiting for opponent to join…") + '</div>' +
+        '<div class="mpl-timer' + (bothIn ? "" : " mpl-timer--grey") + '" id="mpl-timer">' + (bothIn ? "0:20" : "0:30") + '</div>' +
       '</div>' +
       '<div class="mpl-panel"><h3>Pick Your Formation</h3>' +
         '<div class="formation-grid" id="mpl-fgrid"></div>' +
@@ -992,6 +999,12 @@
       });
     }
 
+    // B4: once both have joined, the host arms the shared 20s formation deadline
+    // (single source of truth → both screens count down in sync).
+    if (bothIn && !draft.formation_deadline && meIsHost) {
+      BE.lobby.updateDraft(lobbyState.lobbyId, { formation_deadline: new Date(Date.now() + 20000).toISOString() }).catch(function () {});
+    }
+
     $("mpl-leave").onclick = function () {
       if (confirm("Leave this lobby?")) {
         var lid = lobbyState.lobbyId;
@@ -1015,33 +1028,56 @@
     return f ? f.name + " · " + f.tag : id;
   }
 
+  // Two-timer system (Phase B): a grey 30s "waiting for opponent" timer while
+  // alone, then a gold 20s formation timer once both have joined. Both deadlines
+  // live in the DB so the two screens stay perfectly in sync.
   function startLobbyTimer() {
     stopLobbyTimer();
     lobbyState.timerHandle = setInterval(function () {
-      var left = Math.max(0, Math.round((lobbyState.deadline - Date.now()) / 1000));
-      var t = $("mpl-timer");
-      if (t) {
-        t.textContent = "0:" + (left < 10 ? "0" : "") + left;
-        t.classList.toggle("warn", left <= 5);
+      var row = lobbyState.lastRow; if (!row) return;
+      var draft = row.draft || {};
+      var t = $("mpl-timer"); if (!t) return;
+      if (!(draft.host_in && draft.guest_in)) {
+        // B2/B3 — grey waiting timer; on 0 the alone player kills the lobby.
+        var gd = row.lobby_expires_at ? new Date(row.lobby_expires_at).getTime() : (Date.now() + 30000);
+        var gleft = Math.max(0, Math.round((gd - Date.now()) / 1000));
+        t.textContent = "0:" + (gleft < 10 ? "0" : "") + gleft;
+        t.classList.remove("warn");
+        if (gleft <= 0) { stopLobbyTimer(); killLobbyAlone(); }
+        return;
       }
-      if (left <= 0) {
-        stopLobbyTimer();
-        var formations = (root.CC_ENGINE && root.CC_ENGINE.FORMATIONS) || [];
-        if (!lobbyState.chosenFormation && formations.length) {
-          var pick = formations[Math.floor(Math.random() * formations.length)];
-          lobbyState.chosenFormation = pick.id;
-          BE.lobby.setFormation(lobbyState.lobbyId, lobbyState.isHost, pick.id).then(function () {
-            BE.lobby.setReady(lobbyState.lobbyId, lobbyState.isHost, true).then(function () {
-              setTimeout(function () { forceCheckBothReady(); }, 600);
-            });
-          });
-        } else {
-          BE.lobby.setReady(lobbyState.lobbyId, lobbyState.isHost, true).then(function () {
-            setTimeout(function () { forceCheckBothReady(); }, 600);
-          });
-        }
-      }
+      // B4/B5 — gold formation timer from the shared deadline.
+      var fd = draft.formation_deadline ? new Date(draft.formation_deadline).getTime() : (Date.now() + 20000);
+      var left = Math.max(0, Math.round((fd - Date.now()) / 1000));
+      t.textContent = "0:" + (left < 10 ? "0" : "") + left;
+      t.classList.toggle("warn", left <= 5);
+      if (left <= 0) { stopLobbyTimer(); autoReadyFormation(); }
     }, 250);
+  }
+
+  function killLobbyAlone() {
+    var lid = lobbyState.lobbyId;
+    toast("Lobby expired — opponent didn't join.");
+    if (lid) BE.lobby.leave(lid);
+    teardownLobby();
+    enteredLobbyOnce = true;
+    setTab("play");
+  }
+
+  function autoReadyFormation() {
+    var row = lobbyState.lastRow || {};
+    var meReady = lobbyState.isHost ? row.host_ready : row.guest_ready;
+    if (meReady) { setTimeout(forceCheckBothReady, 300); return; }
+    var formations = (root.CC_ENGINE && root.CC_ENGINE.FORMATIONS) || [];
+    if (!lobbyState.chosenFormation && formations.length) {
+      var pick = formations[Math.floor(Math.random() * formations.length)];
+      lobbyState.chosenFormation = pick.id;
+      BE.lobby.setFormation(lobbyState.lobbyId, lobbyState.isHost, pick.id).then(function () {
+        BE.lobby.setReady(lobbyState.lobbyId, lobbyState.isHost, true).then(function () { setTimeout(forceCheckBothReady, 600); });
+      });
+    } else {
+      BE.lobby.setReady(lobbyState.lobbyId, lobbyState.isHost, true).then(function () { setTimeout(forceCheckBothReady, 600); });
+    }
   }
 
   function forceCheckBothReady() {

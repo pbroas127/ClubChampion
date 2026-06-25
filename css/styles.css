@@ -981,3 +981,6 @@ body[data-screen="mplobby"] .topnav { display: none; }
   .mp-spin-panel .reel { height: 44px; }
   .mp-spin-panel .reel span { font-size: 18px; }
 }
+
+/* B2: grey "waiting for opponent" lobby timer */
+.mpl-timer--grey { color: var(--muted-2); }
