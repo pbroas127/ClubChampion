@@ -315,14 +315,22 @@
   var lobby = {
     createFromInvite: function (invite) {
       need();
-      return auth.getUser().then(function (u) {
-        return client.from("match_lobby").insert({
-          host: invite.from_user || invite.fromUser,
-          guest: invite.to_user || invite.toUser,
-          pool: invite.pool || "club",
-          pro: !!invite.pro,
-          phase: "formation",
-        }).select().single();
+      return client.from("match_lobby").insert({
+        host: invite.from_user || invite.fromUser,
+        guest: invite.to_user || invite.toUser,
+        pool: invite.pool || "club",
+        pro: !!invite.pro,
+        phase: "formation",
+      }).select().single().then(function (r) {
+        // Save the new lobby_id back onto the invite row so BOTH users can enter reliably
+        if (r && r.data && invite.id) {
+          return client.from("game_invites")
+            .update({ lobby_id: r.data.id })
+            .eq("id", invite.id)
+            .then(function () { return r; })
+            .catch(function () { return r; });
+        }
+        return r;
       });
     },
     mine: function () {
