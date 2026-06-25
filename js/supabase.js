@@ -265,6 +265,16 @@
       }).subscribe();
       return channel;
     },
+    // BUG #3 FIX: realtime subscription on head_to_head so friend rows update
+    // live the instant a match result is written.
+    subscribeH2H: function (callback) {
+      if (!client) return null;
+      var channel = client.channel("h2h-" + Date.now());
+      channel.on("postgres_changes", { event: "*", schema: "public", table: "head_to_head" }, function (payload) {
+        try { callback(payload); } catch (e) {}
+      }).subscribe();
+      return channel;
+    },
     unsubscribe: function (channel) {
       if (client && channel) try { client.removeChannel(channel); } catch (e) {}
     },
