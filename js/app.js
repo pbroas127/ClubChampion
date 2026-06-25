@@ -937,6 +937,7 @@
       }
       // Phase advanced to draft → Phase 8 takes over
       if (newRow.phase === "draft") {
+        if (mpMatch.started) return;  // already past draft locally; ignore stale echo
         stopLobbyTimer();
         enterMpDraft(newRow);
         return;
@@ -1606,28 +1607,24 @@
       d.current_spin = null;
       d.turn = null;
       stopMpTurnTimer();
-      // BUG #2 FIX: don't advance locally — wait for the DB write to come back
-      // via realtime so BOTH sides advance from the same source row. Show a
-      // "Finishing..." state immediately so the picker isn't visibly frozen.
+      // BUG #2 FIX v2: ADVANCE LOCALLY IMMEDIATELY using locally-built row
+      // (don't wait for DB roundtrip). Opponent advances via realtime echo.
+      var localLobbyId = mpDraft.lobbyId;
+      var matchRow = Object.assign({}, mpDraft.row, { draft: d, phase: "match" });
+      mpDraft.row = matchRow;
+      // Null the draft lobbyId so the subscribe patch stops intercepting echoes
+      mpDraft.lobbyId = null;
+      // Brief interstitial
       var box = $("mp-players");
       if (box) box.innerHTML = '<div class="muted-line" style="text-align:left;padding:18px">Locking in final squads...</div>';
       var h3 = document.querySelector(".mp-players-panel h3");
       if (h3) h3.textContent = "Draft complete — starting match...";
-
-      BE.lobby.finishDraft(mpDraft.lobbyId, d).then(function (rr) {
-        // Belt-and-braces: if realtime is slow, manually advance after 1.5s
-        setTimeout(function () {
-          if (!mpMatch.started && mpDraft.lobbyId) {
-            if (rr) enterMpMatch(rr);
-            else BE.lobby.get(mpDraft.lobbyId).then(function (r) { if (r) enterMpMatch(r); });
-          }
-        }, 1500);
-      }).catch(function () {
-        // If the write fails, force-fetch the lobby and try again
-        setTimeout(function () {
-          BE.lobby.get(mpDraft.lobbyId).then(function (r) { if (r) enterMpMatch(r); });
-        }, 1000);
-      });
+      // Fire the DB write so opponent gets realtime echo
+      BE.lobby.finishDraft(localLobbyId, d).catch(function () {});
+      // Advance THIS client immediately (short delay so interstitial is visible)
+      setTimeout(function () {
+        if (!mpMatch.started) enterMpMatch(matchRow);
+      }, 400);
       return;
     }
 
@@ -1723,12 +1720,25 @@
   function enterMpMatch(row) {
     // Already watching this lobby's match → this update is a rematch flag.
     if (mpMatch.started && mpMatch.lobbyId === row.id) { mpMatch.row = row; handleRematchFlags(row); return; }
+    var E = root.CC_ENGINE, d = row.draft || {};
+    var hostSquad = d.host_squad || [], guestSquad = d.guest_squad || [];
+
+    // BUG #2 FIX v2: validate data BEFORE claiming mpMatch.started so if data
+    // is incomplete we can retry from DB without getting stuck.
+    if (!hostSquad.length || !guestSquad.length || hostSquad.length < 7 || guestSquad.length < 7) {
+      // Squad data not ready yet — retry from DB once
+      setTimeout(function () {
+        BE.lobby.get(row.id).then(function (r) {
+          if (r && r.phase === "match") enterMpMatch(r);
+        }).catch(function () {});
+      }, 800);
+      return;
+    }
+
+    // Now claim
     mpMatch.started = true; mpMatch.lobbyId = row.id; mpMatch.row = row;
     stopMpTurnTimer();
-    var E = root.CC_ENGINE, d = row.draft || {};
     var meIsHost = row.host === state.user.id; mpMatch.meIsHost = meIsHost;
-    var hostSquad = d.host_squad || [], guestSquad = d.guest_squad || [];
-    if (!hostSquad.length || !guestSquad.length) { toast("Squad data missing."); onOpponentLeft(); return; }
     var hostP = lobbyState.profiles[row.host] || { username: "Host" };
     var guestP = lobbyState.profiles[row.guest] || { username: "Guest" };
     mpMatch.hostSquad = hostSquad; mpMatch.guestSquad = guestSquad;
@@ -1739,10 +1749,19 @@
     mpMatch.oppName = meIsHost ? guestP.username : hostP.username;
     mpMatch.oppId = meIsHost ? row.guest : row.host;
 
-    // Identical on BOTH clients: host=A, guest=B, same seed → same plays / score /
-    // scorers / ratings. Perspective (win/lose, your stats) is applied at results.
+    // Identical on BOTH clients: host=A, guest=B, same seed → same plays / score
     var seed = (row.seed >>> 0) || 1;
-    var canon = E.playMatch(hostSquad, guestSquad, seed);
+    var canon;
+    try {
+      canon = E.playMatch(hostSquad, guestSquad, seed);
+    } catch (err) {
+      console.error("playMatch threw:", err);
+      mpMatch.started = false;  // unwind so a retry can fire
+      mpMatch.lobbyId = null;
+      toast("Match calculation error — returning home.");
+      doLeaveLobby();
+      return;
+    }
     mpMatch.canon = canon;
 
     // Host writes the head-to-head + match row once (no double count).
@@ -1932,10 +1951,14 @@
       return origSubscribe(lobbyId, function (newRow) {
         try {
           if (!newRow) return cb(newRow);
-          // BUG #2 FIX: if phase has advanced past draft, ALWAYS let main handler
-          // route (don't intercept). Otherwise the last picker can get stuck.
+          // BUG #2 FIX v2: after WE've locally advanced past draft, ignore any
+          // stale draft/reveal echoes so the picker doesn't get re-rendered back
+          // onto the draft screen and re-claim mpMatch.started incorrectly.
+          if (mpMatch.started) {
+            if (newRow.phase === "draft" || newRow.phase === "reveal") return;
+            return cb(newRow);
+          }
           if (newRow.phase !== "draft") return cb(newRow);
-          // We're in MP draft, keep mpDraft.row in sync and re-render
           if (mpDraft.lobbyId && newRow.id === mpDraft.lobbyId) {
             mpDraft.row = newRow;
             renderMpDraft();
@@ -1947,7 +1970,6 @@
       });
     };
   })();
-
   /* ---------------------------------------------------------------- init - */
   function init() {
     UI = root.CC_UI;
