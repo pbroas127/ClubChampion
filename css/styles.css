@@ -484,12 +484,8 @@ body[data-screen="draft"] .topnav, body[data-screen="sim"] .topnav, body[data-sc
 .mp-rematch-note b { color: var(--text); }
 .mp-rematch-note .mini-btn { margin-left: 8px; }
 
-/* C2: bigger, better-proportioned MP draft pitches */
-.mp-pitch { aspect-ratio: 3 / 4; min-height: 160px; }
-.mp-board .slot-chip { max-width: 64px; }
-.mp-board .slot-chip .chip-pos { font-size: 10px; }
-.mp-board .slot-chip .chip-name { font-size: 9px; line-height: 1.05; }
-.mp-board .slot-chip .chip-sub { font-size: 8px; }
+/* C2 / #6: MP draft pitches reuse the solo .pitch look; just give a min height. */
+.mp-pitch { min-height: 200px; }
 
 /* ========================================================= PAGES ======== */
 .screen--page { max-width: var(--maxw); margin: 0 auto; padding: 24px 16px 60px; }
@@ -721,12 +717,20 @@ body[data-screen="draft"] .topnav, body[data-screen="sim"] .topnav, body[data-sc
 /* challenge button + invite popup (Phase 5) */
 .mini-btn--play { background: var(--green); color: #052914; border: none; font-weight: 700; }
 .mini-btn--play:hover { filter: brightness(1.05); }
-.invite-pop { position: fixed; z-index: 60; width: 240px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 14px; }
-.ip-title { font-family: "Archivo"; font-weight: 800; font-size: 15px; margin-bottom: 12px; }
-.ip-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; font-size: 13px; color: var(--text); }
-.ip-sel { margin: 0; width: auto; flex: 1; max-width: 150px; padding: 8px 10px; font-size: 12.5px; }
-.ip-mode { font-size: 12px; color: var(--muted-2); margin: 4px 0 12px; }
-.invite-pop .btn { margin: 0; }
+/* #11: redesigned challenge popup — segmented pool control + styled toggle */
+.invite-pop { position: fixed; z-index: 60; width: 272px; background: linear-gradient(180deg, var(--panel), var(--bg-2)); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 16px; }
+.invite-pop .ip-head { margin-bottom: 14px; }
+.ip-title { font-family: "Archivo"; font-weight: 800; font-size: 16px; }
+.ip-sub { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+.ip-field { margin-bottom: 13px; }
+.ip-label { display: block; font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 7px; }
+.ip-seg { display: flex; width: 100%; }
+.ip-seg button { flex: 1; font-size: 12.5px; white-space: nowrap; }
+.invite-pop .ip-toggle { margin-bottom: 13px; gap: 10px; }
+.invite-pop .ip-toggle .toggle-label small { font-size: 10.5px; }
+.ip-mode-note { font-size: 11.5px; color: var(--muted-2); margin: 0 0 13px; }
+.ip-mode-note b { color: var(--text); }
+.invite-pop .btn { margin: 0; width: 100%; }
 .invite-row .friend-id small { color: var(--muted); }
 .inv-cd { color: var(--gold); font-weight: 700; }
 
@@ -914,26 +918,14 @@ body[data-screen="mplobby"] .topnav { display: none; }
   text-transform: uppercase;
   font-weight: 700;
 }
-.mp-pitch {
-  display: flex;
-  flex-direction: column-reverse;
-  gap: 5px;
-  background: repeating-linear-gradient(0deg, #15512f 0 12.5%, #12492a 12.5% 25%);
-  border: 1.5px solid #1c6b3e;
-  border-radius: 12px;
-  padding: 8px 6px;
-  aspect-ratio: 3 / 4;
-}
-.mp-pitch .pitch-line { gap: 4px; }
-.mp-pitch .slot-chip {
-  max-width: 46px;
-  aspect-ratio: 1;
-  border-radius: 8px;
-  padding: 3px;
-}
-.mp-pitch .slot-chip .chip-pos { font-size: 8px; }
-.mp-pitch .slot-chip .chip-name { font-size: 8px; }
-.mp-pitch .slot-chip .chip-sub { font-size: 6.5px; }
+/* #6: MP draft pitches reuse the solo .pitch base (grass, halfway line,
+   centre circle, dashed empties that fill in). Only resize the chips so the
+   two boards sit side by side. */
+.mp-pitch .pitch-line { gap: 5px; }
+.mp-pitch .slot-chip { max-width: 60px; border-radius: 10px; padding: 4px; }
+.mp-pitch .slot-chip .chip-pos { font-size: 9px; }
+.mp-pitch .slot-chip .chip-name { font-size: 9px; }
+.mp-pitch .slot-chip .chip-sub { font-size: 7px; }
 
 .mp-players-panel {
   background: linear-gradient(180deg, var(--panel), var(--bg-2));
@@ -974,8 +966,8 @@ body[data-screen="mplobby"] .topnav { display: none; }
 @media (max-width: 600px) {
   .mp-board { grid-template-columns: 1fr 1fr; gap: 8px; }
   .mp-side { padding: 8px; }
-  .mp-pitch { aspect-ratio: 3 / 4; padding: 6px 4px; }
-  .mp-pitch .slot-chip { max-width: 36px; }
+  .mp-pitch { min-height: 150px; padding: 5% 4%; }
+  .mp-pitch .slot-chip { max-width: 44px; }
   .mp-pitch .slot-chip .chip-pos,
   .mp-pitch .slot-chip .chip-name { font-size: 7px; }
   .mp-spin-panel .reel { height: 44px; }

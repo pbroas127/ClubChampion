@@ -246,7 +246,7 @@
   function onAuth(user) {
     state.user = user;
     if (!user) {
-      state.profile = null; stopHeartbeat(); refreshAccountButton();
+      state.profile = null; stopHeartbeat(); teardownInviteRealtime(); refreshAccountButton();
       if (state.tab === "friends" || state.tab === "stats") (state.tab === "friends" ? renderFriends : renderStats)();
       return;
     }
@@ -263,6 +263,7 @@
       state.profile = p; refreshAccountButton();
       if (root.CC_UI && root.CC_UI.setProDefault) root.CC_UI.setProDefault(!!p.pro_default);
       startHeartbeat();
+      setupInviteRealtime();   // #1: listen for challenges from any tab
       if (state.tab === "stats") renderStats();
       if (state.tab === "friends") renderFriends();
     });
@@ -491,8 +492,39 @@
   
   function teardownFriendsRealtime() {
     if (friendsChannel && BE.friends && BE.friends.unsubscribe) { BE.friends.unsubscribe(friendsChannel); friendsChannel = null; }
-    if (invitesChannel && BE.invites && BE.invites.unsubscribe) { BE.invites.unsubscribe(invitesChannel); invitesChannel = null; }
     if (inviteTick) { clearInterval(inviteTick); inviteTick = null; }
+  }
+
+  // #1: invite realtime is GLOBAL — it stays live the whole time you're signed
+  // in, so a challenge pops for the receiver instantly without opening Friends.
+  function setupInviteRealtime() {
+    if (invitesChannel || !state.user || !BE.invites || !BE.invites.subscribe) return;
+    invitesChannel = BE.invites.subscribe(function (payload) {
+      var inv = payload && payload.new;
+      if (inv && state.user) {
+        var iAmInThisInvite = inv.from_user === state.user.id || inv.to_user === state.user.id;
+        if (iAmInThisInvite) {
+          if (inv.status === "accepted" && inv.lobby_id) {
+            enteredLobbyOnce = true;
+            enterLobby(inv.lobby_id, inv.from_user === state.user.id);
+            return;
+          }
+          if (inv.status === "accepted") { retryEnterLobby(12, 500); return; }
+          // Fresh incoming challenge → toast so the receiver never misses it.
+          if (inv.status === "pending" && inv.to_user === state.user.id && payload.eventType === "INSERT") {
+            BE.profile.getMany([inv.from_user]).then(function (pm) {
+              var nm = (pm[inv.from_user] || {}).username || "Someone";
+              toast("⚔️ " + nm + " challenged you!");
+            }).catch(function () { toast("⚔️ New challenge!"); });
+          }
+        }
+      }
+      if (state.tab === "friends") renderInvites();
+    });
+  }
+
+  function teardownInviteRealtime() {
+    if (invitesChannel && BE.invites && BE.invites.unsubscribe) { BE.invites.unsubscribe(invitesChannel); invitesChannel = null; }
   }
 
   function renderFriends() {
@@ -525,31 +557,7 @@
     if (BE.friends && BE.friends.subscribe) {
       friendsChannel = BE.friends.subscribe(function () { if (state.tab === "friends") loadFriendsData(); });
     }
-    if (BE.invites && BE.invites.subscribe) {
-      invitesChannel = BE.invites.subscribe(function (payload) {
-        if (payload && payload.new) {
-          var inv = payload.new;
-          var iAmInThisInvite = inv.from_user === state.user.id || inv.to_user === state.user.id;
-
-          if (iAmInThisInvite) {
-            // Best case: direct lobby pointer exists
-            if (inv.status === "accepted" && inv.lobby_id) {
-              enteredLobbyOnce = true;
-              enterLobby(inv.lobby_id, inv.from_user === state.user.id);
-              return;
-            }
-
-            // Fallback: accepted but lobby_id not there yet
-            if (inv.status === "accepted") {
-              retryEnterLobby(12, 500);
-              return;
-            }
-          }
-        }
-
-        if (state.tab === "friends") renderInvites();
-      });
-    }
+    setupInviteRealtime();   // #1: global subscription; safe no-op if already live
     inviteTick = setInterval(function () {
       if (state.tab === "friends") updateInviteCountdowns();
     }, 1000);
@@ -642,19 +650,36 @@
     var ex = $("invite-pop"); if (ex) { ex.remove(); return; }
     var m = el("div", "invite-pop"); m.id = "invite-pop";
     m.innerHTML =
-      '<div class="ip-title">Challenge ' + esc(name) + "</div>" +
-      '<label class="ip-row"><span>Player pool</span>' +
-        '<select class="inp ip-sel" id="ip-pool"><option value="club">Clubs</option><option value="wc">World Cup</option></select></label>' +
-      '<label class="ip-row"><span>Pro Mode</span><input type="checkbox" id="ip-pro" /></label>' +
-      '<div class="ip-mode">Mode: <b>Classic</b> · Tournament <span class="dim">soon</span></div>' +
-      '<button class="btn btn--kickoff btn--sm" id="ip-send">Send invite</button>';
+      '<div class="ip-head"><div class="ip-title">Challenge ' + esc(name) + "</div>" +
+        '<div class="ip-sub">7-round live draft, then a one-off match.</div></div>' +
+      '<div class="ip-field"><span class="ip-label">Player pool</span>' +
+        '<div class="seg ip-seg" id="ip-pool-seg">' +
+          '<button type="button" data-pool="club" class="is-selected">⚽ Clubs</button>' +
+          '<button type="button" data-pool="wc">🌍 World Cup</button>' +
+        '</div></div>' +
+      '<label class="toggle ip-toggle">' +
+        '<input type="checkbox" id="ip-pro" />' +
+        '<span class="toggle-track"><span class="toggle-thumb"></span></span>' +
+        '<span class="toggle-label"><b>Pro Mode</b><small>Hide ratings — draft on knowledge alone.</small></span>' +
+      '</label>' +
+      '<div class="ip-mode-note">Mode <b>Classic</b><span class="dim"> · Tournament soon</span></div>' +
+      '<button class="btn btn--kickoff btn--sm" id="ip-send">Send challenge <span>→</span></button>';
     document.body.appendChild(m);
     var r = btn.getBoundingClientRect();
     m.style.top = (r.bottom + 8) + "px";
-    m.style.left = Math.max(8, Math.min(r.left - 60, window.innerWidth - 250)) + "px";
+    m.style.left = Math.max(8, Math.min(r.left - 80, window.innerWidth - 288)) + "px";
+    var poolSeg = $("ip-pool-seg");
+    poolSeg.querySelectorAll("button").forEach(function (b) {
+      b.onclick = function () {
+        poolSeg.querySelectorAll("button").forEach(function (x) { x.classList.remove("is-selected"); });
+        b.classList.add("is-selected");
+      };
+    });
     $("ip-send").onclick = function () {
       $("ip-send").disabled = true;
-      BE.invites.send(userId, { pool: $("ip-pool").value, pro: $("ip-pro").checked }).then(function (r) {
+      var sel = poolSeg.querySelector("button.is-selected");
+      var pool = (sel && sel.dataset.pool) || "club";
+      BE.invites.send(userId, { pool: pool, pro: $("ip-pro").checked }).then(function (r) {
         m.remove(); toast("Challenge sent to " + name + "!");
         var inv = r && r.data;
         // A2: host immediately creates + enters the lobby, then waits (grey 30s timer).
@@ -977,13 +1002,21 @@
       '</div>';
 
     var fgrid = $("mpl-fgrid");
+    var dotClass = { GK: "pos-gk", DEF: "pos-def", MID: "pos-mid", FWD: "pos-fwd" };
     if (fgrid && formations.length) {
       formations.forEach(function (f) {
         var card = el("button", "formation-card" + (meFormation === f.id ? " is-selected" : ""));
         card.dataset.id = f.id;
+        var mini = "";
+        ["FWD", "MID", "DEF", "GK"].forEach(function (pos) {
+          var nn = f.slots[pos]; if (!nn) return;
+          var dots = ""; for (var k = 0; k < nn; k++) dots += '<i class="' + dotClass[pos] + '" style="background:var(--' + dotClass[pos] + ')"></i>';
+          mini += '<div class="row">' + dots + "</div>";
+        });
         card.innerHTML =
           '<div class="formation-num">' + f.name + "</div>" +
           '<div class="formation-tag">' + f.tag + "</div>" +
+          '<div class="formation-mini">' + mini + "</div>" +
           '<div class="formation-blurb">' + f.blurb + "</div>";
         if (meReady) card.disabled = true;
         card.addEventListener("click", function () {
@@ -1018,8 +1051,11 @@
     $("mpl-ready").onclick = function () {
       var chosen = lobbyState.chosenFormation || meFormation;
       if (!chosen) { toast("Pick a formation first."); return; }
-      $("mpl-ready").disabled = true;
-      BE.lobby.setReady(lobbyState.lobbyId, meIsHost, true);
+      var btn = $("mpl-ready"); btn.disabled = true; btn.textContent = "Ready ✓";
+      var st = document.querySelector(".mpl-side.me .mpl-status");
+      if (st) { st.textContent = "Ready"; st.classList.add("ready"); }
+      // #8: start as soon as both are ready — don't wait for the timer.
+      BE.lobby.setReady(lobbyState.lobbyId, meIsHost, true).then(function () { setTimeout(forceCheckBothReady, 250); });
     };
   }
 
@@ -1302,11 +1338,11 @@
       '<div class="mp-board">' +
         '<div class="mp-side' + (myTurn ? " mp-side--active" : "") + '">' +
           '<div class="mp-side-head"><b>' + esc(meName) + '</b><span>You</span></div>' +
-          '<div class="mp-pitch" id="mp-pitch-me"></div>' +
+          '<div class="mp-pitch pitch" id="mp-pitch-me"></div>' +
         '</div>' +
         '<div class="mp-side' + (!myTurn ? " mp-side--active" : "") + '">' +
           '<div class="mp-side-head"><b>' + esc(oppName) + '</b><span>Opp</span></div>' +
-          '<div class="mp-pitch" id="mp-pitch-opp"></div>' +
+          '<div class="mp-pitch pitch" id="mp-pitch-opp"></div>' +
         '</div>' +
       '</div>' +
 
@@ -1320,14 +1356,37 @@
       mpDraft.meIsHost ? d.guest_formation : d.host_formation);
     renderMpPlayers(d, myTurn, mySquad, oppSquad);
 
-    // C3: spin the reels whenever the roll changes (new pick number = new roll).
+    // #3: shuffle the reels through the pool, then land on the real roll.
     var spinId = d.current_spin ? (d.current_spin.short + "|" + d.current_spin.year + "|" + pickNum) : "";
     if (spinId && spinId !== mpDraft.lastSpinId) {
       mpDraft.lastSpinId = spinId;
-      var reels = wrap.querySelectorAll(".mp-spin-panel .reel");
-      reels.forEach(function (rl) { rl.classList.add("is-spinning"); });
-      setTimeout(function () { reels.forEach(function (rl) { rl.classList.remove("is-spinning"); }); }, 850);
+      animateMpReels(d.current_spin);
     }
+  }
+
+  function animateMpReels(spin) {
+    var rc = $("mp-reel-club"), ry = $("mp-reel-year"); if (!rc || !ry || !spin) return;
+    var reels = document.querySelectorAll(".mp-spin-panel .reel");
+    reels.forEach(function (rl) { rl.classList.add("is-spinning"); });
+    var pool = (mpDraft.row && mpDraft.row.pool) || "club";
+    var N = root.CC_NATIONS, DATA = root.CC_DATA;
+    if (mpDraft.spinTick) clearInterval(mpDraft.spinTick);
+    var ticks = 0;
+    mpDraft.spinTick = setInterval(function () {
+      if (pool === "wc" && N) {
+        rc.textContent = N.COMBOS[Math.floor(Math.random() * N.COMBOS.length)].short;
+        ry.textContent = N.YEARS[Math.floor(Math.random() * N.YEARS.length)];
+      } else {
+        rc.textContent = DATA.CLUBS[Math.floor(Math.random() * DATA.CLUBS.length)].short;
+        ry.textContent = 1990 + Math.floor(Math.random() * 37);
+      }
+      if (++ticks > 13) {
+        clearInterval(mpDraft.spinTick); mpDraft.spinTick = null;
+        reels.forEach(function (rl) { rl.classList.remove("is-spinning"); });
+        rc.textContent = spin.short || spin.club;
+        ry.textContent = spin.year;
+      }
+    }, 70);
   }
 
   function renderMpPitches(mySquad, oppSquad, myFormationId, oppFormationId) {
@@ -1346,6 +1405,7 @@
           var p = byPos[pos][i];
           var chip = el("div", "slot-chip" + (p ? " is-filled" : ""));   // empties stay dashed
           if (p) {
+            chip.style.background = shade(p.color);                       // #6: team-coloured like solo
             chip.innerHTML = '<div class="chip-pos">' + pos + '</div>' +
               '<div class="chip-name">' + esc(lastName(p.n)) + '</div>' +
               '<div class="chip-sub">' + esc(p.short || p.club) + ' ' + p.year + '</div>';
@@ -1360,6 +1420,15 @@
   }
 
   function lastName(n) { var p = (n || "").trim().split(" "); return p[p.length - 1]; }
+  function shade(hex) {
+    try {
+      var c = String(hex).replace("#", "");
+      var r = Math.round(parseInt(c.substr(0, 2), 16) * 0.42);
+      var g = Math.round(parseInt(c.substr(2, 2), 16) * 0.42);
+      var b = Math.round(parseInt(c.substr(4, 2), 16) * 0.42);
+      return "rgb(" + r + "," + g + "," + b + ")";
+    } catch (e) { return "var(--panel)"; }
+  }
 
   function renderMpPlayers(d, myTurn, mySquad, oppSquad) {
     var box = $("mp-players"); if (!box) return;
@@ -1385,19 +1454,30 @@
     // lock it for me too (the same exact slot machine roll can't yield two of the same).
     // Across different rolls, "Messi Barca 2016 vs Messi PSG 2022" is fine because clubs/years differ.
 
-    list.sort(function (a, b) {
-      return Math.round(mpDraft.ENGINE.overall(b)) - Math.round(mpDraft.ENGINE.overall(a));
-    });
+    // #4: Pro Mode — hide ratings and DON'T sort by overall (no rating signal).
+    var pro = !!mpDraft.row.pro;
+    var POS_ORDER = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
+    if (pro) {
+      list.sort(function (a, b) {
+        var pa = POS_ORDER[a.pos], pb = POS_ORDER[b.pos];
+        if (pa !== pb) return pa - pb;                  // group by position
+        return a.n < b.n ? -1 : a.n > b.n ? 1 : 0;      // then alphabetical (stable, no OVR leak)
+      });
+    } else {
+      list.sort(function (a, b) {
+        return Math.round(mpDraft.ENGINE.overall(b)) - Math.round(mpDraft.ENGINE.overall(a));
+      });
+    }
 
     list.forEach(function (pl) {
       var ovr = Math.round(mpDraft.ENGINE.overall(pl));
       var oppHasSame = !!oppDrafted[pl.n + "|" + mpSpinKey(d.current_spin)];
-      var card = el("button", "pcard" + (oppHasSame ? " mp-locked-card" : ""));
+      var card = el("button", "pcard" + (pro ? " is-pro" : "") + (oppHasSame ? " mp-locked-card" : ""));
       card.innerHTML =
         '<div class="pos-badge pos-' + pl.pos + '">' + pl.pos + "</div>" +
         '<div class="pcard-info"><div class="pcard-name">' + esc(pl.n) + "</div>" +
           '<div class="pcard-sub">' + esc(d.current_spin.club) + " · " + d.current_spin.year + "</div></div>" +
-        '<div class="pcard-ovr">' + ovr + "<small>OVR</small></div>";
+        (pro ? "" : '<div class="pcard-ovr">' + ovr + "<small>OVR</small></div>");
       if (myTurn && !oppHasSame) {
         card.addEventListener("click", function () { mpPickPlayer(pl); });
       } else {
@@ -1440,8 +1520,13 @@
       d.turn = null;
       stopMpTurnTimer();
       // Lock both squads AND flip phase to "match" in one write, so BOTH clients
-      // transition to the match together (the old path only moved the picker).
-      BE.lobby.finishDraft(mpDraft.lobbyId, d);
+      // transition to the match together. #5: the picker also advances locally as
+      // soon as the write lands (don't rely only on the realtime echo); the
+      // opponent advances via its phase==="match" subscription. enterMpMatch is
+      // guarded against double-entry.
+      BE.lobby.finishDraft(mpDraft.lobbyId, d).then(function (r) {
+        if (r) { mpDraft.row = r; enterMpMatch(r); }
+      });
       return;
     }
 
@@ -1525,7 +1610,12 @@
 
   function onOpponentLeft() {
     if (!mpMatch.started && !lobbyState.lobbyId) return;
-    toast("Your opponent left the match.");
+    var oppName = "Your opponent";
+    try {
+      var row = lobbyState.lastRow;
+      if (row) { var oppId = row.host === state.user.id ? row.guest : row.host; oppName = (lobbyState.profiles[oppId] || {}).username || oppName; }
+    } catch (e) {}
+    toast(oppName + " has left the lobby — redirecting home.");
     resetMpMatch(); teardownLobby(); enteredLobbyOnce = true; setTab("play");
   }
 
@@ -1538,22 +1628,23 @@
     var meIsHost = row.host === state.user.id; mpMatch.meIsHost = meIsHost;
     var hostSquad = d.host_squad || [], guestSquad = d.guest_squad || [];
     if (!hostSquad.length || !guestSquad.length) { toast("Squad data missing."); onOpponentLeft(); return; }
-    mpMatch.mySquad = meIsHost ? hostSquad : guestSquad;
-    mpMatch.oppSquad = meIsHost ? guestSquad : hostSquad;
     var hostP = lobbyState.profiles[row.host] || { username: "Host" };
     var guestP = lobbyState.profiles[row.guest] || { username: "Guest" };
+    mpMatch.hostSquad = hostSquad; mpMatch.guestSquad = guestSquad;
+    mpMatch.hostName = hostP.username; mpMatch.guestName = guestP.username;
+    mpMatch.mySquad = meIsHost ? hostSquad : guestSquad;
+    mpMatch.oppSquad = meIsHost ? guestSquad : hostSquad;
     mpMatch.meName = meIsHost ? hostP.username : guestP.username;
     mpMatch.oppName = meIsHost ? guestP.username : hostP.username;
+    mpMatch.oppId = meIsHost ? row.guest : row.host;
 
+    // Identical on BOTH clients: host=A, guest=B, same seed → same plays / score /
+    // scorers / ratings. Perspective (win/lose, your stats) is applied at results.
     var seed = (row.seed >>> 0) || 1;
-    var canon = E.playMatch(hostSquad, guestSquad, seed);   // host=A, guest=B
+    var canon = E.playMatch(hostSquad, guestSquad, seed);
     mpMatch.canon = canon;
-    mpMatch.myResult = meIsHost
-      ? { goalsA: canon.goalsA, goalsB: canon.goalsB, winner: canon.winner, pens: canon.pens }
-      : { goalsA: canon.goalsB, goalsB: canon.goalsA, winner: canon.winner === "A" ? "B" : "A",
-          pens: canon.pens ? { a: canon.pens.b, b: canon.pens.a } : null };
 
-    // The host writes the head-to-head + match row once, so it isn't double-counted.
+    // Host writes the head-to-head + match row once (no double count).
     if (meIsHost) {
       var winnerId = canon.winner === "A" ? row.host : row.guest;
       var loserId = canon.winner === "A" ? row.guest : row.host;
@@ -1604,16 +1695,20 @@
 
   function runMpSim() {
     var wrap = $("mpl-wrap"); if (!wrap) return;
+    // Full-size, in a real .sim-wrap/.sim-stage like solo so the canvas fills the screen.
     wrap.innerHTML =
-      '<div class="sim-head">' + esc(mpMatch.meName) + " vs " + esc(mpMatch.oppName) + "</div>" +
-      '<div class="sim-stage"><canvas id="mp-canvas"></canvas></div>' +
-      '<button class="btn btn--ghost btn--sm sim-skip" id="mp-sim-skip">Skip to result →</button>';
+      '<div class="sim-wrap">' +
+        '<div class="sim-head">' + esc(mpMatch.hostName) + " vs " + esc(mpMatch.guestName) + "</div>" +
+        '<div class="sim-stage"><canvas id="mp-canvas"></canvas></div>' +
+        '<button class="btn btn--ghost btn--sm sim-skip" id="mp-sim-skip">Skip to result →</button>' +
+      '</div>';
     var canvas = $("mp-canvas");
     if (mpMatch.sim) { try { mpMatch.sim.destroy(); } catch (e) {} mpMatch.sim = null; }
     try {
+      // host=A / guest=B for BOTH clients → identical match on both screens.
       mpMatch.sim = root.CC_MATCHSIM.create(canvas, {
-        squadA: mpMatch.mySquad, squadB: mpMatch.oppSquad, result: mpMatch.myResult,
-        teamAName: "Your XI", teamBName: mpMatch.oppName,
+        squadA: mpMatch.hostSquad, squadB: mpMatch.guestSquad, result: mpMatch.canon,
+        teamAName: mpMatch.hostName, teamBName: mpMatch.guestName,
         colorA: "#2ee87f", colorB: "#ff5d73", seed: (mpMatch.row.seed >>> 0) || 1,
         onDone: function (out) { mpMatch.sim = null; mpMatch.out = out; showMpResults(out); },
       });
@@ -1635,22 +1730,36 @@
 
   function showMpResults(out) {
     var wrap = $("mpl-wrap"); if (!wrap) return;
-    var r = mpMatch.myResult, youWin = r.winner === "A";
-    var pens = r.pens ? " (pens " + r.pens.a + "–" + r.pens.b + ")" : "";
+    var canon = mpMatch.canon, meIsHost = mpMatch.meIsHost;
+    var youWin = meIsHost ? (canon.winner === "A") : (canon.winner === "B");
+    var myGoals = meIsHost ? canon.goalsA : canon.goalsB;
+    var oppGoals = meIsHost ? canon.goalsB : canon.goalsA;
+    var myStats = meIsHost ? out.stats.A : out.stats.B;
+    var oppStats = meIsHost ? out.stats.B : out.stats.A;
+    var pens = canon.pens ? (" (pens " + (meIsHost ? canon.pens.a + "–" + canon.pens.b : canon.pens.b + "–" + canon.pens.a) + ")") : "";
     wrap.innerHTML =
-      '<div class="verdict ' + (youWin ? "verdict--win" : "") + '">' +
-        '<div class="verdict-kicker">Champions Cup · Multiplayer</div>' +
-        '<div class="verdict-title">' + (youWin ? "YOU WIN! 🏆" : "YOU LOSE") + "</div>" +
-        '<div class="verdict-record">' + r.goalsA + " – " + r.goalsB + "</div>" +
-        '<div class="verdict-sub">vs ' + esc(mpMatch.oppName) + pens + "</div>" +
-      "</div>" +
-      '<div class="res-grid">' + mpStatCard(out.stats.A, "Your XI") + mpStatCard(out.stats.B, esc(mpMatch.oppName)) + "</div>" +
-      '<div class="mpl-actions" style="margin-top:16px">' +
-        '<button class="btn btn--ghost btn--sm flex1" id="mp-home">Return Home</button>' +
-        '<button class="btn btn--kickoff btn--sm flex1" id="mp-rematch">↻ Rematch</button>' +
-      "</div>" +
-      '<div class="mp-rematch-note" id="mp-rematch-note"></div>';
-    $("mp-home").onclick = function () { if (mpMatch.lobbyId) BE.lobby.leave(mpMatch.lobbyId); resetMpMatch(); teardownLobby(); enteredLobbyOnce = true; setTab("play"); };
+      '<div class="results-wrap">' +
+        '<div class="verdict ' + (youWin ? "verdict--win" : "") + '">' +
+          '<div class="verdict-kicker">Champions Cup · Multiplayer</div>' +
+          '<div class="verdict-title">' + (youWin ? "YOU WIN! 🏆" : "YOU LOSE") + "</div>" +
+          '<div class="verdict-record">' + myGoals + " – " + oppGoals + "</div>" +
+          '<div class="verdict-sub">vs ' + esc(mpMatch.oppName) + pens + ' &nbsp;·&nbsp; <span id="mp-h2h" class="dim">H2H …</span></div>' +
+        "</div>" +
+        '<div class="res-grid">' + mpStatCard(myStats, "Your XI") + mpStatCard(oppStats, esc(mpMatch.oppName)) + "</div>" +
+        '<div class="mpl-actions" style="margin-top:16px">' +
+          '<button class="btn btn--ghost btn--sm flex1" id="mp-home">Return Home</button>' +
+          '<button class="btn btn--kickoff btn--sm flex1" id="mp-rematch">↻ Rematch</button>' +
+        "</div>" +
+        '<div class="mp-rematch-note" id="mp-rematch-note"></div>' +
+      "</div>";
+    // #10: show the head-to-head (host already wrote it at kickoff).
+    if (BE.friends.headToHead && mpMatch.oppId) {
+      BE.friends.headToHead(mpMatch.oppId).then(function (h) {
+        var e = $("mp-h2h"); if (e) e.textContent = "H2H vs " + mpMatch.oppName + ": " + h.wins + "–" + h.losses;
+      });
+    }
+    // #7: post-game Return Home tears down LOCALLY only — never yanks the opponent.
+    $("mp-home").onclick = function () { resetMpMatch(); teardownLobby(); enteredLobbyOnce = true; setTab("play"); };
     $("mp-rematch").onclick = requestRematch;
     handleRematchFlags(mpMatch.row);   // reflect any rematch request that already arrived
   }
