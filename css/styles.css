@@ -472,6 +472,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .nav-account { margin-left: auto; padding: 8px 16px; border-radius: 999px; background: var(--green); color: #052914; font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 7px; }
 .nav-account:hover { filter: brightness(1.05); }
 .acc-dot { width: 7px; height: 7px; border-radius: 50%; background: #052914; }
+.acc-initial { display: none; }   /* desktop shows the full name; mobile swaps to this */
 .acc-menu { position: fixed; z-index: 60; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); min-width: 180px; overflow: hidden; }
 .acc-head { padding: 12px 14px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line-soft); }
 .acc-head b { color: var(--text); font-size: 14px; }
@@ -661,6 +662,11 @@ body[data-screen="draft"] .topnav, body[data-screen="sim"] .topnav, body[data-sc
   .nav-brand span { display: none; }
   .nav-tab { padding: 6px 11px; font-size: 13px; }
   .nav-account { padding: 7px 13px; }
+  /* Signed in on mobile: collapse the username to an initial circle so it can't
+     run off the screen edge. (Signed-out "Sign in" stays a normal pill.) */
+  .nav-account.is-user { width: 34px; height: 34px; padding: 0; gap: 0; justify-content: center; flex: 0 0 auto; }
+  .nav-account.is-user .acc-dot, .nav-account.is-user .acc-name { display: none; }
+  .nav-account.is-user .acc-initial { display: block; font-size: 14px; line-height: 1; }
   .topnav { gap: 8px; padding: 8px 12px; }
   .ts-cat { min-width: 30px; padding: 3px 4px; }
   .ts-ovr b { font-size: 24px; }

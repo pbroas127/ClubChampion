@@ -38,8 +38,16 @@
 
   function refreshAccountButton() {
     var btn = $("nav-account");
-    if (state.user) btn.innerHTML = '<span class="acc-dot"></span>' + esc(state.profile && state.profile.username ? state.profile.username : "account");
-    else btn.innerHTML = "Sign in";
+    if (state.user) {
+      var uname = (state.profile && state.profile.username) ? state.profile.username : "account";
+      btn.classList.add("is-user");
+      // Full name on desktop; just the initial (CSS shows it as a circle) on mobile.
+      btn.innerHTML = '<span class="acc-dot"></span><span class="acc-name">' + esc(uname) + '</span>' +
+        '<span class="acc-initial">' + esc(uname.charAt(0).toUpperCase()) + '</span>';
+    } else {
+      btn.classList.remove("is-user");
+      btn.innerHTML = "Sign in";
+    }
   }
 
   function toggleAccountMenu() {
