@@ -898,6 +898,11 @@
   var lobbyState = {
     lobbyId: null, isHost: false, channel: null,
     timerHandle: null, deadline: 0, chosenFormation: null, profiles: {},
+    // Local, per-entry deadlines so timers can't freeze on a lost DB write:
+    formationDeadline: 0,   // gold 20s — set once both have joined (this client)
+    greyDeadline: 0,        // grey 30s — "waiting for opponent to join"
+    steppedOut: false,      // I clicked Leave but can still rejoin within the window
+    exiting: false,         // an auto-home message is showing; ignore further ticks/echoes
   };
 
   function enterLobby(lobbyId, isHost) {
@@ -905,6 +910,12 @@
     lobbyState.isHost = isHost;
     lobbyState.chosenFormation = null;
     lobbyState.deadline = Date.now() + 20000;
+    // Fresh entry (incl. rematch re-entry): re-arm timers locally so nothing carries
+    // over a stale/expired deadline from the previous game.
+    lobbyState.formationDeadline = 0;
+    lobbyState.greyDeadline = 0;
+    lobbyState.steppedOut = false;
+    lobbyState.exiting = false;
     showLobbyScreen();
     BE.lobby.get(lobbyId).then(function (row) {
       if (!row) { toast("Lobby missing."); UI.showScreen("home"); return; }
@@ -922,6 +933,7 @@
     lobbyState.channel = BE.lobby.subscribe(lobbyId, function (newRow) {
       if (!newRow) return;
       if (!lobbyState.lobbyId) return;              // #7: ignore late echoes after we've left
+      if (lobbyState.exiting) return;               // an exit message is showing — don't re-enter
       lobbyState.lastRow = newRow;                  // B: tick reads the live row
       // Both players ready → host advances phase
       if (newRow.host_ready && newRow.guest_ready && newRow.phase === "formation") {
@@ -964,6 +976,10 @@
         onOpponentLeft();
         return;
       }
+      // While I'm stepped out, keep MY rejoin screen — don't let an echo (e.g. my
+      // own presence update) re-render the full lobby over it. The timer keeps
+      // ticking via the interval.
+      if (lobbyState.steppedOut) { paintLobbyTimer(newRow); return; }
       renderLobby(newRow);
     });
     startLobbyTimer();
@@ -1013,7 +1029,7 @@
         '</div>' +
       '</div>' +
       '<div class="mpl-timer-wrap">' +
-        '<div class="mpl-timer-label">' + (bothIn ? "Pick &amp; ready up" : "Waiting for opponent to join…") + '</div>' +
+        '<div class="mpl-timer-label" id="mpl-timer-label">' + (bothIn ? "Pick &amp; ready up" : "Waiting for opponent to join…") + '</div>' +
         '<div class="mpl-timer' + (bothIn ? "" : " mpl-timer--grey") + '" id="mpl-timer">' + (bothIn ? "0:20" : "0:30") + '</div>' +
       '</div>' +
       '<div class="mpl-panel"><h3>Pick Your Formation</h3>' +
@@ -1064,16 +1080,9 @@
       });
     }
 
-    // B4: once both have joined, the host arms the shared 20s formation deadline
-    // (single source of truth → both screens count down in sync).
-    if (bothIn && !draft.formation_deadline && meIsHost) {
-      BE.lobby.updateDraft(lobbyState.lobbyId, { formation_deadline: new Date(Date.now() + 20000).toISOString() }).catch(function () {});
-    }
-
-    $("mpl-leave").onclick = function () {
-      if (!confirm("Leave this lobby?")) return;
-      doLeaveLobby();
-    };
+    // Leave is forgiving: step out (clear my presence) but stay rejoinable for the
+    // rest of the gold window instead of killing the lobby outright.
+    $("mpl-leave").onclick = function () { stepOutOfLobby(); };
 
     $("mpl-ready").onclick = function () {
       var chosen = lobbyState.chosenFormation || meFormation;
@@ -1084,6 +1093,10 @@
       // #8: start as soon as both are ready — don't wait for the timer.
       BE.lobby.setReady(lobbyState.lobbyId, meIsHost, true).then(function () { setTimeout(forceCheckBothReady, 250); });
     };
+
+    // Paint the real remaining time NOW (synchronously) so a re-render — e.g. when
+    // either player readies up — never flashes the hardcoded "0:20"/"0:30".
+    paintLobbyTimer(row);
   }
 
   function doLeaveLobby() {
@@ -1136,40 +1149,131 @@
     return f ? f.name + " · " + f.tag : id;
   }
 
-  // Two-timer system (Phase B): a grey 30s "waiting for opponent" timer while
-  // alone, then a gold 20s formation timer once both have joined. Both deadlines
-  // live in the DB so the two screens stay perfectly in sync.
-  function startLobbyTimer() {
-    stopLobbyTimer();
-    lobbyState.timerHandle = setInterval(function () {
-      var row = lobbyState.lastRow; if (!row) return;
-      var draft = row.draft || {};
-      var t = $("mpl-timer"); if (!t) return;
-      if (!(draft.host_in && draft.guest_in)) {
-        // B2/B3 — grey waiting timer; on 0 the alone player kills the lobby.
-        var gd = row.lobby_expires_at ? new Date(row.lobby_expires_at).getTime() : (Date.now() + 30000);
-        var gleft = Math.max(0, Math.round((gd - Date.now()) / 1000));
-        t.textContent = "0:" + (gleft < 10 ? "0" : "") + gleft;
-        t.classList.remove("warn");
-        if (gleft <= 0) { stopLobbyTimer(); killLobbyAlone(); }
-        return;
-      }
-      // B4/B5 — gold formation timer from the shared deadline.
-      var fd = draft.formation_deadline ? new Date(draft.formation_deadline).getTime() : (Date.now() + 20000);
-      var left = Math.max(0, Math.round((fd - Date.now()) / 1000));
-      t.textContent = "0:" + (left < 10 ? "0" : "") + left;
-      t.classList.toggle("warn", left <= 5);
-      if (left <= 0) { stopLobbyTimer(); autoReadyFormation(); }
-    }, 250);
+  function fmtClock(s) { return "0:" + (s < 10 ? "0" : "") + Math.max(0, s); }
+
+  // Two-phase lobby timer. GREY (30s): waiting for the opponent to EVER join —
+  // counts from the lobby's real expiry. GOLD (20s): once both have joined,
+  // counts from a LOCAL deadline (never a shared DB field — that could be lost to a
+  // concurrent write and freeze the clock; local can't). Gold mode sticks once
+  // armed, so if a player steps out we keep counting and wait for them to rejoin.
+  function paintLobbyTimer(row) {
+    if (!row) return 0;
+    var t = $("mpl-timer"), label = $("mpl-timer-label");
+    var draft = row.draft || {};
+    var bothIn = !!(draft.host_in && draft.guest_in);
+    var goldMode = !!(lobbyState.formationDeadline || bothIn);
+    var left;
+    if (goldMode) {
+      if (!lobbyState.formationDeadline) lobbyState.formationDeadline = Date.now() + 20000;
+      left = Math.max(0, Math.round((lobbyState.formationDeadline - Date.now()) / 1000));
+      if (t) { t.textContent = fmtClock(left); t.classList.remove("mpl-timer--grey"); t.classList.toggle("warn", left <= 5); }
+      if (label) label.innerHTML = lobbyState.steppedOut ? "Rejoin before the timer runs out"
+        : (bothIn ? "Pick &amp; ready up" : "Opponent left — waiting for them to rejoin…");
+    } else {
+      var gd = lobbyState.greyDeadline || (row.lobby_expires_at ? new Date(row.lobby_expires_at).getTime() : (Date.now() + 30000));
+      lobbyState.greyDeadline = gd;
+      left = Math.max(0, Math.round((gd - Date.now()) / 1000));
+      if (t) { t.textContent = fmtClock(left); t.classList.add("mpl-timer--grey"); t.classList.remove("warn"); }
+      if (label) label.innerHTML = "Waiting for opponent to join…";
+    }
+    return left;
   }
 
-  function killLobbyAlone() {
-    var lid = lobbyState.lobbyId;
-    toast("Lobby expired — opponent didn't join.");
-    if (lid) BE.lobby.leave(lid);
-    teardownLobby();
+  function startLobbyTimer() {
+    stopLobbyTimer();
+    lobbyState.timerHandle = setInterval(lobbyTick, 250);
+    lobbyTick();   // paint immediately so there's never a stale/blank frame
+  }
+
+  function lobbyTick() {
+    if (lobbyState.exiting) return;
+    var row = lobbyState.lastRow; if (!row) return;
+    var draft = row.draft || {};
+    var bothIn = !!(draft.host_in && draft.guest_in);
+    var left = paintLobbyTimer(row);
+    if (left > 0) return;
+    stopLobbyTimer();
+    if (lobbyState.formationDeadline || bothIn) {
+      // GOLD expired.
+      if (bothIn) { autoReadyFormation(); return; }
+      if (lobbyState.steppedOut) { exitLobbyWithMessage("Rejoin window expired — returning home."); return; }
+      // Opponent stepped out and never came back → close out the waiting player.
+      var lid0 = lobbyState.lobbyId; if (lid0) { try { BE.lobby.leave(lid0); } catch (e) {} }
+      exitLobbyWithMessage("Opponent has left — returning home.");
+    } else {
+      // GREY expired — opponent never joined.
+      var lid1 = lobbyState.lobbyId; if (lid1) { try { BE.lobby.leave(lid1); } catch (e) {} }
+      exitLobbyWithMessage("Opponent failed to join — returning home.");
+    }
+  }
+
+  // Show a brief centered message in the lobby, then auto-home. Trips the guards
+  // so no late echo/tick can pull us back in while the message is up.
+  function exitLobbyWithMessage(msg) {
+    if (lobbyState.exiting) return;
+    lobbyState.exiting = true;
+    stopLobbyTimer();
+    // Stop anything live (sim/kick/rematch) right away so replacing the DOM can't
+    // leave a detached canvas animating or a timer firing into nothing.
+    if (mpMatch.sim) { try { mpMatch.sim.destroy(); } catch (e) {} mpMatch.sim = null; }
+    if (mpMatch.kickTimer) { clearInterval(mpMatch.kickTimer); mpMatch.kickTimer = null; }
+    if (mpMatch.rematchTimer) { clearInterval(mpMatch.rematchTimer); mpMatch.rematchTimer = null; }
+    showLobbyScreen();
+    var wrap = $("mpl-wrap");
+    if (wrap) {
+      wrap.innerHTML =
+        '<div class="mpl-head"><div class="mpl-kicker">Champions Cup — Multiplayer</div>' +
+          '<div class="mpl-title">Lobby Closed</div></div>' +
+        '<div class="mpl-panel" style="text-align:center;padding:40px 18px">' +
+          '<div class="fp-result"><div class="fp-winner-sub">' + esc(msg) + '</div></div></div>';
+    }
+    if (lobbyState.channel) { try { BE.lobby.unsubscribe(lobbyState.channel); } catch (e) {} lobbyState.channel = null; }
+    lobbyState.lobbyId = null;
     enteredLobbyOnce = true;
-    setTab("play");
+    setTimeout(function () {
+      resetMpMatch();
+      document.body.dataset.screen = "home";
+      setTab("play");
+    }, 1800);
+  }
+
+  // Leave the formation lobby but stay rejoinable: clear my presence (so the
+  // opponent sees me gone and their gold timer keeps ticking) WITHOUT ending the
+  // lobby, and show an in-place Rejoin / Return Home view.
+  function stepOutOfLobby() {
+    var lid = lobbyState.lobbyId; if (!lid) return;
+    // Rejoin only makes sense once both have joined (gold window). Alone in the
+    // grey "waiting" phase, Leave just leaves.
+    var draft = (lobbyState.lastRow && lobbyState.lastRow.draft) || {};
+    if (!lobbyState.formationDeadline && !(draft.host_in && draft.guest_in)) { doLeaveLobby(); return; }
+    lobbyState.steppedOut = true;
+    BE.lobby.updateDraft(lid, lobbyState.isHost ? { host_in: false } : { guest_in: false }).catch(function () {});
+    showLobbyScreen();
+    var wrap = $("mpl-wrap"); if (!wrap) return;
+    wrap.innerHTML =
+      '<div class="mpl-head"><div class="mpl-kicker">Champions Cup — Multiplayer</div>' +
+        '<div class="mpl-title">You left the lobby</div></div>' +
+      '<div class="mpl-timer-wrap">' +
+        '<div class="mpl-timer-label" id="mpl-timer-label">Rejoin before the timer runs out</div>' +
+        '<div class="mpl-timer" id="mpl-timer">0:20</div></div>' +
+      '<div class="mpl-panel" style="text-align:center;padding:24px 18px">' +
+        '<div class="fp-result"><div class="fp-winner-sub">Step back in to keep the match going.</div></div>' +
+        '<div class="mpl-actions" style="margin-top:18px">' +
+          '<button class="btn btn--kickoff flex1" id="mpl-rejoin">Rejoin</button>' +
+          '<button class="btn btn--ghost btn--sm" id="mpl-gohome">Return Home</button>' +
+        '</div></div>';
+    paintLobbyTimer(lobbyState.lastRow);
+    var rj = $("mpl-rejoin"); if (rj) rj.onclick = rejoinLobby;
+    var gh = $("mpl-gohome"); if (gh) gh.onclick = function () { doLeaveLobby(); };
+  }
+
+  function rejoinLobby() {
+    var lid = lobbyState.lobbyId; if (!lid) return;
+    lobbyState.steppedOut = false;
+    BE.lobby.updateDraft(lid, lobbyState.isHost ? { host_in: true } : { guest_in: true }).catch(function () {});
+    BE.lobby.get(lid).then(function (row) {
+      if (row) { lobbyState.lastRow = row; renderLobby(row); }
+    }).catch(function () {});
   }
 
   function autoReadyFormation() {
@@ -1726,8 +1830,7 @@
       var row = lobbyState.lastRow;
       if (row) { var oppId = row.host === state.user.id ? row.guest : row.host; oppName = (lobbyState.profiles[oppId] || {}).username || oppName; }
     } catch (e) {}
-    toast(oppName + " has left the lobby — redirecting home.");
-    resetMpMatch(); teardownLobby(); enteredLobbyOnce = true; setTab("play");
+    exitLobbyWithMessage(oppName + " has left — returning home.");
   }
 
   // Persist the final draft (phase → "match") with a few retries so a flaky
@@ -1980,26 +2083,54 @@
 
   /* ================================================== PHASE 10 — REMATCH */
   function requestRematch() {
+    var d = (mpMatch.row && mpMatch.row.draft) || {};
+    var oppWants = mpMatch.meIsHost ? d.rematch_guest : d.rematch_host;
     var side = mpMatch.meIsHost ? "rematch_host" : "rematch_guest";
     var patch = {}; patch[side] = true;
+    // The INITIATOR stamps the shared 20s window; the accepter just adds its flag.
+    if (!oppWants) patch.rematch_at = new Date().toISOString();
     BE.lobby.updateDraft(mpMatch.lobbyId, patch);
-    var btn = $("mp-rematch"); if (btn) { btn.disabled = true; }
-    var note = $("mp-rematch-note"); if (note) note.textContent = "Waiting for " + mpMatch.oppName + " to accept…";
-    startRematchTimer();
+    if (mpMatch.row) mpMatch.row.draft = Object.assign({}, d, patch);   // reflect locally
+    var btn = $("mp-rematch"); if (btn) btn.disabled = true;
+    var note = $("mp-rematch-note");
+    if (note) note.textContent = oppWants ? "Rematch on — setting up…" : ("Waiting for " + mpMatch.oppName + " to accept…");
+    if (!oppWants) armRematchExpiry();   // accepting → the both-flags path will set up the game
   }
-  function startRematchTimer() {
-    if (mpMatch.rematchTimer) clearInterval(mpMatch.rematchTimer);
-    var deadline = Date.now() + 20000;
+
+  // Both players run the same 20s countdown off the shared rematch_at stamp, so
+  // the request and the Accept button expire together.
+  function armRematchExpiry() {
+    if (mpMatch.rematchTimer) return;
+    var d = (mpMatch.row && mpMatch.row.draft) || {};
+    if (d.rematch_host && d.rematch_guest) return;     // already accepted
+    var base = d.rematch_at ? new Date(d.rematch_at).getTime() : Date.now();
+    var deadline = base + 20000;
     mpMatch.rematchTimer = setInterval(function () {
       var left = Math.max(0, Math.round((deadline - Date.now()) / 1000));
-      var btn = $("mp-rematch"); if (btn) btn.textContent = "Rematch sent ⏱ 0:" + (left < 10 ? "0" : "") + left;
-      if (left <= 0) {
-        clearInterval(mpMatch.rematchTimer); mpMatch.rematchTimer = null;
-        var note = $("mp-rematch-note"); if (note) note.textContent = "No response. Return home for a new match.";
-        if (btn) { btn.disabled = true; btn.textContent = "Rematch expired"; }
-      }
+      if (!$("mp-accept-rematch")) { var b = $("mp-rematch"); if (b) b.textContent = "Rematch sent ⏱ " + fmtClock(left); }
+      if (left <= 0) { clearInterval(mpMatch.rematchTimer); mpMatch.rematchTimer = null; expireRematch(); }
     }, 500);
   }
+
+  // No accept within the window: hide BOTH the rematch and accept buttons on this
+  // client and center Return Home. The initiator also clears its stale flag.
+  function expireRematch() {
+    if (mpMatch.rematchTimer) { clearInterval(mpMatch.rematchTimer); mpMatch.rematchTimer = null; }
+    var rb = $("mp-rematch"); if (rb) rb.style.display = "none";
+    var ab = $("mp-accept-rematch"); if (ab) ab.style.display = "none";
+    var note = $("mp-rematch-note"); if (note) note.innerHTML = "";
+    var home = $("mp-home");
+    if (home) { home.classList.remove("flex1"); if (home.parentNode) home.parentNode.style.justifyContent = "center"; }
+    var d = (mpMatch.row && mpMatch.row.draft) || {};
+    var iWant = mpMatch.meIsHost ? d.rematch_host : d.rematch_guest;
+    if (iWant && mpMatch.lobbyId) {
+      var clr = mpMatch.meIsHost ? { rematch_host: false } : { rematch_guest: false };
+      clr.rematch_at = null;
+      BE.lobby.updateDraft(mpMatch.lobbyId, clr).catch(function () {});
+      if (mpMatch.row) mpMatch.row.draft = Object.assign({}, d, clr);
+    }
+  }
+
   function handleRematchFlags(row) {
     if (!row) return;
     var d = row.draft || {};
@@ -2011,6 +2142,8 @@
       if (mpMatch.meIsHost) BE.lobby.rematch(row.id);   // formation reset re-enters both
       return;
     }
+    // The pending request was withdrawn/expired → take the Accept button away.
+    if (!oppWants && $("mp-accept-rematch")) { expireRematch(); return; }
     if (oppWants && !iWant) {
       var note = $("mp-rematch-note");
       if (note && !$("mp-accept-rematch")) {
@@ -2018,6 +2151,7 @@
           '<button class="mini-btn ok" id="mp-accept-rematch">Accept</button>';
         var ab = $("mp-accept-rematch"); if (ab) ab.onclick = requestRematch;
       }
+      armRematchExpiry();   // the accepter's window expires in sync with the initiator
     }
   }
 
