@@ -937,18 +937,17 @@
       }
       // Phase advanced to draft → Phase 8 takes over
       if (newRow.phase === "draft") {
-        if (mpMatch.started || mpCountdown.active) return;  // already past draft locally; ignore stale echo
+        if (mpMatch.started || mpEntering) return;  // already past draft locally; ignore stale echo
         stopLobbyTimer();
         enterMpDraft(newRow);
         return;
       }
       // Phase advanced to match → Phase 9 (lineup → live sim → results).
-      // Route through the shared countdown so both players hand off the same way.
-      // (startMpMatchCountdown routes straight to enterMpMatch once we're already
-      // in the match, so rematch-flag echoes are still handled correctly.)
       if (newRow.phase === "match") {
         stopLobbyTimer();
-        startMpMatchCountdown(newRow);
+        if (mpMatch.started) { enterMpMatch(newRow); return; }  // rematch-flag echo while in match
+        mpEntering = true;
+        enterMpMatchResilient(newRow, 0);
         return;
       }
       // A rematch reset bounces us back to formation → re-enter the lobby fresh.
@@ -1094,6 +1093,7 @@
     mpDraft.lobbyId = null;
     mpMatch.started = false;
     mpMatch.lobbyId = null;
+    mpEntering = false;
     enteredLobbyOnce = true;
 
     // Stop every timer
@@ -1298,7 +1298,7 @@
     // match/countdown state NOW so the later draft→match hand-off can't be blocked
     // by a leftover mpMatch.started/lobbyId (rematch guard) — that left the last
     // picker frozen on the "Squads Locked" countdown on a 2nd/replayed match.
-    if (mpMatch.started || mpCountdown.active) resetMpMatch();
+    if (mpMatch.started || mpEntering) resetMpMatch();
     mpDraft.lobbyId = lobbyState.lobbyId;
     mpDraft.meIsHost = row.host === state.user.id;
     mpDraft.row = row;
@@ -1619,8 +1619,8 @@
       // the last picker frozen on the draft while the opponent advanced. Instead:
       //   1) write the final draft to the DB (with retries) so the OPPONENT's echo
       //      fires and it advances,
-      //   2) hand THIS client off through the same shared countdown using a
-      //      locally-built row — no self-echo required.
+      //   2) advance THIS client straight to the lineup from a locally-built row —
+      //      no self-echo, no extra countdown screen.
       var localLobbyId = mpDraft.lobbyId;
       var matchRow = Object.assign({}, mpDraft.row, { draft: d, phase: "match" });
       mpDraft.row = matchRow;
@@ -1628,9 +1628,10 @@
       mpDraft.lobbyId = null;
       // Persist to the DB (source of truth + opponent's realtime echo), retrying.
       finishDraftWithRetry(localLobbyId, d, 4);
-      // Hand off through the shared "Squads Locked" countdown (also fetches the
-      // authoritative DB row in the background before entering the match).
-      startMpMatchCountdown(matchRow);
+      // Go straight to the match (lineup screen). Resilient so a flaky local row
+      // can fall back to the authoritative DB row instead of hard-freezing.
+      mpEntering = true;
+      enterMpMatchResilient(matchRow, 0);
       return;
     }
 
@@ -1699,17 +1700,10 @@
     kickTimer: null, rematchTimer: null,
   };
 
-  // Shared "squads locked" hand-off shown to BOTH players between the last draft
-  // pick and the lineup. The picker shows it from a locally-built row; the
-  // opponent shows it when its phase==="match" realtime echo lands. The short
-  // countdown both reads nicely AND gives the DB write time to propagate so we
-  // can enter the match from authoritative data on every client.
-  var mpCountdown = { active: false, handle: null, row: null };
-
-  function stopMpCountdown() {
-    if (mpCountdown.handle) { clearInterval(mpCountdown.handle); mpCountdown.handle = null; }
-    mpCountdown.active = false; mpCountdown.row = null;
-  }
+  // Set true only during the brief hand-off between the last draft pick and the
+  // match starting. No UI — it just guards against stale draft echoes re-rendering
+  // the draft while we're entering the match (the entry is usually instant).
+  var mpEntering = false;
 
   function resetMpMatch() {
     if (mpMatch.sim) { try { mpMatch.sim.destroy(); } catch (e) {} }
@@ -1721,7 +1715,7 @@
     // clear draft state too, so a rematch's fresh draft isn't read as stale by the
     // lobby subscribe patch (which intercepts draft-phase updates by lobby id).
     stopMpTurnTimer();
-    stopMpCountdown();
+    mpEntering = false;
     mpDraft.lobbyId = null; mpDraft.row = null;
   }
 
@@ -1745,83 +1739,27 @@
     });
   }
 
-  // Single, symmetric hand-off from draft → match. BOTH players run this: the
-  // picker right after the final pick (from a locally-built row), the opponent
-  // from its phase==="match" echo. It shows a shared 3-2-1 countdown, fetches the
-  // authoritative DB row in the background, then enters the match — so neither
-  // side depends on receiving its OWN realtime self-echo (which the writer's
-  // client often never gets — that was the last-picker freeze).
-  function startMpMatchCountdown(row) {
-    // Already in/past the match (e.g. a later rematch-flag echo) → route normally.
-    if (mpMatch.started) { enterMpMatch(row); return; }
-    // Already counting down → just keep the freshest row and let it ride.
-    if (mpCountdown.active) { if (row) mpCountdown.row = row; return; }
-
-    mpCountdown.active = true;
-    mpCountdown.row = row;
-    stopMpTurnTimer();
-    showLobbyScreen();
-    var wrap = $("mpl-wrap");
-    if (wrap) {
-      wrap.innerHTML =
-        '<div class="mpl-head">' +
-          '<div class="mpl-kicker">Champions Cup — Multiplayer</div>' +
-          '<div class="mpl-title">Squads Locked</div>' +
-        '</div>' +
-        '<div class="mpl-panel" style="text-align:center;padding:36px 18px">' +
-          '<div class="fp-result"><div class="fp-winner-sub">Both squads are in — kicking off…</div></div>' +
-          '<div id="mp-go-countdown" class="fp-countdown">3</div>' +
-        '</div>';
-    }
-
-    // Grab the authoritative DB row while we count down, so we enter from the
-    // complete, agreed squads even if our local row was somehow behind.
-    if (row && row.id) {
-      BE.lobby.get(row.id).then(function (r) {
-        if (r && r.phase === "match" && r.draft &&
-            (r.draft.host_squad || []).length >= 7 && (r.draft.guest_squad || []).length >= 7) {
-          mpCountdown.row = r;
-        }
-      }).catch(function () {});
-    }
-
-    var n = 3;
-    var cd = $("mp-go-countdown"); if (cd) cd.textContent = n;
-    mpCountdown.handle = setInterval(function () {
-      n--;
-      cd = $("mp-go-countdown");
-      if (n > 0) { if (cd) cd.textContent = n; return; }
-      if (cd) cd.textContent = "GO!";   // don't leave a frozen "1" while we hand off
-      clearInterval(mpCountdown.handle); mpCountdown.handle = null;
-      var go = mpCountdown.row;
-      mpCountdown.active = false;
-      enterMpMatchResilient(go, 0);
-    }, 900);
-  }
-
-  // Enter the match without ever hard-freezing. Prefer the authoritative DB row
-  // (the exact row the opponent uses successfully); fall back to our local row.
-  // If enterMpMatch doesn't take (data still propagating), retry on a timer; as a
-  // last resort show a visible "Continue" button so the picker is never stuck.
+  // Enter the match straight from the last pick — no extra countdown screen — and
+  // without ever hard-freezing. Try the row we already have FIRST (the picker's
+  // local row and the opponent's echo row are normally complete → instant lineup).
+  // Only if that doesn't take do we fetch the authoritative DB row and retry; as a
+  // last resort show a visible "Continue" button so nobody is ever stuck.
   function enterMpMatchResilient(localRow, attempt) {
     if (mpMatch.started || !lobbyState.lobbyId) return;  // already in, or we've left
-    function tryRow(row) {
-      if (mpMatch.started || !row || !lobbyState.lobbyId) return;
-      enterMpMatch(row);
-      if (mpMatch.started) return;
-      if (attempt < 10) {
-        setTimeout(function () { enterMpMatchResilient(localRow, attempt + 1); }, 600);
-      } else {
-        showMpHandoffFallback(localRow);
-      }
-    }
-    var id = localRow && localRow.id;
-    if (!id) { tryRow(localRow); return; }
-    BE.lobby.get(id).then(function (r) {
-      var dbOk = r && r.phase === "match" && r.draft &&
-        (r.draft.host_squad || []).length >= 7 && (r.draft.guest_squad || []).length >= 7;
-      tryRow(dbOk ? r : localRow);
-    }).catch(function () { tryRow(localRow); });
+    enterMpMatch(localRow);                               // instant path
+    if (mpMatch.started || !lobbyState.lobbyId) return;
+    if (attempt >= 10) { showMpHandoffFallback(localRow); return; }
+    // Not in yet (data still propagating) → fetch the DB row and try again.
+    setTimeout(function () {
+      if (mpMatch.started || !lobbyState.lobbyId) return;
+      var id = localRow && localRow.id;
+      if (!id) { enterMpMatchResilient(localRow, attempt + 1); return; }
+      BE.lobby.get(id).then(function (r) {
+        var dbOk = r && r.phase === "match" && r.draft &&
+          (r.draft.host_squad || []).length >= 7 && (r.draft.guest_squad || []).length >= 7;
+        enterMpMatchResilient(dbOk ? r : localRow, attempt + 1);
+      }).catch(function () { enterMpMatchResilient(localRow, attempt + 1); });
+    }, 600);
   }
 
   // Visible escape hatch if the match data never resolves — better than a frozen
@@ -1869,6 +1807,7 @@
 
     // Now claim
     mpMatch.started = true; mpMatch.lobbyId = row.id; mpMatch.row = row;
+    mpEntering = false;
     stopMpTurnTimer();
     var meIsHost = row.host === state.user.id; mpMatch.meIsHost = meIsHost;
     var hostP = lobbyState.profiles[row.host] || { username: "Host" };
@@ -2096,9 +2035,9 @@
         try {
           if (!newRow) return cb(newRow);
           // After WE've locally advanced past the draft (match started OR the
-          // hand-off countdown is running), ignore any stale draft/reveal echoes
-          // so we can't be re-rendered back onto the draft screen.
-          if (mpMatch.started || mpCountdown.active) {
+          // hand-off to the match is in progress), ignore any stale draft/reveal
+          // echoes so we can't be re-rendered back onto the draft screen.
+          if (mpMatch.started || mpEntering) {
             if (newRow.phase === "draft" || newRow.phase === "reveal") return;
             return cb(newRow);
           }

@@ -241,8 +241,33 @@
       }).catch(function () { return { wins: 0, losses: 0 }; });
     },
     recordResult: function (winnerId, loserId) {
-      if (!client) return Promise.resolve();
-      return client.rpc("record_h2h", { winner: winnerId, loser: loserId }).catch(function () {});
+      if (!client || !winnerId || !loserId || winnerId === loserId) return Promise.resolve();
+      // Prefer the atomic RPC. If it's missing/errors (e.g. schema not applied),
+      // fall back to a manual upsert — the caller (host) is one of the pair, so the
+      // head_to_head RLS policy (auth.uid() in (low_id, high_id)) permits it.
+      return client.rpc("record_h2h", { winner: winnerId, loser: loserId })
+        .then(function (r) { if (r && r.error) throw r.error; return r; })
+        .catch(function (err) {
+          console.warn("record_h2h RPC failed, using manual upsert:", err && err.message);
+          var lo = winnerId < loserId ? winnerId : loserId;
+          var hi = winnerId < loserId ? loserId : winnerId;
+          var winIsLow = winnerId === lo;
+          return client.from("head_to_head").select("low_wins,high_wins")
+            .eq("low_id", lo).eq("high_id", hi).maybeSingle()
+            .then(function (r) {
+              var lw = (r.data && r.data.low_wins) || 0;
+              var hw = (r.data && r.data.high_wins) || 0;
+              if (winIsLow) lw += 1; else hw += 1;
+              return client.from("head_to_head").upsert(
+                { low_id: lo, high_id: hi, low_wins: lw, high_wins: hw, updated_at: new Date().toISOString() },
+                { onConflict: "low_id,high_id" }
+              ).then(function (res) {
+                if (res && res.error) console.error("head_to_head upsert failed:", res.error.message);
+                return res;
+              });
+            });
+        })
+        .catch(function (e) { console.error("recordResult failed:", e && e.message); });
     },
     report: function (otherId, reason, comment) {
       need();
