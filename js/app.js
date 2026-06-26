@@ -1294,6 +1294,11 @@
   };
 
   function enterMpDraft(row) {
+    // A new draft means any earlier match in this lobby is over. Clear stale
+    // match/countdown state NOW so the later draft→match hand-off can't be blocked
+    // by a leftover mpMatch.started/lobbyId (rematch guard) — that left the last
+    // picker frozen on the "Squads Locked" countdown on a 2nd/replayed match.
+    if (mpMatch.started || mpCountdown.active) resetMpMatch();
     mpDraft.lobbyId = lobbyState.lobbyId;
     mpDraft.meIsHost = row.host === state.user.id;
     mpDraft.row = row;
@@ -1786,28 +1791,79 @@
       n--;
       cd = $("mp-go-countdown");
       if (n > 0) { if (cd) cd.textContent = n; return; }
+      if (cd) cd.textContent = "GO!";   // don't leave a frozen "1" while we hand off
       clearInterval(mpCountdown.handle); mpCountdown.handle = null;
       var go = mpCountdown.row;
       mpCountdown.active = false;
-      enterMpMatch(go);
+      enterMpMatchResilient(go, 0);
     }, 900);
   }
 
+  // Enter the match without ever hard-freezing. Prefer the authoritative DB row
+  // (the exact row the opponent uses successfully); fall back to our local row.
+  // If enterMpMatch doesn't take (data still propagating), retry on a timer; as a
+  // last resort show a visible "Continue" button so the picker is never stuck.
+  function enterMpMatchResilient(localRow, attempt) {
+    if (mpMatch.started || !lobbyState.lobbyId) return;  // already in, or we've left
+    function tryRow(row) {
+      if (mpMatch.started || !row || !lobbyState.lobbyId) return;
+      enterMpMatch(row);
+      if (mpMatch.started) return;
+      if (attempt < 10) {
+        setTimeout(function () { enterMpMatchResilient(localRow, attempt + 1); }, 600);
+      } else {
+        showMpHandoffFallback(localRow);
+      }
+    }
+    var id = localRow && localRow.id;
+    if (!id) { tryRow(localRow); return; }
+    BE.lobby.get(id).then(function (r) {
+      var dbOk = r && r.phase === "match" && r.draft &&
+        (r.draft.host_squad || []).length >= 7 && (r.draft.guest_squad || []).length >= 7;
+      tryRow(dbOk ? r : localRow);
+    }).catch(function () { tryRow(localRow); });
+  }
+
+  // Visible escape hatch if the match data never resolves — better than a frozen
+  // countdown. Lets the player force-enter from the best row we have, or bail.
+  function showMpHandoffFallback(localRow) {
+    if (mpMatch.started) return;
+    showLobbyScreen();
+    var wrap = $("mpl-wrap"); if (!wrap) return;
+    wrap.innerHTML =
+      '<div class="mpl-head"><div class="mpl-kicker">Champions Cup — Multiplayer</div>' +
+        '<div class="mpl-title">Almost there…</div></div>' +
+      '<div class="mpl-panel" style="text-align:center;padding:28px 18px">' +
+        '<div class="fp-result"><div class="fp-winner-sub">Syncing the final squads is taking a moment.</div></div>' +
+        '<div class="mpl-actions" style="margin-top:18px">' +
+          '<button class="btn btn--kickoff flex1" id="mp-handoff-go">Continue to match →</button>' +
+          '<button class="btn btn--ghost btn--sm" id="mp-handoff-leave">Leave</button>' +
+        '</div></div>';
+    var gob = $("mp-handoff-go");
+    if (gob) gob.onclick = function () {
+      if (mpMatch.started) return;
+      BE.lobby.get(localRow && localRow.id).then(function (r) {
+        var dbOk = r && r.phase === "match" && r.draft &&
+          (r.draft.host_squad || []).length >= 7 && (r.draft.guest_squad || []).length >= 7;
+        enterMpMatch(dbOk ? r : localRow);
+        if (!mpMatch.started) toast("Still syncing — try again in a second.");
+      }).catch(function () { enterMpMatch(localRow); });
+    };
+    var lb = $("mp-handoff-leave");
+    if (lb) lb.onclick = function () { doLeaveLobby(); };
+  }
+
   function enterMpMatch(row) {
+    if (!row) return;
     // Already watching this lobby's match → this update is a rematch flag.
     if (mpMatch.started && mpMatch.lobbyId === row.id) { mpMatch.row = row; handleRematchFlags(row); return; }
     var E = root.CC_ENGINE, d = row.draft || {};
     var hostSquad = d.host_squad || [], guestSquad = d.guest_squad || [];
 
-    // BUG #2 FIX v2: validate data BEFORE claiming mpMatch.started so if data
-    // is incomplete we can retry from DB without getting stuck.
+    // Validate BEFORE claiming mpMatch.started. If data is incomplete, just bail
+    // WITHOUT scheduling our own retry — the resilient caller owns retrying, so we
+    // never spin up competing/forever retry loops.
     if (!hostSquad.length || !guestSquad.length || hostSquad.length < 7 || guestSquad.length < 7) {
-      // Squad data not ready yet — retry from DB once
-      setTimeout(function () {
-        BE.lobby.get(row.id).then(function (r) {
-          if (r && r.phase === "match") enterMpMatch(r);
-        }).catch(function () {});
-      }, 800);
       return;
     }
 
@@ -1840,17 +1896,29 @@
     }
     mpMatch.canon = canon;
 
-    // Host writes the head-to-head + match row once (no double count).
-    if (meIsHost) {
-      var winnerId = canon.winner === "A" ? row.host : row.guest;
-      var loserId = canon.winner === "A" ? row.guest : row.host;
-      if (BE.friends.recordResult) BE.friends.recordResult(winnerId, loserId);
-      if (BE.data.recordMatch) BE.data.recordMatch({
-        lobby_id: row.id, player_a: row.host, player_b: row.guest,
-        goals_a: canon.goalsA, goals_b: canon.goalsB, winner: winnerId,
-      });
+    // Host writes the head-to-head + match row once (no double count). Wrapped so
+    // a backend hiccup here can never block the lineup from rendering.
+    try {
+      if (meIsHost) {
+        var winnerId = canon.winner === "A" ? row.host : row.guest;
+        var loserId = canon.winner === "A" ? row.guest : row.host;
+        if (BE.friends.recordResult) BE.friends.recordResult(winnerId, loserId);
+        if (BE.data.recordMatch) BE.data.recordMatch({
+          lobby_id: row.id, player_a: row.host, player_b: row.guest,
+          goals_a: canon.goalsA, goals_b: canon.goalsB, winner: winnerId,
+        });
+      }
+    } catch (e) { console.error("record result/match failed:", e); }
+
+    // Render the lineup. If this throws, unwind so the resilient caller can retry
+    // (or show the fallback) instead of leaving a half-started, frozen screen.
+    try {
+      showMpLineupIntro();
+    } catch (err) {
+      console.error("showMpLineupIntro threw:", err);
+      mpMatch.started = false;
+      mpMatch.lobbyId = null;
     }
-    showMpLineupIntro();
   }
 
   function mpOvrClass(v) { return v >= 86 ? "ovr-hi" : v >= 78 ? "ovr-mid" : "ovr-lo"; }
