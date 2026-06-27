@@ -25,11 +25,22 @@
   --radius-sm: 10px;
   --shadow:    0 12px 40px rgba(0,0,0,.45);
   --maxw:      980px;
+  /* Higgsfield-generated mode/tab backgrounds (dark cinematic, no text). */
+  --bg-season:    url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260627_201744_c698e45e-028a-4314-b504-58523a3347bb_min.webp");
+  --bg-cpu:       url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260627_201751_c31ce4a0-f51c-4075-9d33-83716d1d7c53_min.webp");
+  --bg-ucl:       url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260627_201757_15efc622-0c01-4785-86d5-3c1ab78c878d_min.webp");
+  --bg-wc:        url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260627_201803_8c2b4558-f5d8-400b-89e7-ba1a0cd849d3_min.webp");
+  --bg-ranked:    url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260627_201809_693cf43e-b36c-4c30-887b-f686f3f222e5_min.webp");
+  --bg-friends:   url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260627_201817_f8a07f65-010e-4beb-9d0a-ec4721fe11b2_min.webp");
+  --bg-friends-m: url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260627_201823_aea85db7-f698-4583-9f9a-34c6036005b7_min.webp");
+  --bg-stats:     url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260627_201709_47286a14-35c3-493f-b80e-83685c3acb81_min.webp");
+  --bg-stats-m:   url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260627_201829_4d325072-c1dd-4872-be25-aef380310695_min.webp");
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 [hidden] { display: none !important; }  /* beat component display rules */
 html, body { height: 100%; }
+html { overflow-x: hidden; }   /* belt-and-suspenders: no sideways scroll on mobile */
 body {
   font-family: "Inter", system-ui, -apple-system, sans-serif;
   color: var(--text);
@@ -55,16 +66,22 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 /* ============================================================ HOME ===== */
 .screen--home {
   --hero-desktop: url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260623_221540_c65b1e9d-69c2-43a3-bcfb-f57eedda40d6.png");
+  position: relative;
+}
+/* Full-viewport fixed layer so the hero fills the WHOLE background — including
+   behind the translucent sticky topnav (no gap at the top). A real fixed element
+   (not background-attachment:fixed) so iOS renders it correctly too. */
+.screen--home::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
   background-image:
-    linear-gradient(180deg, rgba(7,20,13,.74) 0%, rgba(7,20,13,.90) 58%, rgba(7,20,13,.98) 100%),
+    linear-gradient(180deg, rgba(7,20,13,.66) 0%, rgba(7,20,13,.88) 60%, rgba(7,20,13,.97) 100%),
     var(--hero-desktop);
   background-size: cover;
-  background-position: center center;
+  background-position: center top;
   background-repeat: no-repeat;
-  background-attachment: scroll;       /* mobile-safe default (iOS ignores fixed) */
-}
-@media (min-width: 761px) {
-  .screen--home { background-attachment: fixed; background-position: center top; }
 }
 .home-wrap {
   max-width: var(--maxw);
@@ -105,19 +122,31 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 
 .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .mode-card {
-  text-align: left; padding: 12px 12px 13px; border-radius: var(--radius-sm);
-  background: var(--panel-2); border: 1.5px solid var(--line-soft);
+  position: relative; text-align: left; padding: 12px 12px 13px; border-radius: var(--radius-sm);
+  background-color: var(--panel-2); border: 1.5px solid var(--line-soft);
+  background-size: cover; background-position: center; background-repeat: no-repeat;
   display: flex; flex-direction: column; gap: 3px; transition: .18s;
 }
+/* Per-mode cinematic backgrounds. The dark gradient keeps the text crisp on top. */
+.mode-card[data-mode="solo"]   { background-image: linear-gradient(165deg, rgba(7,20,13,.55), rgba(7,20,13,.86)), var(--bg-season); }
+.mode-card[data-mode="cpu"]    { background-image: linear-gradient(165deg, rgba(7,20,13,.55), rgba(7,20,13,.86)), var(--bg-cpu); }
+.mode-card[data-mode="ucl"]    { background-image: linear-gradient(165deg, rgba(7,20,13,.55), rgba(7,20,13,.86)), var(--bg-ucl); }
+.mode-card[data-mode="wc"]     { background-image: linear-gradient(165deg, rgba(7,20,13,.55), rgba(7,20,13,.86)), var(--bg-wc); }
+.mode-card[data-mode="ranked"] { background-image: linear-gradient(165deg, rgba(7,20,13,.55), rgba(7,20,13,.86)), var(--bg-ranked); }
 .mode-card:hover { border-color: var(--line); transform: translateY(-2px); }
 .mode-card.is-selected {
   border-color: var(--green);
-  box-shadow: 0 0 0 3px rgba(46,232,127,.15), 0 8px 24px rgba(0,0,0,.3);
-  background: linear-gradient(180deg, #143a25, #0e2a1b);
+  box-shadow: 0 0 0 3px rgba(46,232,127,.18), 0 8px 24px rgba(0,0,0,.35);
 }
+/* Selected card: deepen + green-tint the overlay so it reads as "active". */
+.mode-card.is-selected[data-mode="solo"]   { background-image: linear-gradient(165deg, rgba(11,40,25,.62), rgba(7,20,13,.88)), var(--bg-season); }
+.mode-card.is-selected[data-mode="cpu"]    { background-image: linear-gradient(165deg, rgba(11,40,25,.62), rgba(7,20,13,.88)), var(--bg-cpu); }
+.mode-card.is-selected[data-mode="ucl"]    { background-image: linear-gradient(165deg, rgba(11,40,25,.62), rgba(7,20,13,.88)), var(--bg-ucl); }
+.mode-card.is-selected[data-mode="wc"]     { background-image: linear-gradient(165deg, rgba(11,40,25,.62), rgba(7,20,13,.88)), var(--bg-wc); }
+.mode-card.is-selected[data-mode="ranked"] { background-image: linear-gradient(165deg, rgba(11,40,25,.62), rgba(7,20,13,.88)), var(--bg-ranked); }
 .mode-icon { font-size: 20px; }
-.mode-name { font-family: "Archivo"; font-weight: 800; font-size: 15px; line-height: 1.1; }
-.mode-desc { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+.mode-name { font-family: "Archivo"; font-weight: 800; font-size: 15px; line-height: 1.1; text-shadow: 0 1px 6px rgba(0,0,0,.6); }
+.mode-desc { color: #c4d8cc; font-size: 11.5px; line-height: 1.35; text-shadow: 0 1px 5px rgba(0,0,0,.7); }
 
 .difficulty-row { margin-top: 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .difficulty-row .panel-label { margin: 0; }
@@ -489,7 +518,29 @@ body[data-screen="draft"] .topnav, body[data-screen="sim"] .topnav, body[data-sc
 .mp-pitch { min-height: 200px; }
 
 /* ========================================================= PAGES ======== */
-.screen--page { max-width: var(--maxw); margin: 0 auto; padding: 24px 16px 60px; }
+.screen--page { max-width: var(--maxw); margin: 0 auto; padding: 24px 16px 60px; position: relative; }
+/* Tab backgrounds: full-viewport fixed layers (behind the nav too, like home) with
+   a strong dark overlay so the content stays readable. Mobile swaps to portrait
+   crops so nothing important is cut off. */
+body[data-screen="friends"] .screen--page::before,
+body[data-screen="stats"] .screen--page::before {
+  content: ""; position: fixed; inset: 0; z-index: -1;
+  background-size: cover; background-position: center; background-repeat: no-repeat;
+}
+body[data-screen="friends"] .screen--page::before {
+  background-image: linear-gradient(180deg, rgba(7,20,13,.80) 0%, rgba(7,20,13,.90) 55%, rgba(7,20,13,.97) 100%), var(--bg-friends);
+}
+body[data-screen="stats"] .screen--page::before {
+  background-image: linear-gradient(180deg, rgba(7,20,13,.80) 0%, rgba(7,20,13,.90) 55%, rgba(7,20,13,.97) 100%), var(--bg-stats);
+}
+@media (max-width: 760px) {
+  body[data-screen="friends"] .screen--page::before {
+    background-image: linear-gradient(180deg, rgba(7,20,13,.80) 0%, rgba(7,20,13,.90) 55%, rgba(7,20,13,.97) 100%), var(--bg-friends-m);
+  }
+  body[data-screen="stats"] .screen--page::before {
+    background-image: linear-gradient(180deg, rgba(7,20,13,.80) 0%, rgba(7,20,13,.90) 55%, rgba(7,20,13,.97) 100%), var(--bg-stats-m);
+  }
+}
 .page-head { margin-bottom: 16px; }
 .page-head h2 { font-size: 28px; }
 .page-head p { color: var(--muted); font-size: 14px; margin-top: 4px; }
