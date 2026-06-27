@@ -64,25 +64,26 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 /* ============================================================ HOME ===== */
-.screen--home {
-  --hero-desktop: url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260623_221540_c65b1e9d-69c2-43a3-bcfb-f57eedda40d6.png");
-  position: relative;
-}
-/* Full-viewport fixed layer so the hero fills the WHOLE background — including
-   behind the translucent sticky topnav (no gap at the top). A real fixed element
-   (not background-attachment:fixed) so iOS renders it correctly too. */
-.screen--home::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
+.screen--home { position: relative; }
+/* Paint the hero on the BODY for the home screen. The body background is the
+   backmost full-viewport layer, so it fills EVERYTHING — including the area
+   behind the sticky topnav — with no possible gap at the top. */
+body[data-screen="home"] {
   background-image:
-    linear-gradient(180deg, rgba(7,20,13,.66) 0%, rgba(7,20,13,.88) 60%, rgba(7,20,13,.97) 100%),
-    var(--hero-desktop);
+    linear-gradient(180deg, rgba(7,20,13,.42) 0%, rgba(7,20,13,.80) 58%, rgba(7,20,13,.97) 100%),
+    url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260623_221540_c65b1e9d-69c2-43a3-bcfb-f57eedda40d6.png");
   background-size: cover;
-  background-position: center top;
+  background-position: center center;
   background-repeat: no-repeat;
+  background-attachment: fixed;
 }
+/* Let the hero run continuously under the nav (no seam/dark band) on home. */
+body[data-screen="home"] .topnav {
+  background: linear-gradient(180deg, rgba(7,20,13,.72), rgba(7,20,13,0));
+  backdrop-filter: none;
+  border-bottom-color: transparent;
+}
+@media (max-width: 760px) { body[data-screen="home"] { background-attachment: scroll; } }
 .home-wrap {
   max-width: var(--maxw);
   margin: 0 auto;
