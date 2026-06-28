@@ -1,13 +1,13 @@
 /* ============================================================================
- * CLUB CHAMPION — CPU Manager (the AI you play against)
+ * CLUB CHAMPION  CPU Manager (the AI you play against)
  * ----------------------------------------------------------------------------
  * The CPU plays the exact same game you do: it gets its own random slot spins
  * and drafts a 7-player squad into the same formation. Difficulty controls how
  * smart it is:
  *
- *   easy   — grabs a random decent option, never skips well, leaves holes.
- *   normal — takes the best player on the board for an open slot.
- *   hard   — evaluates each option by how much it lifts the WHOLE squad, and
+ *   easy    grabs a random decent option, never skips well, leaves holes.
+ *   normal  takes the best player on the board for an open slot.
+ *   hard    evaluates each option by how much it lifts the WHOLE squad, and
  *            spends its skips to dodge weak rolls. A genuinely tough draft.
  *
  * `ctx.spin(openSlots, drafted, rand)` is supplied by the game controller so
@@ -85,7 +85,7 @@
         choice = spin.eligible.map(function (pl) { return { pl: pl, g: marginalGain(squad, pl) }; })
           .sort(function (a, b) { return b.g - a.g; })[0].pl;
       } else if (prof.sharpness <= 0) {
-        // Uniform random eligible pick — leaves holes, very beatable.
+        // Uniform random eligible pick  leaves holes, very beatable.
         choice = spin.eligible[Math.floor(rand() * spin.eligible.length)];
       } else {
         var scored = spin.eligible.map(function (pl) { return { pl: pl, score: primaryRating(pl) }; });

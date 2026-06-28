@@ -1,9 +1,9 @@
 /* ============================================================================
- * CLUB CHAMPION — Public configuration
+ * CLUB CHAMPION  Public configuration
  * ----------------------------------------------------------------------------
  * Paste your Supabase project's URL and ANON (public) key below to switch on
  * accounts, friends, cloud-saved stats, and (later) ranked. These two values
- * are safe to commit — the anon key is meant to ship in the browser; Row Level
+ * are safe to commit  the anon key is meant to ship in the browser; Row Level
  * Security (see supabase/schema.sql) is what actually protects your data.
  *
  * Where to find them: Supabase dashboard → Project Settings → API.

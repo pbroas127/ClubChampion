@@ -1,5 +1,5 @@
 /* ============================================================================
- * CLUB CHAMPION — App shell: navigation, accounts, Stats, Friends, MP
+ * CLUB CHAMPION  App shell: navigation, accounts, Stats, Friends, MP
  * ==========================================================================*/
 (function (root) {
   "use strict";
@@ -55,7 +55,7 @@
     if (existing) { existing.remove(); return; }
     var m = el("div", "acc-menu"); m.id = "acc-menu";
     m.innerHTML =
-      '<div class="acc-head">Signed in as<br><b>' + esc(state.profile ? state.profile.username : "—") + "</b></div>" +
+      '<div class="acc-head">Signed in as<br><b>' + esc(state.profile ? state.profile.username : "") + "</b></div>" +
       '<button class="acc-item" id="acc-stats">My stats</button>' +
       '<button class="acc-item" id="acc-settings">Settings</button>' +
       '<button class="acc-item" id="acc-help">Help</button>' +
@@ -504,7 +504,7 @@
     if (inviteTick) { clearInterval(inviteTick); inviteTick = null; }
   }
 
-  // #1: invite realtime is GLOBAL — it stays live the whole time you're signed
+  // #1: invite realtime is GLOBAL  it stays live the whole time you're signed
   // in, so a challenge pops for the receiver instantly without opening Friends.
   function setupInviteRealtime() {
     if (invitesChannel || !state.user || !BE.invites || !BE.invites.subscribe) return;
@@ -691,7 +691,7 @@
       '<label class="toggle ip-toggle">' +
         '<input type="checkbox" id="ip-pro" />' +
         '<span class="toggle-track"><span class="toggle-thumb"></span></span>' +
-        '<span class="toggle-label"><b>Pro Mode</b><small>Hide ratings — draft on knowledge alone.</small></span>' +
+        '<span class="toggle-label"><b>Pro Mode</b><small>Hide ratings  draft on knowledge alone.</small></span>' +
       '</label>' +
       '<div class="ip-mode-note">Mode <b>Classic</b><span class="dim"> · Tournament soon</span></div>' +
       '<button class="btn btn--kickoff btn--sm" id="ip-send">Send challenge <span>→</span></button>';
@@ -815,13 +815,13 @@
         if (n > 0) {
           setTimeout(function () { attempt(n - 1); }, delay);
         } else {
-          toast("Couldn't find match lobby — try again.");
+          toast("Couldn't find match lobby  try again.");
         }
       }).catch(function () {
         if (n > 0) {
           setTimeout(function () { attempt(n - 1); }, delay);
         } else {
-          toast("Couldn't find match lobby — try again.");
+          toast("Couldn't find match lobby  try again.");
         }
       });
     }
@@ -901,14 +901,14 @@
   function signInCard(t) { return '<div class="card empty-card"><div class="empty-emoji">🔒</div><h3>' + t + '</h3><button class="btn btn--kickoff btn--sm" id="signin-cta" style="max-width:200px;margin:14px auto 0">Sign in</button></div>'; }
   function wireSignInCard() { var b = $("signin-cta"); if (b) b.onclick = function () { openAuth("in"); }; }
 
-  /* =================== PART A ENDS HERE — PART B STARTS NEXT MESSAGE ===== */
+  /* =================== PART A ENDS HERE  PART B STARTS NEXT MESSAGE ===== */
  /* ============================================================ LOBBY === */
   var lobbyState = {
     lobbyId: null, isHost: false, channel: null,
     timerHandle: null, deadline: 0, chosenFormation: null, profiles: {},
     // Local, per-entry deadlines so timers can't freeze on a lost DB write:
-    formationDeadline: 0,   // gold 20s — set once both have joined (this client)
-    greyDeadline: 0,        // grey 30s — "waiting for opponent to join"
+    formationDeadline: 0,   // gold 20s  set once both have joined (this client)
+    greyDeadline: 0,        // grey 30s  "waiting for opponent to join"
     steppedOut: false,      // I clicked Leave but can still rejoin within the window
     exiting: false,         // an auto-home message is showing; ignore further ticks/echoes
   };
@@ -941,7 +941,7 @@
     lobbyState.channel = BE.lobby.subscribe(lobbyId, function (newRow) {
       if (!newRow) return;
       if (!lobbyState.lobbyId) return;              // #7: ignore late echoes after we've left
-      if (lobbyState.exiting) return;               // an exit message is showing — don't re-enter
+      if (lobbyState.exiting) return;               // an exit message is showing  don't re-enter
       lobbyState.lastRow = newRow;                  // B: tick reads the live row
       // Both players ready → host advances phase
       if (newRow.host_ready && newRow.guest_ready && newRow.phase === "formation") {
@@ -984,7 +984,7 @@
         onOpponentLeft();
         return;
       }
-      // While I'm stepped out, keep MY rejoin screen — don't let an echo (e.g. my
+      // While I'm stepped out, keep MY rejoin screen  don't let an echo (e.g. my
       // own presence update) re-render the full lobby over it. The timer keeps
       // ticking via the interval.
       if (lobbyState.steppedOut) { paintLobbyTimer(newRow); return; }
@@ -1019,20 +1019,20 @@
 
     wrap.innerHTML =
       '<div class="mpl-head">' +
-        '<div class="mpl-kicker">Champions Cup — Multiplayer</div>' +
+        '<div class="mpl-kicker">Champions Cup  Multiplayer</div>' +
         '<div class="mpl-title">Match Lobby</div>' +
         '<div class="mpl-vs"><b>' + esc(meName) + '</b> vs <b>' + esc(oppName) + '</b></div>' +
       '</div>' +
       '<div class="mpl-players">' +
         '<div class="mpl-side me">' +
           '<div class="mpl-name">' + esc(meName) + ' (you)</div>' +
-          '<div class="mpl-fm">' + (meFormation ? formationLabel(meFormation, formations) : "—") + '</div>' +
+          '<div class="mpl-fm">' + (meFormation ? formationLabel(meFormation, formations) : "") + '</div>' +
           '<div class="mpl-status' + (meReady ? " ready" : "") + '">' + (meReady ? "Ready" : "Choosing…") + '</div>' +
         '</div>' +
         '<div class="mpl-vs-mid">VS</div>' +
         '<div class="mpl-side">' +
           '<div class="mpl-name">' + esc(oppName) + '</div>' +
-          '<div class="mpl-fm">' + (oppFormation ? formationLabel(oppFormation, formations) : "—") + '</div>' +
+          '<div class="mpl-fm">' + (oppFormation ? formationLabel(oppFormation, formations) : "") + '</div>' +
           '<div class="mpl-status' + (oppReady ? " ready" : "") + '">' + (oppReady ? "Ready" : "Choosing…") + '</div>' +
         '</div>' +
       '</div>' +
@@ -1098,12 +1098,12 @@
       var btn = $("mpl-ready"); btn.disabled = true; btn.textContent = "Ready ✓";
       var st = document.querySelector(".mpl-side.me .mpl-status");
       if (st) { st.textContent = "Ready"; st.classList.add("ready"); }
-      // #8: start as soon as both are ready — don't wait for the timer.
+      // #8: start as soon as both are ready  don't wait for the timer.
       BE.lobby.setReady(lobbyState.lobbyId, meIsHost, true).then(function () { setTimeout(forceCheckBothReady, 250); });
     };
 
-    // Paint the real remaining time NOW (synchronously) so a re-render — e.g. when
-    // either player readies up — never flashes the hardcoded "0:20"/"0:30".
+    // Paint the real remaining time NOW (synchronously) so a re-render  e.g. when
+    // either player readies up  never flashes the hardcoded "0:20"/"0:30".
     paintLobbyTimer(row);
   }
 
@@ -1139,7 +1139,7 @@
     // Reset state objects
     resetMpMatch();
 
-    // Force navigate home — body data attr too so CSS doesn't keep lobby visible
+    // Force navigate home  body data attr too so CSS doesn't keep lobby visible
     document.body.dataset.screen = "home";
     setTab("play");
 
@@ -1159,9 +1159,9 @@
 
   function fmtClock(s) { return "0:" + (s < 10 ? "0" : "") + Math.max(0, s); }
 
-  // Two-phase lobby timer. GREY (30s): waiting for the opponent to EVER join —
+  // Two-phase lobby timer. GREY (30s): waiting for the opponent to EVER join 
   // counts from the lobby's real expiry. GOLD (20s): once both have joined,
-  // counts from a LOCAL deadline (never a shared DB field — that could be lost to a
+  // counts from a LOCAL deadline (never a shared DB field  that could be lost to a
   // concurrent write and freeze the clock; local can't). Gold mode sticks once
   // armed, so if a player steps out we keep counting and wait for them to rejoin.
   function paintLobbyTimer(row) {
@@ -1176,7 +1176,7 @@
       left = Math.max(0, Math.round((lobbyState.formationDeadline - Date.now()) / 1000));
       if (t) { t.textContent = fmtClock(left); t.classList.remove("mpl-timer--grey"); t.classList.toggle("warn", left <= 5); }
       if (label) label.innerHTML = lobbyState.steppedOut ? "Rejoin before the timer runs out"
-        : (bothIn ? "Pick &amp; ready up" : "Opponent left — waiting for them to rejoin…");
+        : (bothIn ? "Pick &amp; ready up" : "Opponent left  waiting for them to rejoin…");
     } else {
       var gd = lobbyState.greyDeadline || (row.lobby_expires_at ? new Date(row.lobby_expires_at).getTime() : (Date.now() + 30000));
       lobbyState.greyDeadline = gd;
@@ -1204,14 +1204,14 @@
     if (lobbyState.formationDeadline || bothIn) {
       // GOLD expired.
       if (bothIn) { autoReadyFormation(); return; }
-      if (lobbyState.steppedOut) { exitLobbyWithMessage("Rejoin window expired — returning home."); return; }
+      if (lobbyState.steppedOut) { exitLobbyWithMessage("Rejoin window expired  returning home."); return; }
       // Opponent stepped out and never came back → close out the waiting player.
       var lid0 = lobbyState.lobbyId; if (lid0) { try { BE.lobby.leave(lid0); } catch (e) {} }
-      exitLobbyWithMessage("Opponent has left — returning home.");
+      exitLobbyWithMessage("Opponent has left  returning home.");
     } else {
-      // GREY expired — opponent never joined.
+      // GREY expired  opponent never joined.
       var lid1 = lobbyState.lobbyId; if (lid1) { try { BE.lobby.leave(lid1); } catch (e) {} }
-      exitLobbyWithMessage("Opponent failed to join — returning home.");
+      exitLobbyWithMessage("Opponent failed to join  returning home.");
     }
   }
 
@@ -1230,7 +1230,7 @@
     var wrap = $("mpl-wrap");
     if (wrap) {
       wrap.innerHTML =
-        '<div class="mpl-head"><div class="mpl-kicker">Champions Cup — Multiplayer</div>' +
+        '<div class="mpl-head"><div class="mpl-kicker">Champions Cup  Multiplayer</div>' +
           '<div class="mpl-title">Lobby Closed</div></div>' +
         '<div class="mpl-panel" style="text-align:center;padding:40px 18px">' +
           '<div class="fp-result"><div class="fp-winner-sub">' + esc(msg) + '</div></div></div>';
@@ -1259,7 +1259,7 @@
     showLobbyScreen();
     var wrap = $("mpl-wrap"); if (!wrap) return;
     wrap.innerHTML =
-      '<div class="mpl-head"><div class="mpl-kicker">Champions Cup — Multiplayer</div>' +
+      '<div class="mpl-head"><div class="mpl-kicker">Champions Cup  Multiplayer</div>' +
         '<div class="mpl-title">You left the lobby</div></div>' +
       '<div class="mpl-timer-wrap">' +
         '<div class="mpl-timer-label" id="mpl-timer-label">Rejoin before the timer runs out</div>' +
@@ -1323,7 +1323,7 @@
   }
 
 
-  /* ================================================ PHASE 7 — FIRST PICK */
+  /* ================================================ PHASE 7  FIRST PICK */
   // Show the slot-machine spin between both usernames, land on the server's
   // chosen winner, then 3-2-1 countdown, then advance to draft.
   var revealState = { handle: null, countdownHandle: null };
@@ -1339,7 +1339,7 @@
 
     wrap.innerHTML =
       '<div class="mpl-head">' +
-        '<div class="mpl-kicker">Champions Cup — Multiplayer</div>' +
+        '<div class="mpl-kicker">Champions Cup  Multiplayer</div>' +
         '<div class="mpl-title">First Pick</div>' +
         '<div class="mpl-vs"><b>' + esc(hostP.username) + '</b> vs <b>' + esc(guestP.username) + '</b></div>' +
       '</div>' +
@@ -1396,7 +1396,7 @@
     }, 90);
   }
 
-  /* ================================================== PHASE 8 — MP DRAFT */
+  /* ================================================== PHASE 8  MP DRAFT */
   // Side-by-side draft. Active player can click; other watches greyed.
   // Same name allowed across teams only if different club+year combo.
   var mpDraft = {
@@ -1408,7 +1408,7 @@
   function enterMpDraft(row) {
     // A new draft means any earlier match in this lobby is over. Clear stale
     // match/countdown state NOW so the later draft→match hand-off can't be blocked
-    // by a leftover mpMatch.started/lobbyId (rematch guard) — that left the last
+    // by a leftover mpMatch.started/lobbyId (rematch guard)  that left the last
     // picker frozen on the "Squads Locked" countdown on a 2nd/replayed match.
     if (mpMatch.started || mpEntering) resetMpMatch();
     mpDraft.lobbyId = lobbyState.lobbyId;
@@ -1461,7 +1461,7 @@
     var picks = (d.host_squad || []).length + (d.guest_squad || []).length;
     var seed = (((mpDraft.row.seed >>> 0) + picks * 0x9e3779b1) >>> 0) || 1;
     var rand = mpDraft.GAME.mulberry32(seed);
-    // D3: branch the pool — World Cup nations vs Clubs.
+    // D3: branch the pool  World Cup nations vs Clubs.
     var spin = pool === "wc"
       ? mpDraft.GAME.makeNationSpin(openSlots, drafted, rand)
       : mpDraft.GAME.makeSpin(openSlots, drafted, rand);
@@ -1508,7 +1508,7 @@
 
     wrap.innerHTML =
       '<div class="mpl-head" style="margin-bottom:8px">' +
-        '<div class="mpl-kicker">Live Draft — Pick ' + pickNum + ' of ' + totalPicks + '</div>' +
+        '<div class="mpl-kicker">Live Draft  Pick ' + pickNum + ' of ' + totalPicks + '</div>' +
         '<div class="mpl-title" style="font-size:22px">' +
           (myTurn ? "Your turn" : esc(oppName) + "'s turn") +
         '</div>' +
@@ -1518,8 +1518,8 @@
 
       '<div class="mp-spin-panel">' +
         '<div class="slot-reel" style="margin:0 auto;max-width:420px">' +
-          '<div class="reel reel--club"><span id="mp-reel-club">' + (d.current_spin ? esc(d.current_spin.short || d.current_spin.club) : "—") + '</span></div>' +
-          '<div class="reel reel--year"><span id="mp-reel-year">' + (d.current_spin ? d.current_spin.year : "—") + '</span></div>' +
+          '<div class="reel reel--club"><span id="mp-reel-club">' + (d.current_spin ? esc(d.current_spin.short || d.current_spin.club) : "") + '</span></div>' +
+          '<div class="reel reel--year"><span id="mp-reel-year">' + (d.current_spin ? d.current_spin.year : "") + '</span></div>' +
         '</div>' +
         '<div class="slot-era">' + (d.current_spin ? esc(d.current_spin.label) : "&nbsp;") + '</div>' +
       '</div>' +
@@ -1567,7 +1567,7 @@
     }
     function rand() {
       // Re-query the reels each tick so a realtime re-render (fresh DOM) can't orphan
-      // the animation — this is why the watcher's reel used to snap instead of spin.
+      // the animation  this is why the watcher's reel used to snap instead of spin.
       var rc = $("mp-reel-club"), ry = $("mp-reel-year");
       if (!rc || !ry) return false;
       if (pool === "wc" && N) {
@@ -1617,7 +1617,7 @@
               '<div class="chip-name">' + esc(lastName(p.n)) + '</div>' +
               '<div class="chip-sub">' + esc(p.short || p.club) + ' ' + p.year + '</div>';
           } else {
-            chip.innerHTML = '<div class="chip-pos">' + pos + '</div><div class="chip-sub">—</div>';
+            chip.innerHTML = '<div class="chip-pos">' + pos + '</div><div class="chip-sub"></div>';
           }
           line.appendChild(chip);
         }
@@ -1661,7 +1661,7 @@
     // lock it for me too (the same exact slot machine roll can't yield two of the same).
     // Across different rolls, "Messi Barca 2016 vs Messi PSG 2022" is fine because clubs/years differ.
 
-    // #4: Pro Mode — hide ratings and DON'T sort by overall (no rating signal).
+    // #4: Pro Mode  hide ratings and DON'T sort by overall (no rating signal).
     var pro = !!mpDraft.row.pro;
     var POS_ORDER = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
     if (pro) {
@@ -1716,7 +1716,7 @@
     d[draftedKey][pl.n] = true;
     d[draftedKey][pl.n + "|" + mpSpinKey(spin)] = true;
 
-    // Swap turn — use absolute opponent ID, not relative swap, so a stale
+    // Swap turn  use absolute opponent ID, not relative swap, so a stale
     // local draft can't race with the opponent's concurrent pick.
     d.turn = (state.user.id === mpDraft.row.host) ? mpDraft.row.guest : mpDraft.row.host;
 
@@ -1726,12 +1726,12 @@
       d.current_spin = null;
       d.turn = null;
       stopMpTurnTimer();
-      // LAST-PICKER FIX: the picker must NOT wait for its own realtime echo — the
+      // LAST-PICKER FIX: the picker must NOT wait for its own realtime echo  the
       // writer's client frequently never receives its own broadcast, which left
       // the last picker frozen on the draft while the opponent advanced. Instead:
       //   1) write the final draft to the DB (with retries) so the OPPONENT's echo
       //      fires and it advances,
-      //   2) advance THIS client straight to the lineup from a locally-built row —
+      //   2) advance THIS client straight to the lineup from a locally-built row 
       //      no self-echo, no extra countdown screen.
       var localLobbyId = mpDraft.lobbyId;
       var matchRow = Object.assign({}, mpDraft.row, { draft: d, phase: "match" });
@@ -1809,7 +1809,7 @@
     mpPickPlayer(list[0]);
   }
 
-  /* ============================================== PHASE 9 — LIVE MATCH == */
+  /* ============================================== PHASE 9  LIVE MATCH == */
   // Both clients hold the same drafted squads (in the lobby `draft`) and the same
   // `seed`, so the match result is computed identically on each side; we just
   // render it from each viewer's own perspective ("Your XI" = side A).
@@ -1821,7 +1821,7 @@
   };
 
   // Set true only during the brief hand-off between the last draft pick and the
-  // match starting. No UI — it just guards against stale draft echoes re-rendering
+  // match starting. No UI  it just guards against stale draft echoes re-rendering
   // the draft while we're entering the match (the entry is usually instant).
   var mpEntering = false;
 
@@ -1846,7 +1846,7 @@
       var row = lobbyState.lastRow;
       if (row) { var oppId = row.host === state.user.id ? row.guest : row.host; oppName = (lobbyState.profiles[oppId] || {}).username || oppName; }
     } catch (e) {}
-    exitLobbyWithMessage(oppName + " has left — returning home.");
+    exitLobbyWithMessage(oppName + " has left  returning home.");
   }
 
   // Persist the final draft (phase → "match") with a few retries so a flaky
@@ -1858,7 +1858,7 @@
     });
   }
 
-  // Enter the match straight from the last pick — no extra countdown screen — and
+  // Enter the match straight from the last pick  no extra countdown screen  and
   // without ever hard-freezing. Try the row we already have FIRST (the picker's
   // local row and the opponent's echo row are normally complete → instant lineup).
   // Only if that doesn't take do we fetch the authoritative DB row and retry; as a
@@ -1881,14 +1881,14 @@
     }, 600);
   }
 
-  // Visible escape hatch if the match data never resolves — better than a frozen
+  // Visible escape hatch if the match data never resolves  better than a frozen
   // countdown. Lets the player force-enter from the best row we have, or bail.
   function showMpHandoffFallback(localRow) {
     if (mpMatch.started) return;
     showLobbyScreen();
     var wrap = $("mpl-wrap"); if (!wrap) return;
     wrap.innerHTML =
-      '<div class="mpl-head"><div class="mpl-kicker">Champions Cup — Multiplayer</div>' +
+      '<div class="mpl-head"><div class="mpl-kicker">Champions Cup  Multiplayer</div>' +
         '<div class="mpl-title">Almost there…</div></div>' +
       '<div class="mpl-panel" style="text-align:center;padding:28px 18px">' +
         '<div class="fp-result"><div class="fp-winner-sub">Syncing the final squads is taking a moment.</div></div>' +
@@ -1903,7 +1903,7 @@
         var dbOk = r && r.phase === "match" && r.draft &&
           (r.draft.host_squad || []).length >= 7 && (r.draft.guest_squad || []).length >= 7;
         enterMpMatch(dbOk ? r : localRow);
-        if (!mpMatch.started) toast("Still syncing — try again in a second.");
+        if (!mpMatch.started) toast("Still syncing  try again in a second.");
       }).catch(function () { enterMpMatch(localRow); });
     };
     var lb = $("mp-handoff-leave");
@@ -1918,7 +1918,7 @@
     var hostSquad = d.host_squad || [], guestSquad = d.guest_squad || [];
 
     // Validate BEFORE claiming mpMatch.started. If data is incomplete, just bail
-    // WITHOUT scheduling our own retry — the resilient caller owns retrying, so we
+    // WITHOUT scheduling our own retry  the resilient caller owns retrying, so we
     // never spin up competing/forever retry loops.
     if (!hostSquad.length || !guestSquad.length || hostSquad.length < 7 || guestSquad.length < 7) {
       return;
@@ -1948,7 +1948,7 @@
       console.error("playMatch threw:", err);
       mpMatch.started = false;  // unwind so a retry can fire
       mpMatch.lobbyId = null;
-      toast("Match calculation error — returning home.");
+      toast("Match calculation error  returning home.");
       doLeaveLobby();
       return;
     }
@@ -2058,13 +2058,13 @@
     var oppGoals = meIsHost ? canon.goalsB : canon.goalsA;
     var myStats = meIsHost ? out.stats.A : out.stats.B;
     var oppStats = meIsHost ? out.stats.B : out.stats.A;
-    var pens = canon.pens ? (" (pens " + (meIsHost ? canon.pens.a + "–" + canon.pens.b : canon.pens.b + "–" + canon.pens.a) + ")") : "";
+    var pens = canon.pens ? (" (pens " + (meIsHost ? canon.pens.a + "-" + canon.pens.b : canon.pens.b + "-" + canon.pens.a) + ")") : "";
     wrap.innerHTML =
       '<div class="results-wrap">' +
         '<div class="verdict ' + (youWin ? "verdict--win" : "") + '">' +
           '<div class="verdict-kicker">Champions Cup · Multiplayer</div>' +
           '<div class="verdict-title">' + (youWin ? "YOU WIN! 🏆" : "YOU LOSE") + "</div>" +
-          '<div class="verdict-record">' + myGoals + " – " + oppGoals + "</div>" +
+          '<div class="verdict-record">' + myGoals + " - " + oppGoals + "</div>" +
           '<div class="verdict-sub">vs ' + esc(mpMatch.oppName) + pens + ' &nbsp;·&nbsp; <span id="mp-h2h" class="dim">H2H …</span></div>' +
         "</div>" +
         '<div class="res-grid">' + mpStatCard(myStats, "Your XI") + mpStatCard(oppStats, esc(mpMatch.oppName)) + "</div>" +
@@ -2086,29 +2086,29 @@
             setTimeout(function () { fetchH2H(attempt + 1); }, 1200);
             return;
           }
-          e.textContent = "H2H vs " + mpMatch.oppName + ": " + h.wins + "–" + h.losses;
+          e.textContent = "H2H vs " + mpMatch.oppName + ": " + h.wins + "-" + h.losses;
         }).catch(function () {});
       };
       setTimeout(function () { fetchH2H(0); }, 800);
     }
-    // #7: post-game Return Home tears down LOCALLY only — never yanks the opponent.
+    // #7: post-game Return Home tears down LOCALLY only  never yanks the opponent.
     $("mp-home").onclick = function () { resetMpMatch(); teardownLobby(); enteredLobbyOnce = true; setTab("play"); };
     $("mp-rematch").onclick = requestRematch;
     handleRematchFlags(mpMatch.row);   // reflect any rematch request that already arrived
   }
 
-  /* ================================================== PHASE 10 — REMATCH */
+  /* ================================================== PHASE 10  REMATCH */
   function requestRematch() {
     var d = (mpMatch.row && mpMatch.row.draft) || {};
     var oppWants = mpMatch.meIsHost ? d.rematch_guest : d.rematch_host;
     var side = mpMatch.meIsHost ? "rematch_host" : "rematch_guest";
     if (oppWants) {
-      // Both players want a rematch — go straight to the reset WITHOUT touching
+      // Both players want a rematch  go straight to the reset WITHOUT touching
       // the draft at all. This avoids the read-modify-write race in updateDraft
       // that can clobber the initiator's rematch_host flag.
       if (mpMatch.row) mpMatch.row.draft = Object.assign({}, d, (function () { var p = {}; p[side] = true; return p; })());
       var btn0 = $("mp-rematch"); if (btn0) btn0.disabled = true;
-      var note0 = $("mp-rematch-note"); if (note0) note0.textContent = "Rematch on — setting up…";
+      var note0 = $("mp-rematch-note"); if (note0) note0.textContent = "Rematch on  setting up…";
       BE.lobby.rematch(mpMatch.lobbyId);
       return;
     }
@@ -2164,7 +2164,7 @@
     var iWant = mpMatch.meIsHost ? d.rematch_host : d.rematch_guest;
     if (d.rematch_host && d.rematch_guest) {
       if (mpMatch.rematchTimer) { clearInterval(mpMatch.rematchTimer); mpMatch.rematchTimer = null; }
-      var note0 = $("mp-rematch-note"); if (note0) note0.textContent = "Rematch on — setting up…";
+      var note0 = $("mp-rematch-note"); if (note0) note0.textContent = "Rematch on  setting up…";
       if (mpMatch.meIsHost) BE.lobby.rematch(row.id);   // formation reset re-enters both
       return;
     }
@@ -2184,7 +2184,7 @@
   /* --- Hook the lobby channel to refresh during draft phase ---------------- */
   // The lobby subscribe in enterLobby() already routes phase changes here.
   // We need a separate update listener once we're in the draft so picks sync.
-  // We re-use lobbyState.channel — but expand the handler to refresh mpDraft.row
+  // We re-use lobbyState.channel  but expand the handler to refresh mpDraft.row
   // when in draft phase. Patching that here keeps everything in one place:
   (function patchLobbySubscribeForDraft() {
     var origSubscribe = BE.lobby && BE.lobby.subscribe;

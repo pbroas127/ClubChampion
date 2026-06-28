@@ -1,9 +1,9 @@
 /* ============================================================================
- * CLUB CHAMPION — Player Database
+ * CLUB CHAMPION  Player Database
  * ----------------------------------------------------------------------------
  * A curated, for-fun dataset of famous clubs across the FULL 1990 -> 2026 era.
  *
- * Crucially, each club's "eras" TILE the whole timeline with no gaps — the
+ * Crucially, each club's "eras" TILE the whole timeline with no gaps  the
  * golden sides AND the lean years. So the slot machine can land on a stacked
  * roll (Barcelona 2010) or a dud (Man City 1999, third tier), and a bad roll
  * is a real risk you have to manage with your skips.

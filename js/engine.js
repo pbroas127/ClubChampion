@@ -1,5 +1,5 @@
 /* ============================================================================
- * CLUB CHAMPION — Simulation Engine
+ * CLUB CHAMPION  Simulation Engine
  * ----------------------------------------------------------------------------
  * Turns a 7-player squad into a projected 38-game season (the football answer
  * to "82-0"). Mirrors the original's philosophy:
@@ -49,7 +49,7 @@
   var SEASON_GAMES = 38;
   // Every squad in the game is built from iconic, elite sides, so the league
   // it competes in is correspondingly strong. The skill is being the best of
-  // the best and avoiding a gated weakness — the title race is decided against
+  // the best and avoiding a gated weakness  the title race is decided against
   // the contender tier, where points actually get dropped.
   var LEAGUE = [        // the opponents you face across a season
     { q: 0.95, games: 10 },   // strong, beatable sides
@@ -66,7 +66,7 @@
   /* ------------------------------------------------- Category aggregation */
   // Sum each attribute across the squad. Goalkeeping uses the best keeper in
   // the side (outfielders contribute ~nothing), which is what makes fielding a
-  // real GK matter — exactly the "you need rim protection" gate from 82-0.
+  // real GK matter  exactly the "you need rim protection" gate from 82-0.
   function categoryTotals(squad) {
     var t = { at: 0, cr: 0, df: 0, ph: 0, gk: 0 };
     var bestGk = 0;
@@ -119,7 +119,7 @@
 
   /* ------------------------------------------------------- Season record */
   // Project a full 38-game season as expected W-D-L (deterministic, so squad
-  // quality — not luck — decides the table).
+  // quality  not luck  decides the table).
   function simulateSeason(squad) {
     var totals = categoryTotals(squad);
     var rat = ratios(totals);
@@ -139,7 +139,7 @@
     // Gating: identify the weakest links and enforce the Invincible gate.
     var minRatio = Math.min(rat.at, rat.cr, rat.df, rat.ph, rat.gk);
     if (minRatio < UNBEATEN_MIN_RATIO && rec.L === 0) {
-      // A weak link means you cannot go unbeaten — turn a win into a defeat.
+      // A weak link means you cannot go unbeaten  turn a win into a defeat.
       rec.L = 1;
       if (rec.W > 0) rec.W -= 1; else rec.D -= 1;
     }
@@ -222,7 +222,7 @@
   }
 
   // `bias` (>1 favours A, <1 favours B) is a handicap knob used by the CPU
-  // difficulty selector and the knockout round scaling — without it, two squads
+  // difficulty selector and the knockout round scaling  without it, two squads
   // built from all-time greats are near-identical and every match is a coin-flip.
   function playMatch(squadA, squadB, seed, bias) {
     bias = bias || 1;
@@ -230,7 +230,7 @@
     var rand = rng(seed || 1);
 
     // Exponent > 1 amplifies a quality edge so the better side is favoured,
-    // while the cap keeps freak scorelines in check (upsets still happen — it
+    // while the cap keeps freak scorelines in check (upsets still happen  it
     // is one match, after all). The bias tilts expected goals each way.
     var xgA = clamp(1.4 * Math.pow(attackPower(ta) / Math.max(0.45, defencePower(tb)), 1.4) * bias, 0.3, 3.6);
     var xgB = clamp(1.4 * Math.pow(attackPower(tb) / Math.max(0.45, defencePower(ta)), 1.4) / bias, 0.25, 3.4);
@@ -328,11 +328,11 @@
 
   // Squad "FIFA-style" display ratings for the pre-match team sheet:
   // ATT / DEF / GOA (goalkeeping) plus a headline OVR. Maps the squad's
-  // category strength onto a familiar 30–99 scale.
+  // category strength onto a familiar 30-99 scale.
   function toRating(r) { return clamp(Math.round(38 + r * 46), 30, 99); }
   function teamRatings(squad) {
     var totals = categoryTotals(squad);
-    var att = attackPower(totals);                          // ~0.4–1.3
+    var att = attackPower(totals);                          // ~0.4-1.3
     var def = (totals.df / PAR.df) * 0.65 + (totals.ph / PAR.ph) * 0.35;
     var gk = totals.gk / PAR.gk;
     var ovr = strength(ratios(totals));

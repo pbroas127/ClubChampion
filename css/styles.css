@@ -1,5 +1,5 @@
 /* ============================================================================
-   CLUB CHAMPION — Styles
+   CLUB CHAMPION  Styles
    ========================================================================== */
 :root {
   --bg:        #07140d;
@@ -66,8 +66,8 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 /* ============================================================ HOME ===== */
 .screen--home { position: relative; }
 /* Paint the hero on the BODY for the home screen. The body background is the
-   backmost full-viewport layer, so it fills EVERYTHING — including the area
-   behind the sticky topnav — with no possible gap at the top. */
+   backmost full-viewport layer, so it fills EVERYTHING  including the area
+   behind the sticky topnav  with no possible gap at the top. */
 body[data-screen="home"] {
   background-image:
     linear-gradient(180deg, rgba(7,20,13,.42) 0%, rgba(7,20,13,.80) 58%, rgba(7,20,13,.97) 100%),
@@ -511,7 +511,7 @@ body[data-screen="home"] .topnav {
 .acc-item:hover { background: var(--panel-2); }
 body[data-screen="draft"] .topnav, body[data-screen="sim"] .topnav, body[data-screen="lineup"] .topnav, body[data-screen="mplobby"] .topnav { display: none; }
 
-/* multiplayer match — rematch note + result reuse the shared lineup/verdict CSS */
+/* multiplayer match  rematch note + result reuse the shared lineup/verdict CSS */
 .mp-rematch-note { text-align: center; margin-top: 12px; font-size: 13px; color: var(--muted); min-height: 18px; }
 .mp-rematch-note b { color: var(--text); }
 .mp-rematch-note .mini-btn { margin-left: 8px; }
@@ -726,11 +726,11 @@ body[data-screen="stats"] .screen--page::before {
   .lineup-actions { gap: 8px; }
 }
 
-/* Friends page — more breathing room between cards */
+/* Friends page  more breathing room between cards */
 #screen-friends .card { margin-bottom: 16px; }
 #screen-friends .card:last-child { margin-bottom: 0; }
 
-/* ============================== FRIENDS + MULTIPLAYER (Phases 2–4) ===== */
+/* ============================== FRIENDS + MULTIPLAYER (Phases 2-4) ===== */
 /* presence dot */
 .status-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
 .status-dot.on { background: var(--green); box-shadow: 0 0 7px var(--green); }
@@ -776,7 +776,7 @@ body[data-screen="stats"] .screen--page::before {
 /* challenge button + invite popup (Phase 5) */
 .mini-btn--play { background: var(--green); color: #052914; border: none; font-weight: 700; }
 .mini-btn--play:hover { filter: brightness(1.05); }
-/* #11: redesigned challenge popup — segmented pool control + styled toggle */
+/* #11: redesigned challenge popup  segmented pool control + styled toggle */
 .invite-pop { position: fixed; z-index: 60; width: 272px; background: linear-gradient(180deg, var(--panel), var(--bg-2)); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 16px; }
 .invite-pop .ip-head { margin-bottom: 14px; }
 .ip-title { font-family: "Archivo"; font-weight: 800; font-size: 16px; }
@@ -844,7 +844,7 @@ body[data-screen="mplobby"] .topnav { display: none; }
   .mpl-vs-mid { display: none; }
 }
 
-/* ============================================== PHASE 7 — FIRST PICK ==== */
+/* ============================================== PHASE 7  FIRST PICK ==== */
 .fp-reel {
   margin: 8px auto 24px;
   max-width: 320px;
@@ -907,7 +907,7 @@ body[data-screen="mplobby"] .topnav { display: none; }
   100% { transform: scale(1); opacity: 1; }
 }
 
-/* =========================================== PHASE 8 — MP DRAFT BOARD === */
+/* =========================================== PHASE 8  MP DRAFT BOARD === */
 .mp-timer-wrap { text-align: center; margin: -8px 0 12px; }
 .mp-timer {
   display: inline-block;

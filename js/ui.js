@@ -1,5 +1,5 @@
 /* ============================================================================
- * CLUB CHAMPION — UI layer (rendering + interaction)
+ * CLUB CHAMPION  UI layer (rendering + interaction)
  * ----------------------------------------------------------------------------
  * Flow: Home (select mode) → Setup (formation + pro) → Draft → Team sheet →
  * Match sim → Results. Season is a solo 38-game sim; CPU is a one-off final;
@@ -33,7 +33,7 @@
   function nextRoundName(mode, nextIndex) {
     var r = GAME.TOUR_ROUNDS[mode] || []; return r[nextIndex] || "title";
   }
-  function recordText(rec) { return rec.W + "–" + rec.L; }
+  function recordText(rec) { return rec.W + "-" + rec.L; }
 
   /* ---- ratings helpers --------------------------------------------------- */
   function ovrOf(pl) { return Math.round(CPU.primaryRating(pl)); }
@@ -76,10 +76,10 @@
   }
 
   var MODE_SETUP = {
-    solo: { t: "Season — chase 38-0", s: "Pick a shape, then draft your XI for a full unbeaten season." },
+    solo: { t: "Season  chase 38-0", s: "Pick a shape, then draft your XI for a full unbeaten season." },
     cpu:  { t: "Beat the CPU", s: "Pick a shape, then out-draft a rival manager and win the final." },
     ucl:  { t: "UCL Climb", s: "One squad, four knockout rounds. Pick a shape, then draft." },
-    wc:   { t: "World Cup — Limited", s: "Draft national legends from World Cups 1990–2026. Group of 32 to the final." },
+    wc:   { t: "World Cup  Limited", s: "Draft national legends from World Cups 1990-2026. Group of 32 to the final." },
   };
 
   function updateKickoffButton() {
@@ -153,9 +153,9 @@
     if (!game.isTournament) { b.hidden = true; return; }
     b.hidden = false;
     b.innerHTML =
-      "<b>" + tourName(game.mode) + "</b> — draft one squad and keep it the whole run. " +
+      "<b>" + tourName(game.mode) + "</b>  draft one squad and keep it the whole run. " +
       (game.mode === "wc"
-        ? "Players come from World Cup nations, 1990–2026."
+        ? "Players come from World Cup nations, 1990-2026."
         : "Knockout from the Round of 16 to the final.") +
       ' <span class="tb-skips">2× Swap ' + (game.mode === "wc" ? "Nation" : "Club") + " · 2× Swap Year</span>";
   }
@@ -260,7 +260,7 @@
           chip.innerHTML = '<div class="chip-pos">' + pos + '</div><div class="chip-name">' + esc(lastName(p.n)) + '</div><div class="chip-sub">' + esc(p.short) + " " + p.year + "</div>";
         } else {
           if (activePositions[pos]) chip.classList.add("is-active");
-          chip.innerHTML = '<div class="chip-pos">' + pos + '</div><div class="chip-sub">—</div>';
+          chip.innerHTML = '<div class="chip-pos">' + pos + '</div><div class="chip-sub"></div>';
         }
         line.appendChild(chip);
       }
@@ -370,7 +370,7 @@
     showLineup({
       mode: "solo",
       title: "Your XI is set",
-      sub: "Ratings revealed — here's how your draft stacks up. Simulate a full 38-game season.",
+      sub: "Ratings revealed  here's how your draft stacks up. Simulate a full 38-game season.",
       you: { squad: game.squad, ratings: game.yourRatings(), name: "Your XI" },
       goLabel: "SIMULATE SEASON",
       onGo: function () { renderSoloResults(lastResults); },
@@ -386,7 +386,7 @@
     showLineup({
       mode: "cpu",
       title: "Champions Cup Final",
-      sub: "Team sheets — your XI vs the CPU. Ratings revealed before kickoff.",
+      sub: "Team sheets  your XI vs the CPU. Ratings revealed before kickoff.",
       you: { squad: game.squad, ratings: game.yourRatings(), name: "Your XI" },
       opp: { squad: lastResults.cpuSquad, ratings: ENGINE.teamRatings(lastResults.cpuSquad), name: "CPU · " + cap(game.difficulty) },
       onWatch: function () { runSim(Object.assign({ head: "Champions Cup Final · " + game.formation.name + " " + game.formation.tag, nameB: "CPU" }, simCfg)); },
@@ -408,7 +408,7 @@
       round: opp.roundLabel, roundIndex: opp.roundIndex, totalRounds: opp.totalRounds,
       record: t.record,
       title: tourName(game.mode) + " · " + opp.roundLabel,
-      sub: "Win to reach the " + nextRoundName(game.mode, opp.roundIndex + 1) + ". One leg — no replays.",
+      sub: "Win to reach the " + nextRoundName(game.mode, opp.roundIndex + 1) + ". One leg  no replays.",
       you: { squad: game.squad, ratings: game.yourRatings(), name: "Your XI" },
       opp: { squad: opp.squad, ratings: opp.ratings, name: opp.name + " · " + cap(opp.difficulty) },
       onWatch: function () { simCfg.result = game.playRound(); runSim(Object.assign({ head: tourName(game.mode) + " · " + t.rounds[t.index], nameB: t.opponentName }, simCfg)); },
@@ -420,7 +420,7 @@
     var t = game.tour, m = r.summary, youWin = m.win;
     var after = { W: t.record.W, L: t.record.L };
     var before = { W: after.W - (youWin ? 1 : 0), L: after.L - (youWin ? 0 : 1) };
-    var pens = m.pens ? " (pens " + m.pens.a + "–" + m.pens.b + ")" : "";
+    var pens = m.pens ? " (pens " + m.pens.a + "-" + m.pens.b + ")" : "";
     var btn;
     if (r.champion) btn = '<button class="btn btn--kickoff" id="rr-next">🏆 You won the ' + tourName(game.mode) + "! See your run <span>→</span></button>";
     else if (r.eliminated) btn = '<button class="btn btn--kickoff" id="rr-next">See your run <span>→</span></button>';
@@ -430,7 +430,7 @@
       '<div class="verdict ' + (youWin ? "verdict--win" : "") + '">' +
         '<div class="verdict-kicker">' + tourName(game.mode) + " · " + esc(m.round) + "</div>" +
         '<div class="verdict-title">' + (youWin ? "THROUGH!" : "KNOCKED OUT") + "</div>" +
-        '<div class="verdict-record">' + m.goalsA + " – " + m.goalsB + "</div>" +
+        '<div class="verdict-record">' + m.goalsA + " - " + m.goalsB + "</div>" +
         '<div class="verdict-sub">vs ' + esc(m.opponent) + pens + " &nbsp;·&nbsp; record " +
           recordText(before) + " → <b>" + recordText(after) + "</b></div>" +
       "</div>" +
@@ -456,7 +456,7 @@
       var line = (p.goals ? p.goals + "G " : "") + (p.assists ? p.assists + "A " : "") + (p.saves ? p.saves + "sv " : "");
       return '<div class="st-row"><div class="st-pos pos-' + p.pos + '">' + p.pos + "</div>" +
         '<div class="st-name">' + esc(lastName(p.n)) + "<small>" + (line || "&nbsp;") + "</small></div>" +
-        '<div class="st-rtg ' + rtgClass(p.rating) + '">' + (p.rating ? p.rating.toFixed(1) : "—") + "</div></div>";
+        '<div class="st-rtg ' + rtgClass(p.rating) + '">' + (p.rating ? p.rating.toFixed(1) : "") + "</div></div>";
     }).join("");
     return '<div class="card"><h3>Run stats · ' + s.goalsFor + " scored, " + s.goalsAgainst + " conceded</h3>" +
       '<div class="stat-list">' + rows + "</div></div>";
@@ -465,8 +465,8 @@
   function showTournamentSummary() {
     var s = game.runSummary(), champ = s.champion;
     var v = champ
-      ? { title: "CHAMPIONS! 🏆", cls: "verdict--unbeaten", sub: "You won the " + tourName(game.mode) + " — one squad, the whole way." }
-      : { title: s.roundLabel, cls: "", sub: "Your " + tourName(game.mode) + " run ends here — " + s.roundsWon + " round" + (s.roundsWon === 1 ? "" : "s") + " won." };
+      ? { title: "CHAMPIONS! 🏆", cls: "verdict--unbeaten", sub: "You won the " + tourName(game.mode) + "  one squad, the whole way." }
+      : { title: s.roundLabel, cls: "", sub: "Your " + tourName(game.mode) + " run ends here  " + s.roundsWon + " round" + (s.roundsWon === 1 ? "" : "s") + " won." };
     $("results-wrap").innerHTML =
       '<div class="verdict ' + v.cls + '">' +
         '<div class="verdict-kicker">' + tourName(game.mode) + " · " + game.formation.name + " " + game.formation.tag + "</div>" +
@@ -492,9 +492,9 @@
     var L = season.record.L;
     if (season.perfect) return { kicker: "Immortality", title: "PERFECT SEASON", cls: "verdict--unbeaten", sub: "38 wins from 38. Nobody has ever done this.", party: true };
     if (season.unbeaten) return { kicker: "The Invincibles", title: "UNBEATEN!", cls: "verdict--unbeaten", sub: "A whole season without defeat. Legendary.", party: true };
-    if (L <= 3) return { kicker: "Champions", title: "TITLE WINNERS", cls: "verdict--win", sub: "So close to immortality — one weak link cost you.", party: true };
+    if (L <= 3) return { kicker: "Champions", title: "TITLE WINNERS", cls: "verdict--win", sub: "So close to immortality  one weak link cost you.", party: true };
     if (L <= 8) return { kicker: "Top of the table", title: "TITLE CHALLENGERS", cls: "", sub: "A serious side, but the unbeaten dream slipped away." };
-    if (L <= 14) return { kicker: "European nights", title: "EUROPE-BOUND", cls: "", sub: "A solid squad — patch the holes and you're a contender." };
+    if (L <= 14) return { kicker: "European nights", title: "EUROPE-BOUND", cls: "", sub: "A solid squad  patch the holes and you're a contender." };
     if (L <= 20) return { kicker: "Mid-table", title: "STEADY AS SHE GOES", cls: "", sub: "Comfortable, but some real weak links to fix." };
     return { kicker: "The drop zone", title: "RELEGATION BATTLE", cls: "", sub: "Too many gaps in this squad. Back to the drawing board." };
   }
@@ -513,7 +513,7 @@
     var weak = season.flags.filter(function (f) { return f.tone === "bad" || f.tone === "warn"; });
     var note = weak.length
       ? '<div class="gate-note">⚠ <b>' + weak.map(function (f) { return f.label; }).join(" & ") +
-        '</b> ' + (weak.length > 1 ? "are" : "is") + " holding you back — every category is gated, so one weak link caps the whole season.</div>"
+        '</b> ' + (weak.length > 1 ? "are" : "is") + " holding you back  every category is gated, so one weak link caps the whole season.</div>"
       : '<div class="gate-note ok">✓ No weak links. This squad is balanced enough to chase an unbeaten run.</div>';
     return '<div class="card"><h3>Squad Report</h3>' + rows + note + "</div>";
   }
@@ -561,7 +561,7 @@
         '<div class="verdict-title">' + (youWin ? "YOU WIN! 🏆" : "CPU WINS") + "</div>" +
         '<div class="verdict-sub">' + (youWin
           ? "You out-managed the CPU when it mattered most."
-          : "The CPU edged the final — out-draft them next time.") + "</div></div>" +
+          : "The CPU edged the final  out-draft them next time.") + "</div></div>" +
       scoreboardHTML(R) +
       '<div class="res-grid">' + matchStatsCard(R.matchStats.A, "Your XI", R.scorers.A)
                                + matchStatsCard(R.matchStats.B, "CPU XI", R.scorers.B) + "</div>" +
@@ -575,7 +575,7 @@
 
   function scoreboardHTML(R) {
     var m = R.match, youWin = R.youWin;
-    var pens = m.pens ? '<div class="sb-pens">pens ' + m.pens.a + "–" + m.pens.b + "</div>" : "";
+    var pens = m.pens ? '<div class="sb-pens">pens ' + m.pens.a + "-" + m.pens.b + "</div>" : "";
     return '<div class="scorebar">' +
       '<div class="sb-team"><div class="sb-tname ' + (youWin ? "win" : "") + '">Your XI</div>' +
         '<div class="sb-trec">' + R.you.record.W + "-" + R.you.record.D + "-" + R.you.record.L + " · " + R.you.points + "pts</div></div>" +
@@ -591,7 +591,7 @@
   }
 
   function scorerLines(list) {
-    if (!list || !list.length) return '<span class="scorer-none">—</span>';
+    if (!list || !list.length) return '<span class="scorer-none"></span>';
     var byName = {};
     list.forEach(function (s) { (byName[s.name] = byName[s.name] || []).push(s.minute); });
     return Object.keys(byName).map(function (name) {
@@ -646,13 +646,13 @@
   function shareResult() {
     var R = lastResults, you = R.you, lines;
     if (R.mode === "cpu") {
-      lines = "⚽ CLUB CHAMPION — vs CPU (" + cap(game.difficulty) + ")\n" +
+      lines = "⚽ CLUB CHAMPION  vs CPU (" + cap(game.difficulty) + ")\n" +
         "Final: Me " + R.match.goalsA + "-" + R.match.goalsB + " CPU" + (R.match.pens ? " (pens " + R.match.pens.a + "-" + R.match.pens.b + ")" : "") +
         " → " + (R.youWin ? "WIN 🏆" : "loss") + "\n" +
         "My season: " + you.record.W + "-" + you.record.D + "-" + you.record.L + " (" + you.points + "pts)";
     } else {
       var v = verdictFor(you);
-      lines = "⚽ CLUB CHAMPION — " + game.formation.name + "\n" +
+      lines = "⚽ CLUB CHAMPION  " + game.formation.name + "\n" +
         you.record.W + "-" + you.record.D + "-" + you.record.L + " · " + you.points + "pts · " + v.title +
         (you.unbeaten ? " 🏆" : "");
     }
@@ -660,7 +660,7 @@
     copy(lines);
   }
   function shareRun(s) {
-    var lines = "⚽ CLUB CHAMPION — " + tourName(game.mode) + "\n" +
+    var lines = "⚽ CLUB CHAMPION  " + tourName(game.mode) + "\n" +
       (s.champion ? "🏆 CHAMPIONS! " : s.roundLabel + " · ") + s.roundsWon + " wins · " +
       s.goalsFor + " scored, " + s.goalsAgainst + " conceded\n" +
       "Can you go all the way? " + location.href;

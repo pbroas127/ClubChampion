@@ -1,13 +1,13 @@
 /* ============================================================================
- * CLUB CHAMPION — Game Controller
+ * CLUB CHAMPION  Game Controller
  * ----------------------------------------------------------------------------
  * Pure game logic (no DOM). Owns the slot machine, the draft state machine,
  * the skips, the season/vs-CPU results, AND the knockout tournament engine
  * (UCL Climb + World Cup), where you keep one squad and win rounds to advance.
  *
  * Two draft pools share one slot machine:
- *   • clubs   (Season / CPU / UCL)  — pick a CLUB + an exact YEAR (1990–2026)
- *   • nations (World Cup)           — pick a NATION + a WORLD-CUP YEAR
+ *   • clubs   (Season / CPU / UCL)   pick a CLUB + an exact YEAR (1990-2026)
+ *   • nations (World Cup)            pick a NATION + a WORLD-CUP YEAR
  * ==========================================================================*/
 
 (function (root) {
@@ -28,7 +28,7 @@
 
   /* ===================================================== CLUB slot machine */
   // Build one playable spin given which slots remain open and who's taken.
-  // opts: { clubIndex, year } — pin either axis (or neither). Used so that
+  // opts: { clubIndex, year }  pin either axis (or neither). Used so that
   //   "Swap Club" keeps the YEAR fixed and "Swap Year" keeps the CLUB fixed.
   function makeSpin(openSlots, drafted, rand, opts) {
     opts = opts || {};
@@ -154,7 +154,7 @@
   }
   // Match handicaps (see ENGINE.playMatch's `bias`). Every squad is built from
   // legends, so without a thumb on the scale every match is a coin-flip.
-  //   • Tournaments favour the climber a touch — the trophy is hard but reachable.
+  //   • Tournaments favour the climber a touch  the trophy is hard but reachable.
   //   • The CPU difficulty selector is sharper, so "Hard" is a genuine test.
   var TOUR_BIAS = { easy: 1.5, normal: 1.28, hard: 1.08 };
   var CPU_BIAS = { easy: 1.4, normal: 1.12, hard: 0.9 };

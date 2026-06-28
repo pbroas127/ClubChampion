@@ -31,7 +31,7 @@ function show(title, names) {
 
 console.log("\n=== SEASON PROJECTIONS (target spread) ===\n");
 
-// Absolutely maxed, balanced 2-2-2 — should flirt with 38-0.
+// Absolutely maxed, balanced 2-2-2  should flirt with 38-0.
 show("GOD SQUAD (2-2-2)", [
   "Manuel Neuer", "Virgil van Dijk", "Paolo Maldini",
   "Kevin De Bruyne", "Xavi", "Lionel Messi", "Kylian Mbappé",

@@ -1,5 +1,5 @@
 /* ============================================================================
- * CLUB CHAMPION — Match Simulation (head-to-head)
+ * CLUB CHAMPION  Match Simulation (head-to-head)
  * ==========================================================================*/
 (function (root) {
   "use strict";
@@ -477,7 +477,7 @@
       ctx.fillStyle = "#fff";
       ctx.fillText(e._pensA + " - " + e._pensB, bx, by - 4);
 
-      // Dots for A — green=scored, red=missed, white=upcoming
+      // Dots for A  green=scored, red=missed, white=upcoming
       var maxShow = Math.max(5, e._kicksA || 0);
       for (var i = 0; i < Math.min(maxShow, 10); i++) {
         var dx = bx + (i - 2.5) * dotGap;
@@ -572,7 +572,7 @@
       // Keeper
       var keeperY = goalTop + goalH / 2;
       var keeperW = 20, keeperH = 32;
-      // Dive offset — keeper shifts slightly based on shot phase
+      // Dive offset  keeper shifts slightly based on shot phase
       var diveOff = 0;
       if (penPhase === 2) {
         diveOff = (penBallTarget.x - 0.5) * goalW * 0.25;

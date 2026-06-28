@@ -1,5 +1,5 @@
 /* ============================================================================
- * CLUB CHAMPION — National Teams Database (World Cup mode, LIMITED edition)
+ * CLUB CHAMPION  National Teams Database (World Cup mode, LIMITED edition)
  * ----------------------------------------------------------------------------
  * The squads you draft from in World Cup mode: the standout sides from every
  * World Cup, 1990 -> 2026. The slot machine picks a NATION and a WORLD-CUP YEAR,
@@ -9,7 +9,7 @@
  *   at=Attack  cr=Creativity  df=Defending  ph=Physical  gk=Goalkeeping
  * Positions: GK, DEF, MID, FWD. Ratings are subjective and for play, not record.
  * Each nation lists ~9 players (a keeper, a defence, a midfield and a front
- * line) — the slot machine only ever offers a nation when it can fill an open
+ * line)  the slot machine only ever offers a nation when it can fill an open
  * slot, so squads don't need to cover every position.
  * ==========================================================================*/
 
@@ -988,7 +988,7 @@
     return combos;
   }
 
-  // Years in which a given nation (by name) appears — used so "Swap Year"
+  // Years in which a given nation (by name) appears  used so "Swap Year"
   // can keep your nation and roll a different World Cup.
   function yearsForTeam(name) {
     return YEARS.filter(function (yr) {

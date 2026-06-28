@@ -1,5 +1,5 @@
 /* ============================================================================
- * CLUB CHAMPION — Backend (Supabase)
+ * CLUB CHAMPION  Backend (Supabase)
  * ==========================================================================*/
 (function (root) {
   "use strict";
@@ -243,7 +243,7 @@
     recordResult: function (winnerId, loserId) {
       if (!client || !winnerId || !loserId || winnerId === loserId) return Promise.resolve();
       // Prefer the atomic RPC. If it's missing/errors (e.g. schema not applied),
-      // fall back to a manual upsert — the caller (host) is one of the pair, so the
+      // fall back to a manual upsert  the caller (host) is one of the pair, so the
       // head_to_head RLS policy (auth.uid() in (low_id, high_id)) permits it.
       return client.rpc("record_h2h", { winner: winnerId, loser: loserId })
         .then(function (r) { if (r && r.error) throw r.error; return r; })
@@ -377,7 +377,7 @@
       if (!client) return Promise.resolve(null);
       return auth.getUser().then(function (u) {
         if (!u) return null;
-        // A1: only FRESH, still-active lobbies — never pull a player into a stale
+        // A1: only FRESH, still-active lobbies  never pull a player into a stale
         // or finished one. (phase filter already excludes done/expired.)
         var cutoff = new Date(Date.now() - 5 * 60000).toISOString();
         return client.from("match_lobby").select("*")
