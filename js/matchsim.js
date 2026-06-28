@@ -432,7 +432,7 @@
     }
 
     var bi = -1, dwell = 0, celebrating = false, celebrateUntil = 0;
-    var banner = null, bannerIcon = null, bannerT = 0, flash = 0, raf = null, last = 0, finished = false;
+    var banner = null, bannerIcon = null, bannerT = 0, flash = 0, raf = null, last = 0, finished = false, frameDt = 0;
     var penaltyMode = false, penKickBeat = null, penPhase = 0, penTimer = 0;
     var penBall = { x: 0.5, y: 0, z: 0 }, penBallTarget = { x: 0.5, y: 0 };
 
@@ -740,7 +740,7 @@
     function loop(now) {
       if (finished) return;
       try {
-        var dt = Math.min(0.05, (now - last) / 1000); last = now;
+        var dt = Math.min(0.05, (now - last) / 1000); last = now; frameDt = dt;
         if (celebrating) {
           flash = Math.max(0, flash - 0.02);
           if (now > celebrateUntil) {
@@ -887,7 +887,7 @@
       ctx.beginPath(); ctx.arc(bx, by, 5.5, 0, 7); ctx.fillStyle = "#fff";
       ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 6; ctx.fill(); ctx.shadowBlur = 0;
       drawHud();
-      if (banner && bannerT > 0 && !celebrating) { drawBanner(banner, bannerIcon, bannerT); bannerT = Math.max(0, bannerT - dt * 0.7); }
+      if (banner && bannerT > 0 && !celebrating) { drawBanner(banner, bannerIcon, bannerT); bannerT = Math.max(0, bannerT - frameDt * 0.7); }
     }
 
     function drawPlayer(p) {
