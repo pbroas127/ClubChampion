@@ -112,6 +112,70 @@
 
     add(90, 900, { x: 0.5, y: 0.5 }, "A", "fulltime", "Full Time", false);
 
+    /* ---- Penalty shootout (only when pens present) ---- */
+    if (result.pens && (result.pens.a > 0 || result.pens.b > 0)) {
+      add(91, 2200, { x: 0.5, y: 0.5 }, "A", "penalty_intro", "PENALTIES!", true);
+
+      var poolA = squadA.filter(function (p) { return p.pos !== "GK"; });
+      var poolB = squadB.filter(function (p) { return p.pos !== "GK"; });
+      if (!poolA.length) poolA = squadA;
+      if (!poolB.length) poolB = squadB;
+
+      // Build kick sequence matching target scores
+      function buildPenSequence(target, pool, side, r) {
+        var seq = [];
+        for (var i = 0; i < 5; i++) seq.push(i < target);
+        shuffle(seq, r);
+        // Add sudden death if tied after 5
+        var sum = seq.reduce(function (a, b) { return a + b; }, 0);
+        while (target > sum) { seq.push(true); sum++; }
+        while (target < sum && seq.length > 0) { seq.pop(); sum--; }
+        // Remap to actual kickers
+        return seq.map(function (goal) {
+          var k = pool[Math.floor(r() * pool.length)];
+          return { side: side, kicker: k.n, goal: goal, dir: 0.15 + r() * 0.70 };
+        });
+      }
+
+      var seqA = buildPenSequence(result.pens.a, poolA, "A", rand);
+      var seqB = buildPenSequence(result.pens.b, poolB, "B", rand);
+      var maxLen = Math.max(seqA.length, seqB.length);
+
+      // Check if one team already led insurmountably after earlier kick
+      function isDecisive(gA, gB, kIdx) {
+        var remainA = seqA.length - Math.floor((kIdx + 1) / 2);
+        var remainB = seqB.length - Math.ceil((kIdx + 1) / 2);
+        if (kIdx % 2 === 0) { gA += 0; } // A just kicked or about to
+        return Math.abs(gA - gB) > remainB;
+      }
+
+      var pensA = 0, pensB = 0, kickIdx = 0;
+      for (var rnd = 0; rnd < maxLen; rnd++) {
+        if (rnd < seqA.length) {
+          var ka = seqA[rnd];
+          pensA += ka.goal ? 1 : 0;
+          add(91 + kickIdx, 3200, { x: 0.5, y: 0.5 }, "A", "penalty_kick", null, false, {
+            _kickerName: ka.kicker, _penResult: ka.goal ? "goal" : "missed",
+            _penDir: ka.dir, _pensA: pensA, _pensB: pensB,
+            _kicksA: 1 + Math.floor(kickIdx / 2), _kicksB: Math.ceil(kickIdx / 2),
+            _penSide: "A", _isDecisive: false,
+          });
+          kickIdx++;
+        }
+        if (rnd < seqB.length) {
+          var kb = seqB[rnd];
+          pensB += kb.goal ? 1 : 0;
+          add(91 + kickIdx, 3200, { x: 0.5, y: 0.5 }, "B", "penalty_kick", null, false, {
+            _kickerName: kb.kicker, _penResult: kb.goal ? "goal" : "missed",
+            _penDir: kb.dir, _pensA: pensA, _pensB: pensB,
+            _kicksA: 1 + Math.floor(kickIdx / 2), _kicksB: Math.ceil((kickIdx + 1) / 2),
+            _penSide: "B", _isDecisive: false,
+          });
+          kickIdx++;
+        }
+      }
+    }
+
     ["A", "B"].forEach(function (sd) {
       var won = (sd === "A" && result.winner === "A") || (sd === "B" && result.winner === "B");
       stats[sd].forEach(function (s) {
@@ -259,9 +323,10 @@
     var overlay = stage.querySelector ? stage.querySelector(".goal-overlay") : null;
     if (!overlay && stage.appendChild) { overlay = document.createElement("div"); overlay.className = "goal-overlay"; stage.appendChild(overlay); }
 
-    var W = 0, H = 0, dpr = Math.min(2, root.devicePixelRatio || 1);
+    var W = 0, H = 0, dpr = Math.min(3, root.devicePixelRatio || 1);
     var FL = 0, FR = 1, FT = 0, FB = 1;
     var vertical = false;
+    var fieldScale = 1;
     function resize() {
       var rect = canvas.getBoundingClientRect();
       W = rect.width; H = rect.height;
@@ -270,6 +335,7 @@
       vertical = H > W;
       if (vertical) { FL = W * 0.04; FR = W * 0.96; FT = H * 0.045; FB = H * 0.955; }
       else          { FL = W * 0.075; FR = W * 0.925; FT = H * 0.07; FB = H * 0.93; }
+      fieldScale = 800 / Math.max(400, FR - FL);
     }
     function sx(x, y) { return vertical ? FL + y * (FR - FL) : FL + x * (FR - FL); }
     function sy(x, y) { return vertical ? FT + x * (FB - FT) : FT + y * (FB - FT); }
@@ -367,6 +433,8 @@
 
     var bi = -1, dwell = 0, celebrating = false, celebrateUntil = 0;
     var banner = null, bannerIcon = null, bannerT = 0, flash = 0, raf = null, last = 0, finished = false;
+    var penaltyMode = false, penKickBeat = null, penPhase = 0, penTimer = 0;
+    var penBall = { x: 0.5, y: 0, z: 0 }, penBallTarget = { x: 0.5, y: 0 };
 
     function setBanner(b) {
       var map = {
@@ -385,6 +453,207 @@
     function start() { initPlayers(true); last = performance.now(); enterBeat(0); raf = requestAnimationFrame(loop); }
     function finish() { if (finished) return; finished = true; if (raf) cancelAnimationFrame(raf); if (overlay) overlay.classList.remove("show"); onDone({ stats: tl.stats, scorers: tl.scorers }); }
 
+    /* --------------------------------------------------------- Penalties -- */
+    function drawPenaltyBoard() {
+      var b = penKickBeat || tl.beats[bi] || {};
+      var e = b._pensA !== undefined ? b : { _pensA: 0, _pensB: 0, _kicksA: 0, _kicksB: 0, _penSide: "A" };
+
+      var bx = px(0.5), by = py(0.10);
+      var dotGap = Math.min(22, W * 0.025);
+      var dotR = 6;
+
+      ctx.font = "700 12px Inter, sans-serif";
+      ctx.fillStyle = colorA;
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.fillText(nameA, bx - (5.5 * dotGap) - 12, by);
+
+      ctx.fillStyle = colorB;
+      ctx.fillText(nameB, bx - (5.5 * dotGap) - 12, by + 22);
+
+      // Score in center
+      ctx.textAlign = "center";
+      ctx.font = "800 20px Archivo, Inter, sans-serif";
+      ctx.fillStyle = "#fff";
+      ctx.fillText(e._pensA + " - " + e._pensB, bx, by - 4);
+
+      // Dots for A — green=scored, red=missed, white=upcoming
+      var maxShow = Math.max(5, e._kicksA || 0);
+      for (var i = 0; i < Math.min(maxShow, 10); i++) {
+        var dx = bx + (i - 2.5) * dotGap;
+        var taken = i < e._kicksA;
+        ctx.beginPath();
+        ctx.arc(dx, by, dotR, 0, 7);
+        if (!taken) ctx.fillStyle = "rgba(255,255,255,0.15)";
+        else if (i < e._pensA) ctx.fillStyle = "#2ee87f";
+        else ctx.fillStyle = "#ff5d73";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,0.4)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      // Dots for B
+      for (var j = 0; j < Math.min(Math.max(5, e._kicksB || 0), 10); j++) {
+        var dy = bx + (j - 2.5) * dotGap;
+        var takenB = j < e._kicksB;
+        ctx.beginPath();
+        ctx.arc(dy, by + 22, dotR, 0, 7);
+        if (!takenB) ctx.fillStyle = "rgba(255,255,255,0.15)";
+        else if (j < e._pensB) ctx.fillStyle = "#ff5d73";
+        else ctx.fillStyle = "#2ee87f";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,0.4)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    }
+
+    function drawPenaltyScene() {
+      var b = penKickBeat || tl.beats[bi] || {};
+      var side = b._penSide || "A";
+      var clr = side === "A" ? colorA : colorB;
+
+      // Dark background
+      ctx.fillStyle = "#0a1f14";
+      ctx.fillRect(FL, FT, FR - FL, FB - FT);
+
+      // Goal frame
+      var goalW = (FR - FL) * 0.55;
+      var goalH = (FB - FT) * 0.22;
+      var gcx = px(0.5);
+      var goalTop = py(0.55);
+      var goalBottom = goalTop + goalH;
+
+      // Net
+      ctx.fillStyle = "rgba(20,40,30,0.6)";
+      var netX = gcx - goalW / 2, netY = goalTop;
+
+      // Shadow under goal
+      ctx.fillStyle = "rgba(0,0,0,0.3)";
+      ctx.beginPath();
+      ctx.ellipse(gcx, goalBottom + 8, goalW / 2 + 4, 10, 0, 0, 7);
+      ctx.fill();
+
+      // Goal posts (white)
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 4;
+      ctx.strokeRect(netX, netY, goalW, goalH);
+
+      // Crossbar thicker
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(netX - 2, netY - 2, goalW + 4, 6);
+
+      // Net grid (simple crosshatch)
+      ctx.strokeStyle = "rgba(255,255,255,0.12)";
+      ctx.lineWidth = 1;
+      var netSteps = 8;
+      for (var ni = 0; ni <= netSteps; ni++) {
+        var nx = netX + (goalW / netSteps) * ni;
+        ctx.beginPath(); ctx.moveTo(nx, netY); ctx.lineTo(nx, goalBottom); ctx.stroke();
+      }
+      for (var nj = 0; nj <= Math.round(netSteps * 0.6); nj++) {
+        var ny = netY + (goalH / Math.round(netSteps * 0.6)) * nj;
+        ctx.beginPath(); ctx.moveTo(netX, ny); ctx.lineTo(netX + goalW, ny); ctx.stroke();
+      }
+
+      // Grass line at bottom
+      ctx.fillStyle = "rgba(22,84,47,0.5)";
+      ctx.fillRect(FL, goalBottom + 6, FR - FL, 4);
+
+      // Penalty spot (a small white circle in front of goal)
+      var spotY = goalBottom + (FB - goalBottom) * 0.65;
+      var spotX = gcx;
+      ctx.beginPath();
+      ctx.arc(spotX, spotY, 4, 0, 7);
+      ctx.fillStyle = "rgba(255,255,255,0.3)";
+      ctx.fill();
+
+      // Keeper
+      var keeperY = goalTop + goalH / 2;
+      var keeperW = 20, keeperH = 32;
+      // Dive offset — keeper shifts slightly based on shot phase
+      var diveOff = 0;
+      if (penPhase === 2) {
+        diveOff = (penBallTarget.x - 0.5) * goalW * 0.25;
+      }
+      ctx.fillStyle = side === "A" ? "#13314a" : "#1a3a25";
+      roundRect(ctx, gcx + diveOff - keeperW / 2, keeperY - keeperH / 2, keeperW, keeperH, 4);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.3)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // Keeper hands (two small circles)
+      ctx.beginPath();
+      ctx.arc(gcx + diveOff - 7, keeperY - 10, 5, 0, 7);
+      ctx.arc(gcx + diveOff + 7, keeperY - 10, 5, 0, 7);
+      ctx.fillStyle = "#cfe8ff";
+      ctx.fill();
+
+      // Ball
+      var ballScreenX = gcx, ballScreenY = spotY;
+      if (penPhase >= 2) {
+        // Ball is flying toward goal
+        var shotProg = clamp((penTimer - 1.5) / 0.6, 0, 1);
+        ballScreenX = gcx + (penBallTarget.x - 0.5) * goalW * 0.42 * shotProg;
+        ballScreenY = spotY - (spotY - keeperY) * shotProg;
+      }
+      ctx.beginPath();
+      ctx.arc(ballScreenX, ballScreenY, 6, 0, 7);
+      ctx.fillStyle = "#fff";
+      ctx.shadowColor = "rgba(0,0,0,0.5)";
+      ctx.shadowBlur = 8;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Shooter (shown during windup)
+      if (penPhase >= 1 && penPhase < 2) {
+        var runProg = clamp((penTimer - 0.5) / 0.8, 0, 1);
+        var shooterX = gcx;
+        var shooterY = spotY + (FB - spotY) * 0.6 * (1 - runProg);
+        ctx.beginPath();
+        ctx.arc(shooterX, shooterY, 9, 0, 7);
+        ctx.fillStyle = clr;
+        ctx.fill();
+        ctx.fillStyle = "rgba(4,20,12,0.9)";
+        ctx.font = "700 9px Inter, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(lastName(b._kickerName || "").slice(0, 4), shooterX, shooterY);
+      }
+
+      // Result splash
+      if (penPhase >= 3) {
+        var resultText = b._penResult === "goal" ? "GOAL!" : (b._penResult === "saved" ? "SAVED!" : "MISSED!");
+        var resultClr = b._penResult === "goal" ? "#2ee87f" : "#ff5d73";
+        ctx.font = "900 32px Archivo, Inter, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = resultClr;
+        ctx.shadowColor = "rgba(0,0,0,0.7)";
+        ctx.shadowBlur = 12;
+        ctx.fillText(resultText, gcx, goalTop + goalH / 2);
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    function updatePenalty(dt) {
+      penTimer += dt;
+      var b = penKickBeat || tl.beats[bi] || {};
+
+      if (b.kind === "penalty_intro") return;
+
+      if (penPhase === 0 && penTimer >= 0.5) { penPhase = 1; }
+      if (penPhase === 1 && penTimer >= 1.5) {
+        penPhase = 2;
+        penBallTarget.x = b._penDir || 0.5;
+      }
+      if (penPhase === 2 && penTimer >= 2.4) {
+        penPhase = 3;
+        dwell = 0.7;
+      }
+    }
+
     function enterBeat(i) {
       bi = i;
       if (i >= tl.beats.length) return finish();
@@ -393,6 +662,15 @@
 
       if (b.kind === "kickoff") { initPlayers(true); ball.x = 0.5; ball.y = 0.5; ball.moving = false; ball.dribble = false; ball.carrier = null; dwell = 0.5; return; }
       if (b.kind === "fulltime") { ball.moving = false; ball.dribble = false; dwell = 1.0; return; }
+
+      if (b.kind === "penalty_intro") {
+        penaltyMode = true; penKickBeat = b; penPhase = 0; penTimer = 0;
+        dwell = 2.2; return;
+      }
+      if (b.kind === "penalty_kick") {
+        penaltyMode = true; penKickBeat = b; penPhase = 0; penTimer = 0;
+        penBallTarget.x = b._penDir || 0.5; dwell = 0; return;
+      }
 
       if (b.kind === "cornerSetup") {
         ball.x = b.ball.x; ball.y = b.ball.y; ball.moving = false; ball.dribble = false; ball.carrier = null;
@@ -438,7 +716,7 @@
       var curve = b.kind === "cross" ? 0.10 : (b.kind === "shot" || b.kind === "goal" || b.kind === "postHit") ? 0.04 : (len > 0.4 ? 0.06 : 0.015);
       curve *= (((b.minute || 1) % 2) ? 1 : -1);
       ball.p1 = { x: (ball.p0.x + ball.p2.x) / 2 - dy / len * curve, y: (ball.p0.y + ball.p2.y) / 2 + dx / len * curve };
-      ball.len = len; ball.speed = speedFor(b.kind); ball.u = 0; ball.t = 0;
+      ball.len = len; ball.speed = speedFor(b.kind) * fieldScale; ball.u = 0; ball.t = 0;
       ball.dribble = (b.kind === "dribble"); ball.moving = !ball.dribble; dwell = 0;
     }
 
@@ -469,6 +747,11 @@
             celebrating = false; if (overlay) overlay.classList.remove("show");
             initPlayers(true); ball.x = 0.5; ball.y = 0.5; ball.moving = false; ball.carrier = null; enterBeat(bi + 1);
           }
+          draw(); raf = requestAnimationFrame(loop); return;
+        }
+        if (penaltyMode) {
+          updatePenalty(dt);
+          if (dwell > 0) { dwell -= dt; if (dwell <= 0) { penaltyMode = false; enterBeat(bi + 1); } }
           draw(); raf = requestAnimationFrame(loop); return;
         }
         updateBall(dt); updatePlayers(dt);
@@ -573,8 +856,8 @@
       var want = Math.min(maxSp, d * 3.0);
       p.vel.x += (dx / d * want - p.vel.x) * 0.18;
       p.vel.y += (dy / d * want - p.vel.y) * 0.18;
-      p.pos.x = clamp(p.pos.x + p.vel.x * dt + (Math.random() - 0.5) * 0.0006, 0.03, 0.97);
-      p.pos.y = clamp(p.pos.y + p.vel.y * dt + (Math.random() - 0.5) * 0.0006, 0.06, 0.94);
+      p.pos.x = clamp(p.pos.x + p.vel.x * dt, 0.03, 0.97);
+      p.pos.y = clamp(p.pos.y + p.vel.y * dt, 0.06, 0.94);
     }
 
     function getDisplayMinute() {
@@ -589,6 +872,13 @@
     }
 
     function draw() {
+      if (penaltyMode) {
+        ctx.clearRect(0, 0, W, H);
+        drawPenaltyScene();
+        drawPenaltyBoard();
+        drawHud();
+        return;
+      }
       ctx.clearRect(0, 0, W, H);
       drawPitch();
       players.forEach(drawPlayer);
@@ -597,7 +887,7 @@
       ctx.beginPath(); ctx.arc(bx, by, 5.5, 0, 7); ctx.fillStyle = "#fff";
       ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 6; ctx.fill(); ctx.shadowBlur = 0;
       drawHud();
-      if (banner && bannerT > 0 && !celebrating) { drawBanner(banner, bannerIcon, bannerT); bannerT = Math.max(0, bannerT - 0.012); }
+      if (banner && bannerT > 0 && !celebrating) { drawBanner(banner, bannerIcon, bannerT); bannerT = Math.max(0, bannerT - dt * 0.7); }
     }
 
     function drawPlayer(p) {

@@ -417,6 +417,7 @@ body[data-screen="home"] .topnav {
   box-shadow: var(--shadow); opacity: 0; transition: .3s; z-index: 60; font-size: 14px;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast:not(.show) { pointer-events: none; }
 
 /* confetti */
 .confetti { position: fixed; top: -12px; width: 9px; height: 14px; z-index: 40; pointer-events: none; border-radius: 2px; }

@@ -1716,9 +1716,9 @@
     d[draftedKey][pl.n] = true;
     d[draftedKey][pl.n + "|" + mpSpinKey(spin)] = true;
 
-    // Swap turn
-    d.turn = (d.turn === mpDraft.row.host) ? mpDraft.row.guest : mpDraft.row.host;
-    d.round = ((d.host_squad || []).length + (d.guest_squad || []).length) >= (d.total_rounds || 7) * 2 ? d.round : d.round;
+    // Swap turn — use absolute opponent ID, not relative swap, so a stale
+    // local draft can't race with the opponent's concurrent pick.
+    d.turn = (state.user.id === mpDraft.row.host) ? mpDraft.row.guest : mpDraft.row.host;
 
     // Are we done?
     var totalPicked = (d.host_squad || []).length + (d.guest_squad || []).length;
@@ -1750,7 +1750,15 @@
     // Roll next spin
     d.current_spin = makeMpSpin({ ...d });
     d.turn_deadline = new Date(Date.now() + 20000).toISOString();
-    BE.lobby.updateDraft(mpDraft.lobbyId, d).then(function (r) {
+    // Send only changed fields so concurrent opponent writes aren't clobbered.
+    var patch = {};
+    patch[squadKey] = d[squadKey];
+    patch[openKey] = d[openKey];
+    patch[draftedKey] = d[draftedKey];
+    patch.turn = d.turn;
+    patch.current_spin = d.current_spin;
+    patch.turn_deadline = d.turn_deadline;
+    BE.lobby.updateDraft(mpDraft.lobbyId, patch).then(function (r) {
       if (r && r.draft) { mpDraft.row = r; renderMpDraft(); startMpTurnTimer(); }
     });
   }
@@ -2094,15 +2102,25 @@
     var d = (mpMatch.row && mpMatch.row.draft) || {};
     var oppWants = mpMatch.meIsHost ? d.rematch_guest : d.rematch_host;
     var side = mpMatch.meIsHost ? "rematch_host" : "rematch_guest";
+    if (oppWants) {
+      // Both players want a rematch — go straight to the reset WITHOUT touching
+      // the draft at all. This avoids the read-modify-write race in updateDraft
+      // that can clobber the initiator's rematch_host flag.
+      if (mpMatch.row) mpMatch.row.draft = Object.assign({}, d, (function () { var p = {}; p[side] = true; return p; })());
+      var btn0 = $("mp-rematch"); if (btn0) btn0.disabled = true;
+      var note0 = $("mp-rematch-note"); if (note0) note0.textContent = "Rematch on — setting up…";
+      BE.lobby.rematch(mpMatch.lobbyId);
+      return;
+    }
+    // Initiator: stamp the shared 20s window and set our flag.
     var patch = {}; patch[side] = true;
-    // The INITIATOR stamps the shared 20s window; the accepter just adds its flag.
-    if (!oppWants) patch.rematch_at = new Date().toISOString();
+    patch.rematch_at = new Date().toISOString();
     BE.lobby.updateDraft(mpMatch.lobbyId, patch);
-    if (mpMatch.row) mpMatch.row.draft = Object.assign({}, d, patch);   // reflect locally
+    if (mpMatch.row) mpMatch.row.draft = Object.assign({}, d, patch);
     var btn = $("mp-rematch"); if (btn) btn.disabled = true;
     var note = $("mp-rematch-note");
-    if (note) note.textContent = oppWants ? "Rematch on — setting up…" : ("Waiting for " + mpMatch.oppName + " to accept…");
-    if (!oppWants) armRematchExpiry();   // accepting → the both-flags path will set up the game
+    if (note) note.textContent = "Waiting for " + mpMatch.oppName + " to accept…";
+    armRematchExpiry();
   }
 
   // Both players run the same 20s countdown off the shared rematch_at stamp, so
