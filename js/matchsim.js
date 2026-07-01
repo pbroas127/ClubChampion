@@ -80,8 +80,13 @@
       return { x: x, y: clamp(0.5 + (rand() - 0.5) * spread, 0.12, 0.88) };
     }
     function add(minute, dur, ball, posSide, kind, label, flash, extra) {
+      // _curveDir: which way THIS kick's flight bends, decided once per kick
+      // right here (not derived from the minute at render time) - so any
+      // swerve on the ball's path traces back to an actual per-kick decision
+      // instead of a coincidental, player-independent pattern.
       var b = { minute: minute, dur: dur, ball: { x: ball.x, y: ball.y }, posSide: posSide,
-        kind: kind, label: label, flash: !!flash, scoreA: score.A, scoreB: score.B };
+        kind: kind, label: label, flash: !!flash, scoreA: score.A, scoreB: score.B,
+        _curveDir: rand() < 0.5 ? 1 : -1 };
       if (extra) for (var k in extra) b[k] = extra[k];
       beats.push(b);
       return b;
@@ -95,15 +100,18 @@
     var pA = atkA / (atkA + atkB);
     var sides = minutes.map(function () { return rand() < pA ? "A" : "B"; });
 
-    function ensure(side, need) {
-      var idxs = []; sides.forEach(function (s, k) { if (s === side) idxs.push(k); });
-      var j = 0;
-      while (idxs.length < need && j < sides.length) { if (sides[j] !== side) { sides[j] = side; idxs.push(j); } j++; }
-      return idxs;
-    }
+    // Pick which possessions score, for BOTH sides, from ONE shuffled pool of
+    // possession indices sliced into non-overlapping A/B portions - this is
+    // what guarantees the two assignments can never collide. (An earlier
+    // version picked A's goal slots and then separately, mutably, "ensured"
+    // enough slots for B on the same underlying array - when there wasn't
+    // naturally enough of B's assigned possessions to go around, that second
+    // pass could steal back and overwrite one of A's just-chosen indices,
+    // silently scoring one fewer goal than result.goalsA actually called for.)
     var goalAssign = {};
-    shuffle(ensure("A", result.goalsA), rand).slice(0, result.goalsA).forEach(function (k) { goalAssign[k] = "A"; });
-    shuffle(ensure("B", result.goalsB), rand).slice(0, result.goalsB).forEach(function (k) { goalAssign[k] = "B"; });
+    var goalIdx = shuffle(minutes.map(function (_, i) { return i; }), rand);
+    goalIdx.slice(0, result.goalsA).forEach(function (k) { goalAssign[k] = "A"; });
+    goalIdx.slice(result.goalsA, result.goalsA + result.goalsB).forEach(function (k) { goalAssign[k] = "B"; });
 
     for (var pIdx = 0; pIdx < nPoss; pIdx++) {
       var side = goalAssign[pIdx] || sides[pIdx];
@@ -206,8 +214,11 @@
       var g = groups[side], dg = groups[def];
       var st = stats[side], dst = stats[def];
 
-      var nPass = ri(rand, 1, 2);
-      var carriers = shuffle(g.DEF.concat(g.MID), rand);
+      // More touches per possession (and forwards sometimes join the buildup,
+      // not just DEF/MID) so a possession reads as a real passing move, not
+      // one or two isolated hops before the shot.
+      var nPass = ri(rand, 2, 4);
+      var carriers = shuffle(g.DEF.concat(g.MID).concat(g.FWD), rand);
       var last = null;
       for (var k = 0; k < nPass; k++) {
         var who = carriers[k % carriers.length];
@@ -225,15 +236,30 @@
       function gkIdx(sd) { return groups[sd].GK[0]; }
 
       function finishGoal() {
-        var type = pick(rand, ["through", "through", "cross", "cross", "cross", "solo", "solo"]);
+        var type = pick(rand, ["through", "through", "cross", "cross", "cross", "solo", "solo", "corner", "corner"]);
         var scorer, assist = last;
         if (type === "cross") {
           var winger = pick(rand, g.MID.concat(g.FWD));
-          add(minute, 320, posOf(side, winger, 1), side, "pass", null, false);
+          // Anchor the cross's own target to the SAME flank the winger's pass
+          // just delivered him to (not an independent hardcoded spot) - a
+          // midfielder-turned-winger can sit well short of a forward's usual
+          // wide position, and sending the cross to a fixed coordinate made
+          // the ball visually jump to nobody in particular.
+          var wp = posOf(side, winger, 1);
+          var wideY = wp.y < 0.5 ? 0.08 : 0.92;
+          add(minute, 320, { x: side === "A" ? 0.88 : 0.12, y: wideY }, side, "pass", null, false);
           st[winger].touches++; st[winger].passes++; assist = winger;
           scorer = attacker(function (i) { return Math.pow(squads[side][i].r.ph, 2) * (squads[side][i].pos === "FWD" ? 2 : 1); });
-          add(minute, 320, { x: side === "A" ? 0.86 : 0.14, y: 0.84 }, side, "cross", null, false, { _crosser: winger });
+          add(minute, 320, { x: side === "A" ? 0.90 : 0.10, y: wideY }, side, "cross", null, false, { _crosser: winger });
           add(minute, 360, goalMouth(side, rand, false), side, "goal", headerOrFinish(true), true, { _scorerIdx: scorer });
+        } else if (type === "corner") {
+          var topSide = rand() < 0.5;
+          var taker = pick(rand, g.DEF.concat(g.MID));
+          add(minute, 0, { x: side === "A" ? 0.985 : 0.015, y: topSide ? 0.06 : 0.94 }, side, "cornerSetup", "Corner Kick", false);
+          add(minute, 420, { x: side === "A" ? 0.985 : 0.015, y: topSide ? 0.06 : 0.94 }, side, "corner", null, false);
+          st[taker].touches++; st[taker].passes++; assist = taker;
+          scorer = attacker(function (i) { return Math.pow(squads[side][i].r.ph, 2) * (squads[side][i].pos === "FWD" ? 1.4 : 1); });
+          add(minute, 340, goalMouth(side, rand, false), side, "goal", headerOrFinish(true), true, { _scorerIdx: scorer });
         } else if (type === "solo") {
           scorer = attacker(function (i) { return Math.pow(squads[side][i].r.at, 2.2); });
           add(minute, 340, posOf(side, scorer, 1), side, "dribble", null, false, { _carrier: scorer });
@@ -377,23 +403,25 @@
     function nearest(list, pt) { var best = null, bd = 1e9; list.forEach(function (p) { var d = d2(p.pos, pt); if (d < bd) { bd = d; best = p; } }); return best; }
 
     var ball = { x: 0.5, y: 0.5, p0: null, p1: null, p2: null, u: 1, len: 1, speed: 0.6, moving: false, dribble: false, carrier: null, t: 0 };
+    // Scaled down ~25-30% from the original set - still brisk, but slow enough
+    // to actually track a specific kick rather than blurring past.
     function speedFor(k) {
       switch (k) {
-        case "goal":       return 1.50;
-        case "shot":       return 1.30;
-        case "postHit":    return 1.30;
-        case "postBounce": return 0.85;
-        case "save":       return 1.10;
-        case "parry":      return 0.75;
-        case "cross":      return 0.70;
-        case "corner":     return 0.65;
-        case "pass":       return 0.60;
-        case "dribble":    return 0.28;
-        case "goalkick":   return 0.95;
-        case "blockOut":   return 0.55;
+        case "goal":       return 1.05;
+        case "shot":       return 0.95;
+        case "postHit":    return 0.95;
+        case "postBounce": return 0.65;
+        case "save":       return 0.85;
+        case "parry":      return 0.58;
+        case "cross":      return 0.55;
+        case "corner":     return 0.50;
+        case "pass":       return 0.46;
+        case "dribble":    return 0.24;
+        case "goalkick":   return 0.75;
+        case "blockOut":   return 0.45;
         case "kickoff":
-        case "foul":       return 0.80;
-        default:           return 0.62;
+        case "foul":       return 0.62;
+        default:           return 0.48;
       }
     }
 
@@ -785,8 +813,14 @@
       if (b.kind === "goal") tgt = { x: b.posSide === "A" ? 1.04 : -0.04, y: clamp(b.ball.y, 0.44, 0.56) };
       ball.p2 = tgt;
       var dx = ball.p2.x - ball.p0.x, dy = ball.p2.y - ball.p0.y, len = Math.hypot(dx, dy) || 0.001;
-      var curve = b.kind === "cross" ? 0.10 : (b.kind === "shot" || b.kind === "goal" || b.kind === "postHit") ? 0.04 : (len > 0.4 ? 0.06 : 0.015);
-      curve *= (((b.minute || 1) % 2) ? 1 : -1);
+      // Ground passes travel in a straight line - only kicks that actually
+      // swerve in real football (crosses, shots, longer punted balls) get any
+      // bend, and its direction is the per-kick _curveDir baked in at
+      // generation time (see add() in generate()), never something
+      // coincidental like the clock - so the ball only ever changes direction
+      // because of what THIS kick actually was, not an unrelated pattern.
+      var curve = b.kind === "pass" ? 0 : b.kind === "cross" ? 0.10 : (b.kind === "shot" || b.kind === "goal" || b.kind === "postHit") ? 0.04 : (len > 0.4 ? 0.06 : 0.015);
+      curve *= (b._curveDir || 1);
       ball.p1 = { x: (ball.p0.x + ball.p2.x) / 2 - dy / len * curve, y: (ball.p0.y + ball.p2.y) / 2 + dx / len * curve };
       ball.len = len; ball.speed = speedFor(b.kind) * fieldScale; ball.u = 0; ball.t = 0;
       ball.dribble = (b.kind === "dribble"); ball.moving = !ball.dribble; dwell = 0;
@@ -848,7 +882,7 @@
           ball.p0 = { x: ball.x, y: ball.y };
           var dx2 = ball.p2.x - ball.p0.x, dy2 = ball.p2.y - ball.p0.y, len2 = Math.hypot(dx2, dy2) || 0.001;
           var curve2 = (b.kind === "shot" || b.kind === "goal" || b.kind === "postHit") ? 0.04 : 0.06;
-          curve2 *= (((b.minute || 1) % 2) ? 1 : -1);
+          curve2 *= (b._curveDir || 1);
           ball.p1 = { x: (ball.p0.x + ball.p2.x) / 2 - dy2 / len2 * curve2, y: (ball.p0.y + ball.p2.y) / 2 + dx2 / len2 * curve2 };
           ball.len = len2; ball.u = 0; ball.t = 0; ball.moving = true;
         }
@@ -907,19 +941,25 @@
           if (p === ball.carrier) return steer(p, b.ball.x, b.ball.y, 0.22, dt);
           if (p === b._recv)      return steer(p, b.ball.x, b.ball.y, 0.30, dt);
           if (p === b._shooter && b._preShot) return steer(p, ball.x, ball.y, 0.34, dt);
+          // Off-ball teammates shift as a block toward wherever the ball
+          // actually is (not just hold their static formation lane) so the
+          // whole side looks involved in the play, not just the 2-3 players
+          // directly touching it.
           var ahead = p.ptype === "FWD" ? 0.30 : p.ptype === "MID" ? 0.05 : -0.28;
-          var tx2 = clamp(p.pos0.x + ahead * adir(poss) * 0.6 + (ball.x - 0.5) * 0.25, 0.06, 0.94);
-          var ty2 = clamp(p.pos0.y * 0.95 + ball.y * 0.05, 0.06, 0.94);
-          return steer(p, tx2, ty2, p.ptype === "FWD" ? 0.20 : 0.16, dt);
+          var tx2 = clamp(p.pos0.x + ahead * adir(poss) * 0.6 + (ball.x - 0.5) * 0.32, 0.06, 0.94);
+          var ty2 = clamp(p.pos0.y * 0.78 + ball.y * 0.22, 0.06, 0.94);
+          return steer(p, tx2, ty2, p.ptype === "FWD" ? 0.23 : 0.19, dt);
         }
 
         var rank = dfO.indexOf(p);
         if (rank === 0) return steer(p, ball.x, ball.y, 0.34, dt);
         if (rank === 1) return steer(p, (ball.x + ownGoalX(p.side)) / 2, ball.y, 0.24, dt);
+        // Rest of the defensive block shifts across too - real defending is a
+        // shape that slides with the ball, not six players frozen in a grid.
         var back = p.ptype === "DEF" ? 0.22 : 0.08;
-        var tx3 = clamp(p.pos0.x - back * adir(p.side) + (ball.x - 0.5) * 0.15, 0.06, 0.94);
-        var ty3 = clamp(p.pos0.y * 0.95 + ball.y * 0.05, 0.06, 0.94);
-        return steer(p, tx3, ty3, 0.16, dt);
+        var tx3 = clamp(p.pos0.x - back * adir(p.side) + (ball.x - 0.5) * 0.22, 0.06, 0.94);
+        var ty3 = clamp(p.pos0.y * 0.80 + ball.y * 0.20, 0.06, 0.94);
+        return steer(p, tx3, ty3, 0.19, dt);
       });
     }
 

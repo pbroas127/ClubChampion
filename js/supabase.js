@@ -501,8 +501,11 @@
         return client.from("ranked_queue").delete().eq("user_id", u.id);
       }).catch(function () {});
     },
-    // Ask the server to try to pair me with whoever's been waiting longest.
-    // Returns the new lobby id if THIS call performed the match, else null.
+    // Ask the server to try to pair me with the longest-waiting player inside
+    // my current skill (mmr) window - which widens the longer I wait, so a
+    // fresh queue gets close matches and a long wait still finds someone
+    // eventually. Returns the new lobby id if THIS call performed the match,
+    // else null.
     tryMatch: function () {
       if (!client) return Promise.resolve(null);
       return client.rpc("try_ranked_match").then(function (r) { return r.data || null; }).catch(function () { return null; });
@@ -584,6 +587,18 @@
           if (r && r.error) { console.error("leaderboardFriends failed:", r.error.message); throw r.error; }
           return r.data || [];
         });
+    },
+    // Another player's rank (mmr/W-L) - same public columns the leaderboard
+    // already reads for arbitrary users, just for exactly one id. Used by the
+    // ranked lobby screen to show who you're up against.
+    statsFor: function (userId) {
+      if (!client || !userId) return Promise.resolve(null);
+      return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses")
+        .eq("id", userId).maybeSingle()
+        .then(function (r) {
+          if (r && r.error) { console.error("ranked.statsFor failed:", r.error.message); throw r.error; }
+          return r ? r.data : null;
+        }).catch(function (e) { console.error("ranked.statsFor failed:", e && e.message); return null; });
     },
   };
 

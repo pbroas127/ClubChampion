@@ -944,6 +944,14 @@ body[data-screen="mplobby"] .topnav { display: none; }
 .mpl-side .mpl-fm { margin-top: 4px; font-size: 12px; color: var(--muted); }
 .mpl-vs-mid { font-family: "Archivo"; font-weight: 900; font-size: 22px; color: var(--muted-2); }
 
+/* -- Ranked lobby: compact rank chip so you can see who you're up against -- */
+.mpl-rank-mini { display: flex; align-items: center; gap: 8px; justify-content: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
+.mpl-rank-mini-badge { width: 28px; height: 28px; object-fit: contain; flex: none; filter: drop-shadow(0 2px 6px rgba(0,0,0,.4)); }
+.mpl-rank-mini-text { text-align: left; line-height: 1.3; }
+.mpl-rank-mini-text b { display: block; font-family: "Archivo"; font-size: 12px; font-weight: 800; }
+.mpl-rank-mini-text small { display: block; font-size: 11px; color: var(--muted); }
+.mpl-rank-mini--loading { font-size: 11px; color: var(--muted-2); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
+
 .mpl-timer-wrap { text-align: center; margin-bottom: 18px; }
 .mpl-timer-label { font-size: 11px; color: var(--muted); letter-spacing: .14em; text-transform: uppercase; font-weight: 700; }
 .mpl-timer { font-family: "Archivo"; font-weight: 900; font-size: clamp(36px, 8vw, 52px); color: var(--gold); line-height: 1; margin-top: 4px; }
@@ -965,6 +973,9 @@ body[data-screen="mplobby"] .topnav { display: none; }
 @media (max-width: 480px) {
   .mpl-players { grid-template-columns: 1fr 1fr; }
   .mpl-vs-mid { display: none; }
+  .mpl-rank-mini-badge { width: 22px; height: 22px; }
+  .mpl-rank-mini-text b { font-size: 11px; }
+  .mpl-rank-mini-text small { font-size: 10px; }
 }
 
 /* ============================================== PHASE 7  FIRST PICK ==== */

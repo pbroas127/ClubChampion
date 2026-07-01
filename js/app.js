@@ -1198,7 +1198,7 @@
         '<div class="mpl-title">Finding an opponent…</div></div>' +
       '<div class="mpl-panel" style="text-align:center;padding:40px 18px">' +
         '<div class="ranked-search-spin"></div>' +
-        '<div class="fp-result" style="margin-top:18px"><div class="fp-winner-sub">Searching globally - any region</div></div>' +
+        '<div class="fp-result" style="margin-top:18px"><div class="fp-winner-sub">Matching by skill - the search widens the longer you wait</div></div>' +
         '<div class="mpl-timer" id="ranked-elapsed" style="margin-top:6px">0:00</div>' +
         '<div class="mpl-actions" style="margin-top:22px;justify-content:center">' +
           '<button class="btn btn--ghost btn--sm" id="ranked-cancel">Cancel</button>' +
@@ -1245,6 +1245,7 @@
   var lobbyState = {
     lobbyId: null, isHost: false, channel: null,
     timerHandle: null, deadline: 0, chosenFormation: null, profiles: {},
+    rankStats: {},          // userId -> {mmr, ranked_wins, ranked_losses}, ranked lobbies only
     // Local, per-entry deadlines so timers can't freeze on a lost DB write:
     formationDeadline: 0,   // gold 20s  set once both have joined (this client)
     greyDeadline: 0,        // grey 30s  "waiting for opponent to join"
@@ -1263,6 +1264,7 @@
     lobbyState.greyDeadline = 0;
     lobbyState.steppedOut = false;
     lobbyState.exiting = false;
+    lobbyState.rankStats = {};
     showLobbyScreen();
     BE.lobby.get(lobbyId).then(function (row) {
       if (!row) { toast("Lobby missing."); UI.showScreen("home"); return; }
@@ -1275,6 +1277,18 @@
         lobbyState.profiles = pmap;
         renderLobby(row);
       });
+      // Ranked only: fetch both players' rank so the lobby can show what
+      // you're up against. Fetched once per entry (not on every re-render)
+      // and patched in whenever it resolves - guarded so a slow fetch from a
+      // lobby the player has since left can't repaint a screen they're no
+      // longer on.
+      if (row.ranked && BE.ranked && BE.ranked.statsFor) {
+        Promise.all([BE.ranked.statsFor(row.host), BE.ranked.statsFor(row.guest)]).then(function (r) {
+          if (r[0]) lobbyState.rankStats[row.host] = r[0];
+          if (r[1]) lobbyState.rankStats[row.guest] = r[1];
+          if (lobbyState.lobbyId === lobbyId && lobbyState.lastRow) renderLobby(lobbyState.lastRow);
+        }).catch(function () {});
+      }
     });
     if (lobbyState.channel) BE.lobby.unsubscribe(lobbyState.channel);
     lobbyState.channel = BE.lobby.subscribe(lobbyId, function (newRow) {
@@ -1339,6 +1353,20 @@
     document.body.dataset.screen = "mplobby";
   }
 
+  // Compact rank chip for the lobby "vs" screen - badge + tier name + W-L,
+  // deliberately small (unlike the big rank-hero used on the Ranked tab/
+  // popup) since it sits alongside formation + ready-status for both players.
+  function mplRankMiniHTML(stats) {
+    if (!stats) return '<div class="mpl-rank-mini mpl-rank-mini--loading">Loading rank…</div>';
+    var t = tierForMmr(stats.mmr);
+    var badgeUrl = RANKED_BADGE_URLS[t.tierIndex] || RANKED_BADGE_URLS[0];
+    return '<div class="mpl-rank-mini">' +
+      '<img class="mpl-rank-mini-badge" src="' + badgeUrl + '" alt="' + esc(t.label) + ' badge" />' +
+      '<div class="mpl-rank-mini-text"><b class="rank-tier-' + t.tierIndex + '">' + esc(t.label) + '</b>' +
+        '<small>' + stats.ranked_wins + '-' + stats.ranked_losses + '</small></div>' +
+    '</div>';
+  }
+
   function renderLobby(row) {
     var wrap = $("mpl-wrap"); if (!wrap) return;
     lobbyState.lastRow = row;
@@ -1355,22 +1383,27 @@
     var oppFormation = meIsHost ? draft.guest_formation : draft.host_formation;
     var formations = (root.CC_ENGINE && root.CC_ENGINE.FORMATIONS) || [];
     var bothIn = !!(draft.host_in && draft.guest_in);
+    var isRanked = !!row.ranked;
+    var meRankHTML = isRanked ? mplRankMiniHTML(lobbyState.rankStats[me]) : "";
+    var oppRankHTML = isRanked ? mplRankMiniHTML(lobbyState.rankStats[meIsHost ? row.guest : row.host]) : "";
 
     wrap.innerHTML =
       '<div class="mpl-head">' +
-        '<div class="mpl-kicker">Champions Cup  Multiplayer</div>' +
+        '<div class="mpl-kicker">Champions Cup · ' + (isRanked ? "Ranked" : "Multiplayer") + '</div>' +
         '<div class="mpl-title">Match Lobby</div>' +
         '<div class="mpl-vs"><b>' + esc(meName) + '</b> vs <b>' + esc(oppName) + '</b></div>' +
       '</div>' +
       '<div class="mpl-players">' +
         '<div class="mpl-side me">' +
           '<div class="mpl-name">' + esc(meName) + ' (you)</div>' +
+          meRankHTML +
           '<div class="mpl-fm">' + (meFormation ? formationLabel(meFormation, formations) : "") + '</div>' +
           '<div class="mpl-status' + (meReady ? " ready" : "") + '">' + (meReady ? "Ready" : "Choosing…") + '</div>' +
         '</div>' +
         '<div class="mpl-vs-mid">VS</div>' +
         '<div class="mpl-side">' +
           '<div class="mpl-name">' + esc(oppName) + '</div>' +
+          oppRankHTML +
           '<div class="mpl-fm">' + (oppFormation ? formationLabel(oppFormation, formations) : "") + '</div>' +
           '<div class="mpl-status' + (oppReady ? " ready" : "") + '">' + (oppReady ? "Ready" : "Choosing…") + '</div>' +
         '</div>' +

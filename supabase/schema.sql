@@ -345,6 +345,8 @@ language plpgsql security definer set search_path = public as $$
 declare
   me uuid := auth.uid();
   self_row record;
+  self_mmr int;
+  self_range numeric;
   opp record;
   new_lobby_id uuid;
   my_seed bigint;
@@ -353,20 +355,36 @@ begin
   if me is null then return null; end if;
 
   -- Self-clean stale rows (client vanished without leaving the queue) so they
-  -- can never be matched into a lobby nobody's client is watching.
-  delete from public.ranked_queue where joined_at < now() - interval '90 seconds' and user_id <> me;
+  -- can never be matched into a lobby nobody's client is watching. 180s (not
+  -- 90s) so a player with an unusual/isolated mmr isn't evicted mid-search
+  -- right as the widening range below would have finally found them a match.
+  delete from public.ranked_queue where joined_at < now() - interval '180 seconds' and user_id <> me;
 
   select * into self_row from public.ranked_queue where user_id = me for update;
   if not found then return null; end if;                          -- not queued
   if self_row.matched_lobby_id is not null then return self_row.matched_lobby_id; end if;  -- already matched
 
-  select * into opp from public.ranked_queue
-    where user_id <> me and matched_lobby_id is null
-    order by joined_at asc
-    limit 1
-    for update skip locked;
+  select mmr into self_mmr from public.profiles where id = me;
+  -- Skill-based matching: the acceptable mmr gap starts tight (+-75, roughly
+  -- one division) and widens 5 mmr per second waited, so a fresh queue gets
+  -- close matches while a long wait eventually casts a wide enough net that
+  -- nobody's stuck forever (~90s -> +-525, well over a full tier). A pairing
+  -- requires BOTH players' windows to accept each other (the tighter of the
+  -- two governs) - otherwise someone who's waited 80s could yank a player who
+  -- just joined 2s ago into a lopsided match.
+  self_range := 75 + 5 * extract(epoch from (now() - self_row.joined_at));
 
-  if not found then return null; end if;   -- nobody else available to match right now
+  select q.* into opp
+    from public.ranked_queue q
+    join public.profiles p on p.id = q.user_id
+    where q.user_id <> me and q.matched_lobby_id is null
+      and self_mmr is not null and p.mmr is not null
+      and abs(p.mmr - self_mmr) <= least(self_range, 75 + 5 * extract(epoch from (now() - q.joined_at)))
+    order by q.joined_at asc
+    limit 1
+    for update of q skip locked;
+
+  if not found then return null; end if;   -- nobody within range available right now
 
   my_seed := floor(random() * 2147483647)::bigint;
   first_picker := case when random() < 0.5 then me else opp.user_id end;
