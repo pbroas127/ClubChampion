@@ -218,3 +218,141 @@ create policy "matches insert own" on public.matches for insert with check (auth
 --   alter publication supabase_realtime add table public.match_lobby;
 --   alter publication supabase_realtime add table public.profiles;
 
+-- ============================================================================
+-- RANKED MODE  (run this whole block once; it is idempotent)
+-- Siege-style ladder: one persistent hidden `mmr` per player (never shown raw —
+-- the UI derives tier/division from it). New players start at mmr=100 (just
+-- above the floor — Bronze, but climbable). Visible rank = 100 mmr per division,
+-- 5 divisions per tier (500/tier): Bronze/Silver/Gold/Platinum/Diamond, then
+-- Champion uncapped above 2500. Gain/loss uses standard Elo expected-score
+-- between the two players' mmr, but the K-FACTOR is looked up from your OWN
+-- pre-match mmr band, so low ranks swing up fast / down slow and high ranks
+-- swing up slow / down fast — regardless of who you're matched against, and it
+-- can never be gamed by a reset since mmr is permanent.
+-- ============================================================================
+
+-- ---------- PROFILES: ranked columns --------------------------------------
+alter table public.profiles add column if not exists mmr            int not null default 100;
+alter table public.profiles add column if not exists ranked_wins    int not null default 0;
+alter table public.profiles add column if not exists ranked_losses  int not null default 0;
+
+-- ---------- Tag casual multiplayer rows so ranked ones are identifiable ---
+alter table public.match_lobby add column if not exists ranked boolean not null default false;
+alter table public.matches    add column if not exists ranked boolean not null default false;
+
+-- ---------- RANKED QUEUE ---------------------------------------------------
+-- One row per waiting player. matched_lobby_id is set by whichever OTHER
+-- client's try_ranked_match() call pairs them, so a player who didn't win the
+-- race to match still discovers the pairing (via realtime or their own poll).
+create table if not exists public.ranked_queue (
+  user_id          uuid primary key references auth.users(id) on delete cascade,
+  joined_at        timestamptz not null default now(),
+  matched_lobby_id uuid
+);
+alter table public.ranked_queue enable row level security;
+drop policy if exists "queue see own" on public.ranked_queue;
+create policy "queue see own" on public.ranked_queue for select using (auth.uid() = user_id);
+drop policy if exists "queue join own" on public.ranked_queue;
+create policy "queue join own" on public.ranked_queue for insert with check (auth.uid() = user_id);
+drop policy if exists "queue update own" on public.ranked_queue;
+create policy "queue update own" on public.ranked_queue for update using (auth.uid() = user_id);
+drop policy if exists "queue leave own" on public.ranked_queue;
+create policy "queue leave own" on public.ranked_queue for delete using (auth.uid() = user_id);
+
+-- ---------- K-factor bands (keyed off the player's OWN pre-match mmr) -----
+create or replace function public.ranked_k_win(m int)
+returns int language sql immutable as $$
+  select case when m < 500 then 60 when m < 1000 then 46 when m < 1500 then 34
+              when m < 2000 then 24 else 16 end;
+$$;
+create or replace function public.ranked_k_loss(m int)
+returns int language sql immutable as $$
+  select case when m < 500 then 18 when m < 1000 then 26 when m < 1500 then 34
+              when m < 2000 then 46 else 58 end;
+$$;
+
+-- ---------- Atomic matchmaking ---------------------------------------------
+-- Any waiting client may call this. Returns the new lobby id if THIS caller
+-- performed a match, the existing lobby id if I was already matched by someone
+-- else's call, or null if nobody's available to match with right now.
+--
+-- Lock order matters: we lock OUR OWN row FIRST, then search for an opponent.
+-- Locking self first (instead of only locking the opponent candidate) is what
+-- prevents a split-brain race — without it, two players polling at nearly the
+-- same instant could each grab the OTHER as opponent and create TWO separate
+-- lobbies for the same pair, leaving both waiting in a lobby the other never
+-- joins. With self locked first, a concurrent caller's FOR UPDATE SKIP LOCKED
+-- search for an opponent skips anyone (including me) who's mid-match already,
+-- so at most one lobby can ever be created per pair.
+create or replace function public.try_ranked_match()
+returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  me uuid := auth.uid();
+  self_row record;
+  opp record;
+  new_lobby_id uuid;
+  my_seed bigint;
+  first_picker uuid;
+begin
+  if me is null then return null; end if;
+
+  -- Self-clean stale rows (client vanished without leaving the queue) so they
+  -- can never be matched into a lobby nobody's client is watching.
+  delete from public.ranked_queue where joined_at < now() - interval '90 seconds' and user_id <> me;
+
+  select * into self_row from public.ranked_queue where user_id = me for update;
+  if not found then return null; end if;                          -- not queued
+  if self_row.matched_lobby_id is not null then return self_row.matched_lobby_id; end if;  -- already matched
+
+  select * into opp from public.ranked_queue
+    where user_id <> me and matched_lobby_id is null
+    order by joined_at asc
+    limit 1
+    for update skip locked;
+
+  if not found then return null; end if;   -- nobody else available to match right now
+
+  my_seed := floor(random() * 2147483647)::bigint;
+  first_picker := case when random() < 0.5 then me else opp.user_id end;
+
+  insert into public.match_lobby (host, guest, pool, pro, seed, first_pick, phase, ranked)
+    values (me, opp.user_id, 'club', false, my_seed, first_picker, 'formation', true)
+    returning id into new_lobby_id;
+
+  update public.ranked_queue set matched_lobby_id = new_lobby_id where user_id = me;
+  update public.ranked_queue set matched_lobby_id = new_lobby_id where user_id = opp.user_id;
+
+  return new_lobby_id;
+end;
+$$;
+
+-- ---------- Record a ranked result (Elo + W/L, atomic) ---------------------
+create or replace function public.record_ranked_result(winner uuid, loser uuid)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  w_mmr int; l_mmr int; e_w numeric; e_l numeric; d_w int; d_l int;
+begin
+  if winner is null or loser is null or winner = loser then return; end if;
+
+  select mmr into w_mmr from public.profiles where id = winner;
+  select mmr into l_mmr from public.profiles where id = loser;
+  if w_mmr is null or l_mmr is null then return; end if;
+
+  e_w := 1.0 / (1.0 + power(10, (l_mmr - w_mmr) / 400.0));
+  e_l := 1.0 / (1.0 + power(10, (w_mmr - l_mmr) / 400.0));
+
+  -- Own-mmr-banded K, floored so a result always visibly moves the number.
+  d_w := greatest(1, round(public.ranked_k_win(w_mmr) * (1 - e_w)));
+  d_l := least(-1, round(-1 * public.ranked_k_loss(l_mmr) * e_l));
+
+  update public.profiles set mmr = greatest(0, mmr + d_w), ranked_wins = ranked_wins + 1 where id = winner;
+  update public.profiles set mmr = greatest(0, mmr + d_l), ranked_losses = ranked_losses + 1 where id = loser;
+end;
+$$;
+
+-- Enable Realtime for ranked_queue too (Database -> Publications ->
+-- supabase_realtime), or run:
+--   alter publication supabase_realtime add table public.ranked_queue;
+

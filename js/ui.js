@@ -85,7 +85,10 @@
   function updateKickoffButton() {
     var k = $("btn-kickoff");
     if (sel.mode === "ranked") {
-      k.disabled = true; k.classList.add("is-disabled"); k.innerHTML = "COMING SOON";
+      // Ranked needs an account — app.js decides at click-time whether to open
+      // the sign-in modal or start matchmaking; keep the button live either way.
+      k.disabled = false; k.classList.remove("is-disabled");
+      k.innerHTML = "FIND MATCH <span>→</span>";
     } else {
       k.disabled = false; k.classList.remove("is-disabled");
       k.innerHTML = (sel.mode === "cpu" ? "DRAFT &amp; FACE THE CPU " : "KICK OFF ") + "<span>→</span>";
@@ -126,7 +129,10 @@
   }
 
   function goToSetup() {
-    if (sel.mode === "ranked") return;
+    if (sel.mode === "ranked") {
+      if (window.CC_APP && window.CC_APP.onRankedKickoff) window.CC_APP.onRankedKickoff();
+      return;
+    }
     var info = MODE_SETUP[sel.mode] || MODE_SETUP.solo;
     $("setup-title").textContent = info.t;
     $("setup-sub").textContent = info.s;

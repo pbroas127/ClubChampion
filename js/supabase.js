@@ -465,9 +465,84 @@
     unsubscribe: function (ch) { if (client && ch) try { client.removeChannel(ch); } catch (e) {} },
   };
 
+  /* ---------------------------------------------------------- RANKED --- */
+  var ranked = {
+    // Join (or refresh) the global matchmaking queue.
+    joinQueue: function () {
+      need();
+      return auth.getUser().then(function (u) {
+        if (!u) throw new Error("Not signed in.");
+        return client.from("ranked_queue").upsert(
+          { user_id: u.id, joined_at: new Date().toISOString(), matched_lobby_id: null },
+          { onConflict: "user_id" }
+        ).select().single().then(function (r) { return r.data; });
+      });
+    },
+    leaveQueue: function () {
+      if (!client) return Promise.resolve();
+      return auth.getUser().then(function (u) {
+        if (!u) return;
+        return client.from("ranked_queue").delete().eq("user_id", u.id);
+      }).catch(function () {});
+    },
+    // Ask the server to try to pair me with whoever's been waiting longest.
+    // Returns the new lobby id if THIS call performed the match, else null.
+    tryMatch: function () {
+      if (!client) return Promise.resolve(null);
+      return client.rpc("try_ranked_match").then(function (r) { return r.data || null; }).catch(function () { return null; });
+    },
+    // Check whether SOMEONE ELSE'S call already matched me (poll fallback for
+    // the realtime subscription below).
+    checkMatched: function () {
+      if (!client) return Promise.resolve(null);
+      return auth.getUser().then(function (u) {
+        if (!u) return null;
+        return client.from("ranked_queue").select("matched_lobby_id").eq("user_id", u.id).maybeSingle()
+          .then(function (r) { return (r.data && r.data.matched_lobby_id) || null; });
+      }).catch(function () { return null; });
+    },
+    // Instant "someone else matched me" notification via realtime, so the
+    // waiting player doesn't have to sit through a full poll interval.
+    subscribeQueue: function (userId, cb) {
+      if (!client) return null;
+      var ch = client.channel("ranked-queue-" + userId);
+      ch.on("postgres_changes", {
+        event: "*", schema: "public", table: "ranked_queue", filter: "user_id=eq." + userId,
+      }, function (payload) { try { cb(payload.new || null); } catch (e) {} }).subscribe();
+      return ch;
+    },
+    unsubscribe: function (ch) { if (client && ch) try { client.removeChannel(ch); } catch (e) {} },
+    // Atomic Elo + W/L update (K-factor banded off each player's own mmr).
+    recordResult: function (winnerId, loserId) {
+      if (!client || !winnerId || !loserId || winnerId === loserId) return Promise.resolve();
+      return client.rpc("record_ranked_result", { winner: winnerId, loser: loserId })
+        .catch(function (e) { console.error("record_ranked_result failed:", e && e.message); });
+    },
+    myStats: function () {
+      if (!client) return Promise.resolve(null);
+      return auth.getUser().then(function (u) {
+        if (!u) return null;
+        return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses").eq("id", u.id).maybeSingle()
+          .then(function (r) { return r.data; });
+      }).catch(function () { return null; });
+    },
+    leaderboardGlobal: function (limitN) {
+      if (!client) return Promise.resolve([]);
+      return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses")
+        .order("mmr", { ascending: false }).limit(limitN || 50)
+        .then(function (r) { return r.data || []; }).catch(function () { return []; });
+    },
+    leaderboardFriends: function (friendIds) {
+      if (!client || !friendIds || !friendIds.length) return Promise.resolve([]);
+      return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses")
+        .in("id", friendIds).order("mmr", { ascending: false })
+        .then(function (r) { return r.data || []; }).catch(function () { return []; });
+    },
+  };
+
   root.CC_BACKEND = {
     configured: configured, client: client,
     auth: auth, profile: profile, data: data, friends: friends,
-    account: account, invites: invites, lobby: lobby,
+    account: account, invites: invites, lobby: lobby, ranked: ranked,
   };
 })(window);

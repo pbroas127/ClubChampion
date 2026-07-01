@@ -12,6 +12,7 @@
   function toast(m) { if (root.CC_TOAST) root.CC_TOAST(m); }
 
   function setTab(tab) {
+    if (rankedQ.active) leaveRankedQueueSilently();   // nav away cancels an active search
     var prevTab = state.tab;
     state.tab = tab;
     UI.showScreen(tab === "play" ? "home" : tab);
@@ -255,6 +256,7 @@
     state.user = user;
     if (!user) {
       state.profile = null; stopHeartbeat(); teardownInviteRealtime(); refreshAccountButton();
+      if (rankedQ.active) cancelRankedSearch();
       if (state.tab === "friends" || state.tab === "stats") (state.tab === "friends" ? renderFriends : renderStats)();
       return;
     }
@@ -888,18 +890,209 @@
     };
   }
 
+  var rankedBoard = { kind: "global" };   // "global" | "friends" leaderboard toggle
+
   function renderRanked() {
     var wrap = $("screen-ranked"); if (!wrap) return;
-    wrap.innerHTML =
-      '<div class="page-head"><h2>Ranked <span class="tag-soon">COMING SOON</span></h2><p>Climb the ladder.</p></div>' +
-      '<div class="card ranked-teaser"><div class="ranked-badge">🏅</div>' +
-        '<h3>Draft. Watch. Climb.</h3>' +
-        '<p>Ranked mode is in the works.</p></div>';
+    var head = '<div class="page-head"><h2>Ranked</h2><p>Global matchmaking - climb the ladder.</p></div>';
+    if (!state.user) { wrap.innerHTML = head + signInCard("Sign in to play ranked."); wireSignInCard(); return; }
+    if (!BE.configured) { wrap.innerHTML = head + emptyCard("Accounts aren't set up", "Ranked needs Supabase configured."); return; }
+
+    wrap.innerHTML = head +
+      '<div class="card rank-me" id="rank-me"><div class="muted-line" style="margin:0">Loading your rank…</div></div>' +
+      '<div class="card rank-board">' +
+        '<div class="seg rank-board-seg" id="rank-board-seg">' +
+          '<button data-k="global"' + (rankedBoard.kind === "global" ? ' class="is-selected"' : "") + '>Global</button>' +
+          '<button data-k="friends"' + (rankedBoard.kind === "friends" ? ' class="is-selected"' : "") + '>Friends</button>' +
+        "</div>" +
+        '<div id="rank-board-rows"><div class="muted-line">Loading leaderboard…</div></div>' +
+      "</div>";
+
+    $("rank-board-seg").querySelectorAll("button").forEach(function (b) {
+      b.onclick = function () {
+        rankedBoard.kind = b.dataset.k;
+        $("rank-board-seg").querySelectorAll("button").forEach(function (x) { x.classList.remove("is-selected"); });
+        b.classList.add("is-selected");
+        renderRankedBoard();
+      };
+    });
+
+    BE.ranked.myStats().then(function (s) {
+      var box = $("rank-me"); if (!box || !s) return;
+      var t = tierForMmr(s.mmr);
+      var pct = t.division ? t.pointsInDivision : 100;
+      box.innerHTML =
+        '<div class="rank-me-top">' +
+          '<div class="rank-badge rank-tier-' + t.tierIndex + '">' + rankTierEmoji(t.tierIndex) + '</div>' +
+          '<div class="rank-me-info"><div class="rank-me-tier">' + esc(t.label) + '</div>' +
+            '<div class="rank-me-wl">' + s.ranked_wins + "-" + s.ranked_losses + " · " + t.mmr + " pts</div></div>" +
+        "</div>" +
+        (t.division
+          ? '<div class="rank-progress"><div class="rank-progress-fill" style="width:' + pct + '%"></div></div>' +
+            '<div class="rank-progress-label">' + t.pointsInDivision + "/100 to " + nextDivisionLabel(t) + "</div>"
+          : '<div class="rank-progress-label">Top of the ladder - no ceiling.</div>');
+    }).catch(function () {});
+
+    renderRankedBoard();
+  }
+
+  function rankTierEmoji(tierIndex) {
+    return ["🥉", "⚪", "🥇", "💠", "💎", "👑"][tierIndex] || "🏅";
+  }
+  function nextDivisionLabel(t) {
+    if (t.division === 1) {
+      var nextTier = RANKED_TIERS[t.tierIndex + 1] || "Champion";
+      return nextTier + (t.tierIndex + 1 < RANKED_TIERS.length ? " V" : "");
+    }
+    return t.name + " " + RANKED_ROMAN[t.division - 1];
+  }
+
+  function renderRankedBoard() {
+    var box = $("rank-board-rows"); if (!box) return;
+    box.innerHTML = '<div class="muted-line">Loading leaderboard…</div>';
+    var fetchRows = rankedBoard.kind === "global"
+      ? BE.ranked.leaderboardGlobal(50)
+      : BE.friends.list().then(function (fr) {
+          var ids = fr.map(function (f) { return f.userId; });
+          ids.push(state.user.id);   // include myself in the friends view
+          return BE.ranked.leaderboardFriends(ids);
+        });
+    fetchRows.then(function (rows) {
+      var box2 = $("rank-board-rows"); if (!box2) return;
+      if (!rows.length) { box2.innerHTML = '<div class="muted-line">' + (rankedBoard.kind === "friends" ? "No ranked friends yet." : "No ranked players yet.") + "</div>"; return; }
+      box2.innerHTML = rows.map(function (r, i) {
+        var t = tierForMmr(r.mmr);
+        var me = r.id === state.user.id;
+        return '<div class="rank-row' + (me ? " is-me" : "") + '">' +
+          '<div class="rank-row-pos">' + (i + 1) + '</div>' +
+          '<div class="rank-row-name">' + esc(r.username) + (me ? " (you)" : "") + '</div>' +
+          '<div class="rank-row-tier">' + esc(t.label) + '</div>' +
+          '<div class="rank-row-wl">' + r.ranked_wins + "-" + r.ranked_losses + '</div>' +
+          '<div class="rank-row-mmr">' + t.mmr + "</div></div>";
+      }).join("");
+    }).catch(function () {
+      var box3 = $("rank-board-rows"); if (box3) box3.innerHTML = '<div class="muted-line">Couldn\'t load the leaderboard.</div>';
+    });
   }
 
   function emptyCard(t, sub) { return '<div class="card empty-card"><div class="empty-emoji">⚽</div><h3>' + t + "</h3><p>" + sub + "</p></div>"; }
   function signInCard(t) { return '<div class="card empty-card"><div class="empty-emoji">🔒</div><h3>' + t + '</h3><button class="btn btn--kickoff btn--sm" id="signin-cta" style="max-width:200px;margin:14px auto 0">Sign in</button></div>'; }
   function wireSignInCard() { var b = $("signin-cta"); if (b) b.onclick = function () { openAuth("in"); }; }
+
+  /* ========================================================== RANKED === */
+  // Global matchmaking queue -> existing lobby/draft/match pipeline (unchanged
+  // from casual 1v1). "Global" is by construction: the queue has no region
+  // column and try_ranked_match() pairs purely on wait time, so any two players
+  // anywhere can be matched.
+  var rankedQ = { active: false, channel: null, pollHandle: null, elapsed: 0 };
+
+  // 100 mmr per division, 5 divisions per tier (500/tier). Matches the
+  // ranked_k_win/ranked_k_loss bands in schema.sql 1:1 (0-499/500-999/.../2000+).
+  var RANKED_TIERS = ["Bronze", "Silver", "Gold", "Platinum", "Diamond"];
+  var RANKED_ROMAN = ["", "I", "II", "III", "IV", "V"];
+  function tierForMmr(mmr) {
+    mmr = Math.max(0, Math.round(mmr || 0));
+    var tierIndex = Math.floor(mmr / 500);
+    if (tierIndex >= RANKED_TIERS.length) {
+      return { name: "Champion", division: null, label: "Champion", mmr: mmr, pointsInDivision: null, tierIndex: RANKED_TIERS.length };
+    }
+    var withinTier = mmr % 500;
+    var division = 5 - Math.floor(withinTier / 100);   // 5 (tier start) -> 1 (about to rank up)
+    var name = RANKED_TIERS[tierIndex];
+    return {
+      name: name, division: division, label: name + " " + RANKED_ROMAN[division],
+      mmr: mmr, pointsInDivision: withinTier % 100, tierIndex: tierIndex,
+    };
+  }
+
+  function onRankedKickoff() {
+    if (!state.user) { openAuth("in"); return; }
+    if (!BE.configured) { toast("Accounts aren't set up yet."); return; }
+    startRankedSearch();
+  }
+
+  function startRankedSearch() {
+    if (rankedQ.active) return;
+    rankedQ.active = true;
+    rankedQ.elapsed = 0;
+    BE.ranked.joinQueue().catch(function () {
+      rankedQ.active = false;
+      toast("Couldn't join the queue - try again.");
+    });
+    renderRankedSearching();
+
+    var me = state.user.id;
+    if (rankedQ.channel) BE.ranked.unsubscribe(rankedQ.channel);
+    rankedQ.channel = BE.ranked.subscribeQueue(me, function (row) {
+      if (row && row.matched_lobby_id) enterRankedLobby(row.matched_lobby_id);
+    });
+
+    pollRankedMatch();
+  }
+
+  function pollRankedMatch() {
+    if (rankedQ.pollHandle) clearTimeout(rankedQ.pollHandle);
+    if (!rankedQ.active) return;
+    BE.ranked.tryMatch().then(function (lobbyId) {
+      if (!rankedQ.active) return;
+      if (lobbyId) { enterRankedLobby(lobbyId); return; }
+      // Not matched by my own call - maybe someone else already matched me
+      // (the realtime subscribe above should catch this instantly, but a poll
+      // fallback covers a missed/late realtime event too).
+      BE.ranked.checkMatched().then(function (matchedId) {
+        if (!rankedQ.active) return;
+        if (matchedId) { enterRankedLobby(matchedId); return; }
+        rankedQ.elapsed += 2;
+        var e = $("ranked-elapsed"); if (e) e.textContent = fmtClock(rankedQ.elapsed);
+        rankedQ.pollHandle = setTimeout(pollRankedMatch, 2000);
+      });
+    }).catch(function () {
+      if (rankedQ.active) rankedQ.pollHandle = setTimeout(pollRankedMatch, 2000);
+    });
+  }
+
+  function enterRankedLobby(lobbyId) {
+    if (!rankedQ.active) return;   // already handled (or cancelled) via another path
+    rankedQ.active = false;
+    if (rankedQ.pollHandle) { clearTimeout(rankedQ.pollHandle); rankedQ.pollHandle = null; }
+    if (rankedQ.channel) { BE.ranked.unsubscribe(rankedQ.channel); rankedQ.channel = null; }
+    BE.ranked.leaveQueue();   // matched - tidy up the queue row, best effort
+    BE.lobby.get(lobbyId).then(function (row) {
+      if (!row) { toast("Match lobby not found - try again."); return; }
+      enteredLobbyOnce = true;
+      enterLobby(lobbyId, row.host === state.user.id);
+    }).catch(function () { toast("Couldn't enter the match - try again."); });
+  }
+
+  function leaveRankedQueueSilently() {
+    if (!rankedQ.active) return;
+    rankedQ.active = false;
+    if (rankedQ.pollHandle) { clearTimeout(rankedQ.pollHandle); rankedQ.pollHandle = null; }
+    if (rankedQ.channel) { BE.ranked.unsubscribe(rankedQ.channel); rankedQ.channel = null; }
+    BE.ranked.leaveQueue();
+  }
+
+  function cancelRankedSearch() {
+    if (!rankedQ.active) return;
+    leaveRankedQueueSilently();
+    setTab("play");
+  }
+
+  function renderRankedSearching() {
+    showLobbyScreen();
+    var wrap = $("mpl-wrap"); if (!wrap) return;
+    wrap.innerHTML =
+      '<div class="mpl-head"><div class="mpl-kicker">Champions Cup - Ranked</div>' +
+        '<div class="mpl-title">Finding an opponent…</div></div>' +
+      '<div class="mpl-panel" style="text-align:center;padding:40px 18px">' +
+        '<div class="ranked-search-spin"></div>' +
+        '<div class="fp-result" style="margin-top:18px"><div class="fp-winner-sub">Searching globally - any region</div></div>' +
+        '<div class="mpl-timer" id="ranked-elapsed" style="margin-top:6px">0:00</div>' +
+        '<div class="mpl-actions" style="margin-top:22px;justify-content:center">' +
+          '<button class="btn btn--ghost btn--sm" id="ranked-cancel">Cancel</button>' +
+        '</div></div>';
+    var cb = $("ranked-cancel"); if (cb) cb.onclick = cancelRankedSearch;
+  }
 
   /* =================== PART A ENDS HERE  PART B STARTS NEXT MESSAGE ===== */
  /* ============================================================ LOBBY === */
@@ -1817,7 +2010,7 @@
     started: false, lobbyId: null, meIsHost: false, row: null,
     mySquad: null, oppSquad: null, meName: "", oppName: "",
     canon: null, myResult: null, sim: null, out: null,
-    kickTimer: null, rematchTimer: null,
+    kickTimer: null, rematchTimer: null, isRanked: false,
   };
 
   // Set true only during the brief hand-off between the last draft pick and the
@@ -1831,7 +2024,7 @@
     if (mpMatch.rematchTimer) clearInterval(mpMatch.rematchTimer);
     mpMatch = { started: false, lobbyId: null, meIsHost: false, row: null, mySquad: null,
       oppSquad: null, meName: "", oppName: "", canon: null, myResult: null, sim: null,
-      out: null, kickTimer: null, rematchTimer: null };
+      out: null, kickTimer: null, rematchTimer: null, isRanked: false };
     // clear draft state too, so a rematch's fresh draft isn't read as stale by the
     // lobby subscribe patch (which intercepts draft-phase updates by lobby id).
     stopMpTurnTimer();
@@ -1954,6 +2147,8 @@
     }
     mpMatch.canon = canon;
 
+    mpMatch.isRanked = !!row.ranked;
+
     // Host writes the head-to-head + match row once (no double count). Wrapped so
     // a backend hiccup here can never block the lineup from rendering.
     try {
@@ -1963,8 +2158,10 @@
         if (BE.friends.recordResult) BE.friends.recordResult(winnerId, loserId);
         if (BE.data.recordMatch) BE.data.recordMatch({
           lobby_id: row.id, player_a: row.host, player_b: row.guest,
-          goals_a: canon.goalsA, goals_b: canon.goalsB, winner: winnerId,
+          goals_a: canon.goalsA, goals_b: canon.goalsB, winner: winnerId, ranked: !!row.ranked,
         });
+        // Ranked: atomic Elo + W/L update, banded off each player's own mmr.
+        if (row.ranked && BE.ranked && BE.ranked.recordResult) BE.ranked.recordResult(winnerId, loserId);
       }
     } catch (e) { console.error("record result/match failed:", e); }
 
@@ -2059,24 +2256,29 @@
     var myStats = meIsHost ? out.stats.A : out.stats.B;
     var oppStats = meIsHost ? out.stats.B : out.stats.A;
     var pens = canon.pens ? (" (pens " + (meIsHost ? canon.pens.a + "-" + canon.pens.b : canon.pens.b + "-" + canon.pens.a) + ")") : "";
+    var isRanked = mpMatch.isRanked;
     wrap.innerHTML =
       '<div class="results-wrap">' +
         '<div class="verdict ' + (youWin ? "verdict--win" : "") + '">' +
-          '<div class="verdict-kicker">Champions Cup · Multiplayer</div>' +
+          '<div class="verdict-kicker">' + (isRanked ? "Champions Cup · Ranked" : "Champions Cup · Multiplayer") + '</div>' +
           '<div class="verdict-title">' + (youWin ? "YOU WIN! 🏆" : "YOU LOSE") + "</div>" +
           '<div class="verdict-record">' + myGoals + " - " + oppGoals + "</div>" +
-          '<div class="verdict-sub">vs ' + esc(mpMatch.oppName) + pens + ' &nbsp;·&nbsp; <span id="mp-h2h" class="dim">H2H …</span></div>' +
+          '<div class="verdict-sub">vs ' + esc(mpMatch.oppName) + pens + ' &nbsp;·&nbsp; ' +
+            (isRanked ? '<span id="mp-rank" class="dim">Updating rank …</span>' : '<span id="mp-h2h" class="dim">H2H …</span>') +
+          "</div>" +
         "</div>" +
         '<div class="res-grid">' + mpStatCard(myStats, "Your XI") + mpStatCard(oppStats, esc(mpMatch.oppName)) + "</div>" +
         '<div class="mpl-actions" style="margin-top:16px">' +
           '<button class="btn btn--ghost btn--sm flex1" id="mp-home">Return Home</button>' +
-          '<button class="btn btn--kickoff btn--sm flex1" id="mp-rematch">↻ Rematch</button>' +
+          (isRanked
+            ? '<button class="btn btn--kickoff btn--sm flex1" id="mp-rematch">Find Another Match</button>'
+            : '<button class="btn btn--kickoff btn--sm flex1" id="mp-rematch">↻ Rematch</button>') +
         "</div>" +
         '<div class="mp-rematch-note" id="mp-rematch-note"></div>' +
       "</div>";
     // BUG #3 FIX: fetch H2H AFTER a delay so the host's record_h2h RPC has time
     // to commit. Retry once if first read shows stale 0-0.
-    if (BE.friends.headToHead && mpMatch.oppId) {
+    if (!isRanked && BE.friends.headToHead && mpMatch.oppId) {
       var fetchH2H = function (attempt) {
         BE.friends.headToHead(mpMatch.oppId).then(function (h) {
           var e = $("mp-h2h"); if (!e) return;
@@ -2091,10 +2293,28 @@
       };
       setTimeout(function () { fetchH2H(0); }, 800);
     }
+    // Ranked: fetch MY updated rank after a delay so the host's Elo RPC has time
+    // to commit (same delayed-refresh pattern as H2H above).
+    if (isRanked && BE.ranked && BE.ranked.myStats) {
+      var fetchRank = function (attempt) {
+        BE.ranked.myStats().then(function (s) {
+          var e = $("mp-rank"); if (!e || !s) return;
+          if (attempt < 2 && s.mmr === 100 && s.ranked_wins === 0 && s.ranked_losses === 0) {
+            setTimeout(function () { fetchRank(attempt + 1); }, 1200);
+            return;
+          }
+          var t = tierForMmr(s.mmr);
+          e.textContent = t.label + " · " + s.ranked_wins + "-" + s.ranked_losses;
+        }).catch(function () {});
+      };
+      setTimeout(function () { fetchRank(0); }, 900);
+    }
     // #7: post-game Return Home tears down LOCALLY only  never yanks the opponent.
     $("mp-home").onclick = function () { resetMpMatch(); teardownLobby(); enteredLobbyOnce = true; setTab("play"); };
-    $("mp-rematch").onclick = requestRematch;
-    handleRematchFlags(mpMatch.row);   // reflect any rematch request that already arrived
+    $("mp-rematch").onclick = isRanked
+      ? function () { resetMpMatch(); teardownLobby(); enteredLobbyOnce = true; startRankedSearch(); }
+      : requestRematch;
+    if (!isRanked) handleRematchFlags(mpMatch.row);   // reflect any rematch request that already arrived
   }
 
   /* ================================================== PHASE 10  REMATCH */
@@ -2225,5 +2445,8 @@
     }
   }
 
-  root.CC_APP = { init: init, onScreen: onScreen, recordSeason: recordSeason, recordRun: recordRun, openAuth: openAuth, setTab: setTab };
+  root.CC_APP = {
+    init: init, onScreen: onScreen, recordSeason: recordSeason, recordRun: recordRun,
+    openAuth: openAuth, setTab: setTab, onRankedKickoff: onRankedKickoff,
+  };
 })(window);
