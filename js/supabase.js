@@ -524,24 +524,38 @@
         if (!u) return null;
         // Catch my own row up to the current season BEFORE reading it, so a
         // season boundary I crossed since my last match shows correctly right
-        // away instead of waiting for my next queue/match touch.
-        return client.rpc("ranked_sync_me").catch(function () {}).then(function () {
-          return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses,season_number").eq("id", u.id).maybeSingle()
-            .then(function (r) { return r.data; });
+        // away instead of waiting for my next queue/match touch. A sync failure
+        // is non-fatal (logged, not thrown) - we still try to read the row.
+        return client.rpc("ranked_sync_me").catch(function (e) {
+          console.warn("ranked_sync_me failed (continuing with existing mmr):", e && e.message);
+        }).then(function () {
+          return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses,season_number").eq("id", u.id).maybeSingle();
+        }).then(function (r) {
+          // A real DB/RLS error here must NOT be swallowed to null - that's
+          // exactly what left the Ranked tab stuck on "Loading your rank..."
+          // forever with no way to tell what went wrong.
+          if (r && r.error) { console.error("myStats profiles read failed:", r.error.message); throw r.error; }
+          return r ? r.data : null;
         });
-      }).catch(function () { return null; });
+      });
     },
     leaderboardGlobal: function (limitN) {
       if (!client) return Promise.resolve([]);
       return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses")
         .order("mmr", { ascending: false }).limit(limitN || 50)
-        .then(function (r) { return r.data || []; }).catch(function () { return []; });
+        .then(function (r) {
+          if (r && r.error) { console.error("leaderboardGlobal failed:", r.error.message); throw r.error; }
+          return r.data || [];
+        });
     },
     leaderboardFriends: function (friendIds) {
       if (!client || !friendIds || !friendIds.length) return Promise.resolve([]);
       return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses")
         .in("id", friendIds).order("mmr", { ascending: false })
-        .then(function (r) { return r.data || []; }).catch(function () { return []; });
+        .then(function (r) {
+          if (r && r.error) { console.error("leaderboardFriends failed:", r.error.message); throw r.error; }
+          return r.data || [];
+        });
     },
   };
 

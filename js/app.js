@@ -920,7 +920,8 @@
     });
 
     BE.ranked.myStats().then(function (s) {
-      var box = $("rank-me"); if (!box || !s) return;
+      var box = $("rank-me"); if (!box) return;
+      if (!s) { showRankMeError("Couldn't load your rank."); return; }
       var t = tierForMmr(s.mmr);
       var pct = t.division ? t.pointsInDivision : 100;
       box.innerHTML =
@@ -933,9 +934,22 @@
           ? '<div class="rank-progress"><div class="rank-progress-fill" style="width:' + pct + '%"></div></div>' +
             '<div class="rank-progress-label">' + t.pointsInDivision + "/100 to " + nextDivisionLabel(t) + "</div>"
           : '<div class="rank-progress-label">Top of the ladder - no ceiling.</div>');
-    }).catch(function () {});
+    }).catch(function (e) {
+      console.error("renderRanked myStats failed:", e && e.message);
+      // Show the ACTUAL error text - this is exactly the class of failure
+      // ("ranked SQL not (fully) applied") that used to hang silently on
+      // "Loading your rank..." forever with nothing to go on.
+      showRankMeError((e && e.message) ? e.message : "Couldn't load your rank.");
+    });
 
     renderRankedBoard();
+  }
+
+  function showRankMeError(msg) {
+    var box = $("rank-me"); if (!box) return;
+    box.innerHTML = '<div class="muted-line" style="margin:0 0 10px">' + esc(msg) + '</div>' +
+      '<button class="mini-btn" id="rank-me-retry">Retry</button>';
+    var rb = $("rank-me-retry"); if (rb) rb.onclick = renderRanked;
   }
 
   function rankTierEmoji(tierIndex) {
@@ -972,8 +986,12 @@
           '<div class="rank-row-wl">' + r.ranked_wins + "-" + r.ranked_losses + '</div>' +
           '<div class="rank-row-mmr">' + t.mmr + "</div></div>";
       }).join("");
-    }).catch(function () {
-      var box3 = $("rank-board-rows"); if (box3) box3.innerHTML = '<div class="muted-line">Couldn\'t load the leaderboard.</div>';
+    }).catch(function (e) {
+      console.error("renderRankedBoard failed:", e && e.message);
+      var box3 = $("rank-board-rows"); if (!box3) return;
+      box3.innerHTML = '<div class="muted-line">' + esc((e && e.message) ? e.message : "Couldn't load the leaderboard.") + '</div>' +
+        '<button class="mini-btn" id="rank-board-retry" style="margin-top:8px">Retry</button>';
+      var rb = $("rank-board-retry"); if (rb) rb.onclick = renderRankedBoard;
     });
   }
 
