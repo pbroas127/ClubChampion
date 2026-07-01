@@ -150,7 +150,15 @@
     },
     recordMatch: function (m) {                       // multiplayer result (Phase 9)
       if (!client) return Promise.resolve();
-      return client.from("matches").insert(m).catch(function () {});
+      // .then() before .catch() - see the note on ranked.recordResult: .catch()
+      // directly on a bare query-builder result throws "...catch is not a
+      // function" SYNCHRONOUSLY. This call sits right before ranked.recordResult
+      // in enterMpMatch's try block, so that throw was aborting the try block
+      // before the ranked Elo write ever ran - the actual root cause of ranked
+      // results never recording.
+      return client.from("matches").insert(m)
+        .then(function (r) { if (r && r.error) throw r.error; return r; })
+        .catch(function (e) { console.error("recordMatch failed:", e && e.message); });
     },
   };
 
@@ -452,7 +460,15 @@
     },
     leave: function (lobbyId) {
       if (!client) return Promise.resolve();
-      return client.from("match_lobby").update({ phase: "done" }).eq("id", lobbyId).catch(function () {});
+      // .then() before .catch() - same bare-builder .catch() bug as
+      // recordResult/recordMatch above. This one meant the phase="done" write
+      // never actually reached the server (the call threw before the fetch
+      // ever fired), so the opponent's "X left the lobby" realtime echo never
+      // arrived either - only caught here because the CALLER already wraps
+      // lobby.leave() in its own try/catch.
+      return client.from("match_lobby").update({ phase: "done" }).eq("id", lobbyId)
+        .then(function (r) { if (r && r.error) throw r.error; return r; })
+        .catch(function (e) { console.error("lobby.leave failed:", e && e.message); });
     },
     subscribe: function (lobbyId, cb) {
       if (!client) return null;
@@ -515,7 +531,15 @@
     // Atomic Elo + W/L update (K-factor banded off each player's own mmr).
     recordResult: function (winnerId, loserId) {
       if (!client || !winnerId || !loserId || winnerId === loserId) return Promise.resolve();
+      // NOTE: the postgrest query builder returned by client.rpc() only
+      // implements .then() until it's been chained - calling .catch() on it
+      // DIRECTLY throws "...catch is not a function" synchronously (this is
+      // exactly what silently ate every ranked result: enterMpMatch calls this
+      // inside a try/catch, so the TypeError below was always being swallowed
+      // before record_ranked_result ever actually ran). The .then() first
+      // resolves that; only chain .catch() after a .then().
       return client.rpc("record_ranked_result", { winner: winnerId, loser: loserId })
+        .then(function (r) { if (r && r.error) throw r.error; return r; })
         .catch(function (e) { console.error("record_ranked_result failed:", e && e.message); });
     },
     myStats: function () {
@@ -526,9 +550,13 @@
         // season boundary I crossed since my last match shows correctly right
         // away instead of waiting for my next queue/match touch. A sync failure
         // is non-fatal (logged, not thrown) - we still try to read the row.
-        return client.rpc("ranked_sync_me").catch(function (e) {
-          console.warn("ranked_sync_me failed (continuing with existing mmr):", e && e.message);
-        }).then(function () {
+        // (.then() before .catch() - see the note in ranked.recordResult above:
+        // .catch() directly on a bare client.rpc() result throws synchronously.)
+        return client.rpc("ranked_sync_me")
+          .then(function (r) { if (r && r.error) throw r.error; return r; })
+          .catch(function (e) {
+            console.warn("ranked_sync_me failed (continuing with existing mmr):", e && e.message);
+          }).then(function () {
           return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses,season_number").eq("id", u.id).maybeSingle();
         }).then(function (r) {
           // A real DB/RLS error here must NOT be swallowed to null - that's
