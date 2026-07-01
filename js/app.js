@@ -894,7 +894,9 @@
 
   function renderRanked() {
     var wrap = $("screen-ranked"); if (!wrap) return;
-    var head = '<div class="page-head"><h2>Ranked</h2><p>Global matchmaking - climb the ladder.</p></div>';
+    var head = '<div class="page-head"><h2>Ranked</h2>' +
+      '<p>Global matchmaking - climb the ladder. Season <b id="rank-season-num">' + rankedSeasonNumber() + '</b> ' +
+      '<span id="rank-season-cd" class="dim">' + fmtSeasonCountdown(rankedSeasonEndsAt() - Date.now()) + "</span></p></div>";
     if (!state.user) { wrap.innerHTML = head + signInCard("Sign in to play ranked."); wireSignInCard(); return; }
     if (!BE.configured) { wrap.innerHTML = head + emptyCard("Accounts aren't set up", "Ranked needs Supabase configured."); return; }
 
@@ -1093,6 +1095,40 @@
         '</div></div>';
     var cb = $("ranked-cancel"); if (cb) cb.onclick = cancelRankedSearch;
   }
+
+  /* ---- Monthly ranked seasons (UTC calendar month) -----------------------
+     Purely a function of "now" - mirrors ranked_current_season()/the season
+     boundary in schema.sql exactly, so the countdown shown here always lines
+     up with when the server will actually halve everyone's mmr. Season 1 =
+     July 2026 (this feature's launch month). */
+  var RANKED_SEASON_BASE = 2026 * 12 + 6;   // year*12+month, 0-indexed month (July = 6)
+  function rankedSeasonNumber() {
+    var n = new Date();
+    return Math.max(1, (n.getUTCFullYear() * 12 + n.getUTCMonth()) - RANKED_SEASON_BASE + 1);
+  }
+  function rankedSeasonEndsAt() {
+    var n = new Date();
+    return Date.UTC(n.getUTCFullYear(), n.getUTCMonth() + 1, 1, 0, 0, 0);
+  }
+  // Degrading granularity exactly as specified: days+hours -> hours+mins -> mins+secs.
+  function fmtSeasonCountdown(ms) {
+    var s = Math.max(0, Math.floor(ms / 1000));
+    var d = Math.floor(s / 86400); s -= d * 86400;
+    var h = Math.floor(s / 3600); s -= h * 3600;
+    var m = Math.floor(s / 60); s -= m * 60;
+    if (d > 0) return d + "d " + h + "h left";
+    if (h > 0) return h + "h " + m + "m left";
+    return m + "m " + s + "s left";
+  }
+  function tickRankedSeasonUI() {
+    var num = rankedSeasonNumber(), left = rankedSeasonEndsAt() - Date.now();
+    var n1 = $("rb-season-num"); if (n1) n1.textContent = num;
+    var cd1 = $("rb-countdown"); if (cd1) cd1.textContent = fmtSeasonCountdown(left);
+    var n2 = $("rank-season-num"); if (n2) n2.textContent = num;
+    var cd2 = $("rank-season-cd"); if (cd2) cd2.textContent = fmtSeasonCountdown(left);
+  }
+  setInterval(tickRankedSeasonUI, 1000);
+  tickRankedSeasonUI();   // paint immediately - don't wait a full second for first tick
 
   /* =================== PART A ENDS HERE  PART B STARTS NEXT MESSAGE ===== */
  /* ============================================================ LOBBY === */

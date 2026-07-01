@@ -121,19 +121,25 @@
       if (!poolA.length) poolA = squadA;
       if (!poolB.length) poolB = squadB;
 
-      // Build kick sequence matching target scores
+      // Build a kick sequence that nets to EXACTLY `target` goals - this is what
+      // guarantees the shootout the viewer watches always ends on the score the
+      // match was already decided on (result.pens), never something the
+      // animation invents independently.
       function buildPenSequence(target, pool, side, r) {
         var seq = [];
         for (var i = 0; i < 5; i++) seq.push(i < target);
         shuffle(seq, r);
-        // Add sudden death if tied after 5
         var sum = seq.reduce(function (a, b) { return a + b; }, 0);
-        while (target > sum) { seq.push(true); sum++; }
+        while (target > sum) { seq.push(true); sum++; }        // sudden death makes
         while (target < sum && seq.length > 0) { seq.pop(); sum--; }
-        // Remap to actual kickers
         return seq.map(function (goal) {
           var k = pool[Math.floor(r() * pool.length)];
-          return { side: side, kicker: k.n, goal: goal, dir: 0.15 + r() * 0.70 };
+          // Non-scoring kicks are portrayed as either a keeper save or an
+          // off-target miss - purely cosmetic (both are still 0), chosen
+          // deterministically from the match seed so every viewer sees the same
+          // sequence, driven by the three-outcome variety that was asked for.
+          var outcome = goal ? "goal" : (r() < 0.62 ? "saved" : "missed");
+          return { side: side, kicker: k.n, outcome: outcome, aim: r() };
         });
       }
 
@@ -141,39 +147,34 @@
       var seqB = buildPenSequence(result.pens.b, poolB, "B", rand);
       var maxLen = Math.max(seqA.length, seqB.length);
 
-      // Check if one team already led insurmountably after earlier kick
-      function isDecisive(gA, gB, kIdx) {
-        var remainA = seqA.length - Math.floor((kIdx + 1) / 2);
-        var remainB = seqB.length - Math.ceil((kIdx + 1) / 2);
-        if (kIdx % 2 === 0) { gA += 0; } // A just kicked or about to
-        return Math.abs(gA - gB) > remainB;
-      }
-
       var pensA = 0, pensB = 0, kickIdx = 0;
       for (var rnd = 0; rnd < maxLen; rnd++) {
         if (rnd < seqA.length) {
           var ka = seqA[rnd];
-          pensA += ka.goal ? 1 : 0;
+          pensA += ka.outcome === "goal" ? 1 : 0;
           add(91 + kickIdx, 3200, { x: 0.5, y: 0.5 }, "A", "penalty_kick", null, false, {
-            _kickerName: ka.kicker, _penResult: ka.goal ? "goal" : "missed",
-            _penDir: ka.dir, _pensA: pensA, _pensB: pensB,
+            _kickerName: ka.kicker, _penResult: ka.outcome, _penAim: ka.aim,
+            _pensA: pensA, _pensB: pensB,
             _kicksA: 1 + Math.floor(kickIdx / 2), _kicksB: Math.ceil(kickIdx / 2),
-            _penSide: "A", _isDecisive: false,
+            _penSide: "A",
           });
           kickIdx++;
         }
         if (rnd < seqB.length) {
           var kb = seqB[rnd];
-          pensB += kb.goal ? 1 : 0;
+          pensB += kb.outcome === "goal" ? 1 : 0;
           add(91 + kickIdx, 3200, { x: 0.5, y: 0.5 }, "B", "penalty_kick", null, false, {
-            _kickerName: kb.kicker, _penResult: kb.goal ? "goal" : "missed",
-            _penDir: kb.dir, _pensA: pensA, _pensB: pensB,
+            _kickerName: kb.kicker, _penResult: kb.outcome, _penAim: kb.aim,
+            _pensA: pensA, _pensB: pensB,
             _kicksA: 1 + Math.floor(kickIdx / 2), _kicksB: Math.ceil((kickIdx + 1) / 2),
-            _penSide: "B", _isDecisive: false,
+            _penSide: "B",
           });
           kickIdx++;
         }
       }
+      // By construction, pensA === result.pens.a and pensB === result.pens.b
+      // here - the running score painted on the shootout scoreboard always
+      // lands on exactly the pre-decided result.
     }
 
     ["A", "B"].forEach(function (sd) {
@@ -433,8 +434,20 @@
 
     var bi = -1, dwell = 0, celebrating = false, celebrateUntil = 0;
     var banner = null, bannerIcon = null, bannerT = 0, flash = 0, raf = null, last = 0, finished = false, frameDt = 0;
+    // Penalties reuse the SAME aerial pitch/ball/player-dot rendering as open
+    // play - penPhase/penTimer just drive two of the existing `players` (kicker,
+    // keeper) and the shared `ball` to new positions each kick. No separate
+    // front-on camera or player representation.
     var penaltyMode = false, penKickBeat = null, penPhase = 0, penTimer = 0;
-    var penBall = { x: 0.5, y: 0, z: 0 }, penBallTarget = { x: 0.5, y: 0 };
+    var penGoalFlash = 0;   // 0-1, fades in on resolution for the result banner
+    var PEN_SPOT = 0.11, PEN_GOAL_HALF = 0.065;   // stylized pitch-fraction geometry
+
+    function playerByName(side, name) {
+      for (var i = 0; i < players.length; i++) {
+        if (players[i].side === side && squads[side][players[i].idx].n === name) return players[i];
+      }
+      return null;
+    }
 
     function setBanner(b) {
       var map = {
@@ -454,186 +467,118 @@
     function finish() { if (finished) return; finished = true; if (raf) cancelAnimationFrame(raf); if (overlay) overlay.classList.remove("show"); onDone({ stats: tl.stats, scorers: tl.scorers }); }
 
     /* --------------------------------------------------------- Penalties -- */
+    // Nicer, clearer shootout scoreboard: a rounded panel under the main HUD
+    // bar with a big running score flanked by team names and two rows of
+    // scored/missed pips - the pip fill only ever reflects the SAME running
+    // _pensA/_pensB the beat generator built to land on the pre-decided score.
     function drawPenaltyBoard() {
       var b = penKickBeat || tl.beats[bi] || {};
-      var e = b._pensA !== undefined ? b : { _pensA: 0, _pensB: 0, _kicksA: 0, _kicksB: 0, _penSide: "A" };
+      var e = b._pensA !== undefined ? b : { _pensA: 0, _pensB: 0, _kicksA: 0, _kicksB: 0 };
 
-      var bx = px(0.5), by = py(0.10);
-      var dotGap = Math.min(22, W * 0.025);
-      var dotR = 6;
+      var panelW = clamp(W * 0.66, 230, 400), panelH = 76;
+      var bx0 = W / 2 - panelW / 2, by0 = 36;
 
-      ctx.font = "700 12px Inter, sans-serif";
-      ctx.fillStyle = colorA;
-      ctx.textAlign = "right";
-      ctx.textBaseline = "middle";
-      ctx.fillText(nameA, bx - (5.5 * dotGap) - 12, by);
+      ctx.save();
+      ctx.fillStyle = "rgba(7,20,13,.88)";
+      ctx.strokeStyle = "rgba(255,210,74,.55)"; ctx.lineWidth = 1.5;
+      roundRect(ctx, bx0, by0, panelW, panelH, 14);
+      ctx.fill(); ctx.stroke();
 
-      ctx.fillStyle = colorB;
-      ctx.fillText(nameB, bx - (5.5 * dotGap) - 12, by + 22);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = "800 10px Archivo, Inter, sans-serif"; ctx.fillStyle = "#ffd24a";
+      ctx.fillText("PENALTIES", W / 2, by0 + 13);
 
-      // Score in center
-      ctx.textAlign = "center";
-      ctx.font = "800 20px Archivo, Inter, sans-serif";
+      ctx.font = "900 23px Archivo, Inter, sans-serif"; ctx.fillStyle = "#fff";
+      ctx.fillText(e._pensA + " - " + e._pensB, W / 2, by0 + 36);
+
+      ctx.font = "700 10.5px Inter, sans-serif";
+      ctx.textAlign = "right"; ctx.fillStyle = colorA;
+      ctx.fillText(nameA.length > 13 ? nameA.slice(0, 12) + "…" : nameA, W / 2 - 26, by0 + 36);
+      ctx.textAlign = "left"; ctx.fillStyle = colorB;
+      ctx.fillText(nameB.length > 13 ? nameB.slice(0, 12) + "…" : nameB, W / 2 + 26, by0 + 36);
+
+      var maxShow = Math.min(10, Math.max(5, e._kicksA || 0, e._kicksB || 0));
+      var dotGap = Math.min(18, (panelW - 36) / Math.max(1, maxShow - 1 || 1));
+      var startX = W / 2 - ((maxShow - 1) * dotGap) / 2;
+      function pipRow(y, kicks, scored, oppScored) {
+        for (var i = 0; i < maxShow; i++) {
+          var dx = startX + i * dotGap, taken = i < kicks;
+          ctx.beginPath(); ctx.arc(dx, y, 4.5, 0, 7);
+          ctx.fillStyle = !taken ? "rgba(255,255,255,.16)" : (i < scored ? "#2ee87f" : "#ff5d73");
+          ctx.fill();
+        }
+      }
+      pipRow(by0 + 56, e._kicksA || 0, e._pensA, e._pensB);
+      pipRow(by0 + 68, e._kicksB || 0, e._pensB, e._pensA);
+      ctx.restore();
+    }
+
+    // Aerial penalty scene: the SAME pitch, ball and player-dot rendering as
+    // open play (drawPitch/drawPlayer/drawBall), just with only the kicker and
+    // keeper on the move near the goal being attacked. No separate front-on
+    // camera - "aerial view just like the main sim" by literally reusing it.
+    function drawPenGoalHighlight(goalX) {
+      var dirPitch = goalX > 0.5 ? 1 : -1;
+      var netDepth = 0.032;
+      var y0 = 0.5 - PEN_GOAL_HALF, y1 = 0.5 + PEN_GOAL_HALF;
+      var nearTop = { x: sx(goalX, y0), y: sy(goalX, y0) };
+      var nearBot = { x: sx(goalX, y1), y: sy(goalX, y1) };
+      var farTop  = { x: sx(goalX + dirPitch * netDepth, y0), y: sy(goalX + dirPitch * netDepth, y0) };
+      var farBot  = { x: sx(goalX + dirPitch * netDepth, y1), y: sy(goalX + dirPitch * netDepth, y1) };
+      var xs = [nearTop.x, nearBot.x, farTop.x, farBot.x], ys = [nearTop.y, nearBot.y, farTop.y, farBot.y];
+      var rx = Math.min.apply(null, xs), rx2 = Math.max.apply(null, xs);
+      var ry = Math.min.apply(null, ys), ry2 = Math.max.apply(null, ys);
+      var rw = Math.max(4, rx2 - rx), rh = Math.max(4, ry2 - ry);
+
+      var cx = (rx + rx2) / 2, cy = (ry + ry2) / 2, rad = Math.max(rw, rh) * 1.8 + 24;
+      var glow = ctx.createRadialGradient(cx, cy, 6, cx, cy, rad);
+      glow.addColorStop(0, "rgba(255,210,74,.20)"); glow.addColorStop(1, "rgba(255,210,74,0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
+
+      ctx.fillStyle = "rgba(12,30,20,.6)";
+      ctx.fillRect(rx, ry, rw, rh);
+      ctx.strokeStyle = "rgba(255,255,255,.20)"; ctx.lineWidth = 1;
+      var steps = 6;
+      for (var i = 0; i <= steps; i++) {
+        if (rw >= rh) { var nx = rx + (rw / steps) * i; ctx.beginPath(); ctx.moveTo(nx, ry); ctx.lineTo(nx, ry + rh); ctx.stroke(); }
+        else { var ny = ry + (rh / steps) * i; ctx.beginPath(); ctx.moveTo(rx, ny); ctx.lineTo(rx + rw, ny); ctx.stroke(); }
+      }
+
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 3.5;
+      ctx.beginPath(); ctx.moveTo(nearTop.x, nearTop.y); ctx.lineTo(nearBot.x, nearBot.y); ctx.stroke();
       ctx.fillStyle = "#fff";
-      ctx.fillText(e._pensA + " - " + e._pensB, bx, by - 4);
-
-      // Dots for A  green=scored, red=missed, white=upcoming
-      var maxShow = Math.max(5, e._kicksA || 0);
-      for (var i = 0; i < Math.min(maxShow, 10); i++) {
-        var dx = bx + (i - 2.5) * dotGap;
-        var taken = i < e._kicksA;
-        ctx.beginPath();
-        ctx.arc(dx, by, dotR, 0, 7);
-        if (!taken) ctx.fillStyle = "rgba(255,255,255,0.15)";
-        else if (i < e._pensA) ctx.fillStyle = "#2ee87f";
-        else ctx.fillStyle = "#ff5d73";
-        ctx.fill();
-        ctx.strokeStyle = "rgba(255,255,255,0.4)";
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      }
-
-      // Dots for B
-      for (var j = 0; j < Math.min(Math.max(5, e._kicksB || 0), 10); j++) {
-        var dy = bx + (j - 2.5) * dotGap;
-        var takenB = j < e._kicksB;
-        ctx.beginPath();
-        ctx.arc(dy, by + 22, dotR, 0, 7);
-        if (!takenB) ctx.fillStyle = "rgba(255,255,255,0.15)";
-        else if (j < e._pensB) ctx.fillStyle = "#ff5d73";
-        else ctx.fillStyle = "#2ee87f";
-        ctx.fill();
-        ctx.strokeStyle = "rgba(255,255,255,0.4)";
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      }
+      ctx.beginPath(); ctx.arc(nearTop.x, nearTop.y, 4, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(nearBot.x, nearBot.y, 4, 0, 7); ctx.fill();
     }
 
     function drawPenaltyScene() {
       var b = penKickBeat || tl.beats[bi] || {};
-      var side = b._penSide || "A";
-      var clr = side === "A" ? colorA : colorB;
+      drawPitch();
+      if (b.kind === "penalty_intro" || b._goalX == null) return;
 
-      // Dark background
-      ctx.fillStyle = "#0a1f14";
-      ctx.fillRect(FL, FT, FR - FL, FB - FT);
+      drawPenGoalHighlight(b._goalX);
 
-      // Goal frame
-      var goalW = (FR - FL) * 0.55;
-      var goalH = (FB - FT) * 0.22;
-      var gcx = px(0.5);
-      var goalTop = py(0.55);
-      var goalBottom = goalTop + goalH;
+      var spx = sx(b._spotX, 0.5), spy = sy(b._spotX, 0.5);
+      ctx.beginPath(); ctx.arc(spx, spy, 3.5, 0, 7); ctx.fillStyle = "rgba(255,255,255,.55)"; ctx.fill();
 
-      // Net
-      ctx.fillStyle = "rgba(20,40,30,0.6)";
-      var netX = gcx - goalW / 2, netY = goalTop;
+      if (b._keeperObj) drawPlayer(b._keeperObj);
+      if (b._kickerObj) drawPlayer(b._kickerObj);
 
-      // Shadow under goal
-      ctx.fillStyle = "rgba(0,0,0,0.3)";
-      ctx.beginPath();
-      ctx.ellipse(gcx, goalBottom + 8, goalW / 2 + 4, 10, 0, 0, 7);
-      ctx.fill();
-
-      // Goal posts (white)
-      ctx.strokeStyle = "#fff";
-      ctx.lineWidth = 4;
-      ctx.strokeRect(netX, netY, goalW, goalH);
-
-      // Crossbar thicker
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(netX - 2, netY - 2, goalW + 4, 6);
-
-      // Net grid (simple crosshatch)
-      ctx.strokeStyle = "rgba(255,255,255,0.12)";
-      ctx.lineWidth = 1;
-      var netSteps = 8;
-      for (var ni = 0; ni <= netSteps; ni++) {
-        var nx = netX + (goalW / netSteps) * ni;
-        ctx.beginPath(); ctx.moveTo(nx, netY); ctx.lineTo(nx, goalBottom); ctx.stroke();
-      }
-      for (var nj = 0; nj <= Math.round(netSteps * 0.6); nj++) {
-        var ny = netY + (goalH / Math.round(netSteps * 0.6)) * nj;
-        ctx.beginPath(); ctx.moveTo(netX, ny); ctx.lineTo(netX + goalW, ny); ctx.stroke();
-      }
-
-      // Grass line at bottom
-      ctx.fillStyle = "rgba(22,84,47,0.5)";
-      ctx.fillRect(FL, goalBottom + 6, FR - FL, 4);
-
-      // Penalty spot (a small white circle in front of goal)
-      var spotY = goalBottom + (FB - goalBottom) * 0.65;
-      var spotX = gcx;
-      ctx.beginPath();
-      ctx.arc(spotX, spotY, 4, 0, 7);
-      ctx.fillStyle = "rgba(255,255,255,0.3)";
-      ctx.fill();
-
-      // Keeper
-      var keeperY = goalTop + goalH / 2;
-      var keeperW = 20, keeperH = 32;
-      // Dive offset  keeper shifts slightly based on shot phase
-      var diveOff = 0;
-      if (penPhase === 2) {
-        diveOff = (penBallTarget.x - 0.5) * goalW * 0.25;
-      }
-      ctx.fillStyle = side === "A" ? "#13314a" : "#1a3a25";
-      roundRect(ctx, gcx + diveOff - keeperW / 2, keeperY - keeperH / 2, keeperW, keeperH, 4);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.3)";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      // Keeper hands (two small circles)
-      ctx.beginPath();
-      ctx.arc(gcx + diveOff - 7, keeperY - 10, 5, 0, 7);
-      ctx.arc(gcx + diveOff + 7, keeperY - 10, 5, 0, 7);
-      ctx.fillStyle = "#cfe8ff";
-      ctx.fill();
-
-      // Ball
-      var ballScreenX = gcx, ballScreenY = spotY;
-      if (penPhase >= 2) {
-        // Ball is flying toward goal
-        var shotProg = clamp((penTimer - 1.5) / 0.6, 0, 1);
-        ballScreenX = gcx + (penBallTarget.x - 0.5) * goalW * 0.42 * shotProg;
-        ballScreenY = spotY - (spotY - keeperY) * shotProg;
-      }
-      ctx.beginPath();
-      ctx.arc(ballScreenX, ballScreenY, 6, 0, 7);
-      ctx.fillStyle = "#fff";
-      ctx.shadowColor = "rgba(0,0,0,0.5)";
-      ctx.shadowBlur = 8;
-      ctx.fill();
-      ctx.shadowBlur = 0;
-
-      // Shooter (shown during windup)
-      if (penPhase >= 1 && penPhase < 2) {
-        var runProg = clamp((penTimer - 0.5) / 0.8, 0, 1);
-        var shooterX = gcx;
-        var shooterY = spotY + (FB - spotY) * 0.6 * (1 - runProg);
-        ctx.beginPath();
-        ctx.arc(shooterX, shooterY, 9, 0, 7);
-        ctx.fillStyle = clr;
-        ctx.fill();
-        ctx.fillStyle = "rgba(4,20,12,0.9)";
-        ctx.font = "700 9px Inter, sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(lastName(b._kickerName || "").slice(0, 4), shooterX, shooterY);
-      }
-
-      // Result splash
-      if (penPhase >= 3) {
-        var resultText = b._penResult === "goal" ? "GOAL!" : (b._penResult === "saved" ? "SAVED!" : "MISSED!");
-        var resultClr = b._penResult === "goal" ? "#2ee87f" : "#ff5d73";
-        ctx.font = "900 32px Archivo, Inter, sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillStyle = resultClr;
-        ctx.shadowColor = "rgba(0,0,0,0.7)";
-        ctx.shadowBlur = 12;
-        ctx.fillText(resultText, gcx, goalTop + goalH / 2);
-        ctx.shadowBlur = 0;
+      if (penPhase >= 3 && penGoalFlash > 0) {
+        var label = b._penResult === "goal" ? "GOAL!" : b._penResult === "saved" ? "SAVED!" : "MISSED!";
+        var lc = b._penResult === "goal" ? "#2ee87f" : b._penResult === "saved" ? "#4aa8ff" : "#ff5d73";
+        ctx.save();
+        ctx.globalAlpha = penGoalFlash;
+        ctx.font = "900 " + Math.round(clamp(Math.min(W, H) * 0.09, 22, 40)) + "px Archivo, Inter, sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillStyle = lc;
+        ctx.shadowColor = "rgba(0,0,0,.7)"; ctx.shadowBlur = 14;
+        ctx.fillText(label, W / 2, H * 0.42);
+        ctx.restore();
+        if (b._penResult === "goal") {
+          ctx.save(); ctx.globalAlpha = penGoalFlash * 0.28; ctx.fillStyle = "#2ee87f"; ctx.fillRect(0, 0, W, H); ctx.restore();
+        }
       }
     }
 
@@ -642,16 +587,34 @@
       var b = penKickBeat || tl.beats[bi] || {};
 
       if (b.kind === "penalty_intro") return;
+      var kicker = b._kickerObj, keeper = b._keeperObj;
 
-      if (penPhase === 0 && penTimer >= 0.5) { penPhase = 1; }
-      if (penPhase === 1 && penTimer >= 1.5) {
-        penPhase = 2;
-        penBallTarget.x = b._penDir || 0.5;
+      if (penPhase === 0) {
+        // Run-up: walk from behind the spot to the spot.
+        var t0 = clamp(penTimer / 0.5, 0, 1);
+        if (kicker) kicker.pos.x = b._runupX + (b._spotX - b._runupX) * t0;
+        if (penTimer >= 0.5) penPhase = 1;
       }
-      if (penPhase === 2 && penTimer >= 2.4) {
-        penPhase = 3;
-        dwell = 0.7;
+      if (penPhase === 1 && penTimer >= 1.5) { penPhase = 2; }
+      if (penPhase === 2) {
+        var prog = clamp((penTimer - 1.5) / 0.9, 0, 1);
+        // Saved shots converge exactly on the keeper. Goals carry JUST past the
+        // goal line - less than the net's drawn depth (0.032) so the ball visibly
+        // lands inside the net graphic, not past it. Misses carry further past
+        // (and their Y is already outside the goal mouth) so they read as
+        // clearly wide rather than a graze off the frame.
+        var dirX = b._goalX > 0.5 ? 1 : -1;
+        var overshoot = b._penResult === "goal" ? 0.022 : 0.05;
+        var endX = b._penResult === "saved" ? b._keeperLineX : b._goalX + dirX * overshoot;
+        ball.x = b._spotX + (endX - b._spotX) * prog;
+        ball.y = 0.5 + (b._targetY - 0.5) * prog;
+        if (keeper) {
+          var dp = clamp((penTimer - 1.5) / 0.55, 0, 1);
+          keeper.pos.y = 0.5 + (b._keeperTargetY - 0.5) * dp;
+        }
+        if (penTimer >= 2.4) { penPhase = 3; dwell = 0.7; }
       }
+      if (penPhase === 3) { penGoalFlash = Math.min(1, penGoalFlash + dt * 6); }
     }
 
     function enterBeat(i) {
@@ -664,12 +627,42 @@
       if (b.kind === "fulltime") { ball.moving = false; ball.dribble = false; dwell = 1.0; return; }
 
       if (b.kind === "penalty_intro") {
-        penaltyMode = true; penKickBeat = b; penPhase = 0; penTimer = 0;
+        penaltyMode = true; penKickBeat = b; penPhase = 0; penTimer = 0; penGoalFlash = 0;
         dwell = 2.2; return;
       }
       if (b.kind === "penalty_kick") {
-        penaltyMode = true; penKickBeat = b; penPhase = 0; penTimer = 0;
-        penBallTarget.x = b._penDir || 0.5; dwell = 0; return;
+        penaltyMode = true; penKickBeat = b; penPhase = 0; penTimer = 0; penGoalFlash = 0; dwell = 0;
+
+        // Compute + cache the kick's geometry once (not per-frame, so nothing
+        // jitters): which goal, where the spot/run-up/keeper line sit, and -
+        // critically - where the ball actually ends up. On-target aims land
+        // inside the goal mouth; a "missed" aim is pushed outside it, so the
+        // ball only ever crosses the line when _penResult is "goal".
+        if (b._targetY == null) {
+          var atk = b._penSide, def = atk === "A" ? "B" : "A";
+          var goalX = atk === "A" ? 1 : 0, dir = atk === "A" ? 1 : -1;
+          b._atk = atk; b._def = def; b._goalX = goalX;
+          b._spotX = goalX - dir * PEN_SPOT;
+          b._runupX = b._spotX - dir * 0.055;
+          b._keeperLineX = goalX - dir * 0.015;
+          var aim = b._penAim != null ? b._penAim : 0.5;
+          if (b._penResult === "missed") {
+            var sign = aim < 0.5 ? -1 : 1;
+            b._targetY = 0.5 + sign * (PEN_GOAL_HALF + 0.03 + Math.abs(aim - 0.5) * 0.10);
+          } else {
+            b._targetY = 0.5 + (aim - 0.5) * PEN_GOAL_HALF * 2 * 0.82;
+          }
+          if (b._penResult === "saved") b._keeperTargetY = b._targetY;
+          else if (b._penResult === "goal") b._keeperTargetY = 0.5 - (b._targetY - 0.5);
+          else b._keeperTargetY = 0.5 + (b._targetY - 0.5) * 0.3;
+        }
+
+        b._kickerObj = playerByName(b._atk, b._kickerName);
+        b._keeperObj = playersOf(b._def).filter(function (p) { return p.ptype === "GK"; })[0] || null;
+        if (b._kickerObj) { b._kickerObj.pos.x = b._runupX; b._kickerObj.pos.y = 0.5; }
+        if (b._keeperObj) { b._keeperObj.pos.x = b._keeperLineX; b._keeperObj.pos.y = 0.5; }
+        ball.x = b._spotX; ball.y = 0.5; ball.moving = false; ball.dribble = false; ball.carrier = null;
+        return;
       }
 
       if (b.kind === "cornerSetup") {
@@ -871,21 +864,25 @@
       return Math.min(90, Math.round(b.minute + (nb.minute - b.minute) * prog));
     }
 
+    function drawBall() {
+      var bx = sx(ball.x, ball.y), by = sy(ball.x, ball.y);
+      ctx.beginPath(); ctx.arc(bx, by, 5.5, 0, 7); ctx.fillStyle = "#fff";
+      ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 6; ctx.fill(); ctx.shadowBlur = 0;
+    }
+
     function draw() {
+      ctx.clearRect(0, 0, W, H);
       if (penaltyMode) {
-        ctx.clearRect(0, 0, W, H);
         drawPenaltyScene();
+        drawBall();
         drawPenaltyBoard();
         drawHud();
         return;
       }
-      ctx.clearRect(0, 0, W, H);
       drawPitch();
       players.forEach(drawPlayer);
       if (flash > 0) { ctx.fillStyle = "rgba(255,210,74," + (flash * 0.3) + ")"; ctx.fillRect(0, 0, W, H); if (!celebrating) flash = Math.max(0, flash - 0.03); }
-      var bx = sx(ball.x, ball.y), by = sy(ball.x, ball.y);
-      ctx.beginPath(); ctx.arc(bx, by, 5.5, 0, 7); ctx.fillStyle = "#fff";
-      ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 6; ctx.fill(); ctx.shadowBlur = 0;
+      drawBall();
       drawHud();
       if (banner && bannerT > 0 && !celebrating) { drawBanner(banner, bannerIcon, bannerT); bannerT = Math.max(0, bannerT - frameDt * 0.7); }
     }

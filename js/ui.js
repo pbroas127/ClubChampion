@@ -96,10 +96,13 @@
   }
 
   function wireHome() {
-    $("mode-grid").querySelectorAll(".mode-card").forEach(function (btn) {
+    // Ranked lives in its own grid below the season banner (separated from the
+    // 4 casual modes), so wire mode-cards across the whole home screen, not
+    // just #mode-grid.
+    $("screen-home").querySelectorAll(".mode-card").forEach(function (btn) {
       btn.addEventListener("click", function () {
         sel.mode = btn.dataset.mode;
-        $("mode-grid").querySelectorAll(".mode-card").forEach(function (b) { b.classList.remove("is-selected"); });
+        $("screen-home").querySelectorAll(".mode-card").forEach(function (b) { b.classList.remove("is-selected"); });
         btn.classList.add("is-selected");
         $("difficulty-row").hidden = sel.mode !== "cpu";
         updateKickoffButton();

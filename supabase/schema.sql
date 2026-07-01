@@ -219,22 +219,38 @@ create policy "matches insert own" on public.matches for insert with check (auth
 --   alter publication supabase_realtime add table public.profiles;
 
 -- ============================================================================
--- RANKED MODE  (run this whole block once; it is idempotent)
--- Siege-style ladder: one persistent hidden `mmr` per player (never shown raw —
--- the UI derives tier/division from it). New players start at mmr=100 (just
--- above the floor — Bronze, but climbable). Visible rank = 100 mmr per division,
--- 5 divisions per tier (500/tier): Bronze/Silver/Gold/Platinum/Diamond, then
+-- RANKED MODE  (run this whole block once; it is idempotent — safe to re-run
+-- in full any time, including just to re-apply after an earlier partial paste)
+-- Siege-style ladder: one persistent `mmr` per player. New players start at
+-- mmr=0 (true Bronze V floor). Visible rank = 100 mmr per division, 5
+-- divisions per tier (500/tier): Bronze/Silver/Gold/Platinum/Diamond, then
 -- Champion uncapped above 2500. Gain/loss uses standard Elo expected-score
 -- between the two players' mmr, but the K-FACTOR is looked up from your OWN
 -- pre-match mmr band, so low ranks swing up fast / down slow and high ranks
 -- swing up slow / down fast — regardless of who you're matched against, and it
 -- can never be gamed by a reset since mmr is permanent.
+--
+-- Monthly seasons: at each UTC calendar-month boundary, every player's mmr is
+-- halved (NOT reset to 0) — climbing back is faster than starting over, but
+-- rank is never "kept" outright. There's no cron job; the rollover is applied
+-- lazily and atomically the next time a player's row is touched (queueing,
+-- finishing a ranked match, or opening the Ranked tab), keyed off a stored
+-- season_number so it can only ever apply once per player per season.
 -- ============================================================================
 
 -- ---------- PROFILES: ranked columns --------------------------------------
-alter table public.profiles add column if not exists mmr            int not null default 100;
+alter table public.profiles add column if not exists mmr            int not null default 0;
+alter table public.profiles add column if not exists season_number  int not null default 0;
 alter table public.profiles add column if not exists ranked_wins    int not null default 0;
 alter table public.profiles add column if not exists ranked_losses  int not null default 0;
+-- `mmr` may already exist from an earlier run of this file with default 100 —
+-- ADD COLUMN IF NOT EXISTS won't retroactively change an existing column's
+-- default, so set it explicitly now new signups actually start at 0.
+alter table public.profiles alter column mmr set default 0;
+-- One-time, narrowly-scoped cleanup: anyone still sitting at the OLD 100
+-- default who has never actually finished a ranked match (0-0 record) gets
+-- dropped to the new 0 start. Never touches anyone who's actually played.
+update public.profiles set mmr = 0 where mmr = 100 and ranked_wins = 0 and ranked_losses = 0;
 
 -- ---------- Tag casual multiplayer rows so ranked ones are identifiable ---
 alter table public.match_lobby add column if not exists ranked boolean not null default false;
@@ -269,6 +285,45 @@ create or replace function public.ranked_k_loss(m int)
 returns int language sql immutable as $$
   select case when m < 500 then 18 when m < 1000 then 26 when m < 1500 then 34
               when m < 2000 then 46 else 58 end;
+$$;
+
+-- ---------- Monthly seasons (UTC calendar month) ---------------------------
+-- Season 1 = July 2026 (this feature's launch month), incrementing by 1 every
+-- UTC calendar month after that. Purely a function of "now" - no stored state
+-- needed to know what season it currently is.
+create or replace function public.ranked_current_season()
+returns int language sql stable as $$
+  select (extract(year from (now() at time zone 'utc'))::int * 12
+        + extract(month from (now() at time zone 'utc'))::int) - (2026 * 12 + 7) + 1;
+$$;
+
+-- Halve a player's mmr if they haven't been synced to the current season yet.
+-- Idempotent per season (guarded by season_number), and safe to call as often
+-- as you like - it's a no-op once caught up. Locks the row so two concurrent
+-- callers (e.g. a queue attempt and a result write racing at a season
+-- boundary) can't both apply the halving twice.
+create or replace function public.ranked_rollover_user(target uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare cur int; row_season int;
+begin
+  if target is null then return; end if;
+  cur := public.ranked_current_season();
+  select season_number into row_season from public.profiles where id = target for update;
+  if row_season is null then return; end if;   -- no such profile
+  if row_season < cur then
+    update public.profiles set mmr = floor(mmr / 2.0), season_number = cur where id = target;
+  end if;
+end;
+$$;
+
+-- Client-callable: force-sync MY OWN row to the current season right now (so
+-- opening the Ranked tab after a season flip shows the halved number
+-- immediately, instead of waiting for my next queue/match touch).
+create or replace function public.ranked_sync_me()
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  perform public.ranked_rollover_user(auth.uid());
+end;
 $$;
 
 -- ---------- Atomic matchmaking ---------------------------------------------
@@ -335,6 +390,12 @@ declare
   w_mmr int; l_mmr int; e_w numeric; e_l numeric; d_w int; d_l int;
 begin
   if winner is null or loser is null or winner = loser then return; end if;
+
+  -- Catch either player up to the current season BEFORE reading mmr, so a
+  -- result that lands right on a season boundary is never scored off a stale
+  -- pre-halving number.
+  perform public.ranked_rollover_user(winner);
+  perform public.ranked_rollover_user(loser);
 
   select mmr into w_mmr from public.profiles where id = winner;
   select mmr into l_mmr from public.profiles where id = loser;

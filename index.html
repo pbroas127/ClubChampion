@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://d8j0ntlcm91z4.cloudfront.net" crossorigin />   <!-- background image CDN -->
   <link rel="dns-prefetch" href="https://d8j0ntlcm91z4.cloudfront.net" />
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=27" />
+  <link rel="stylesheet" href="css/styles.css?v=28" />
 </head>
 <body>
   <div id="app">
@@ -56,7 +56,7 @@
 
         <div class="panel">
           <h2 class="panel-label">Select mode</h2>
-          <div class="mode-grid mode-grid--5" id="mode-grid">
+          <div class="mode-grid mode-grid--4" id="mode-grid">
             <button class="mode-card is-selected" data-mode="solo">
               <span class="mode-icon">🏆</span>
               <span class="mode-name">Season</span>
@@ -77,7 +77,15 @@
               <span class="mode-name">World Cup <span class="tag-lim">LIMITED</span></span>
               <span class="mode-desc">Draft national legends from World Cups 1990-2026. Group of 32 to the final.</span>
             </button>
-            <button class="mode-card" data-mode="ranked">
+          </div>
+
+          <div class="ranked-banner" id="ranked-banner">
+            <div class="ranked-banner-season">Season <b id="rb-season-num">1</b></div>
+            <div class="ranked-banner-cd" id="rb-countdown">–</div>
+          </div>
+
+          <div class="mode-grid mode-grid--ranked" id="mode-grid-ranked">
+            <button class="mode-card mode-card--ranked" data-mode="ranked">
               <span class="mode-icon">🏅</span>
               <span class="mode-name">Ranked 1v1 <span class="tag-live">LIVE</span></span>
               <span class="mode-desc">Global matchmaking. Climb the ladder, real managers only.</span>
@@ -219,16 +227,16 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=27"></script>
-  <script src="js/supabase.js?v=27"></script>
+  <script src="js/config.js?v=28"></script>
+  <script src="js/supabase.js?v=28"></script>
 
-  <script src="js/data.js?v=27"></script>
-  <script src="js/data-nations.js?v=27"></script>
-  <script src="js/engine.js?v=27"></script>
-  <script src="js/cpu.js?v=27"></script>
-  <script src="js/game.js?v=27"></script>
-  <script src="js/matchsim.js?v=27"></script>
-  <script src="js/app.js?v=27"></script>
-  <script src="js/ui.js?v=27"></script>
+  <script src="js/data.js?v=28"></script>
+  <script src="js/data-nations.js?v=28"></script>
+  <script src="js/engine.js?v=28"></script>
+  <script src="js/cpu.js?v=28"></script>
+  <script src="js/game.js?v=28"></script>
+  <script src="js/matchsim.js?v=28"></script>
+  <script src="js/app.js?v=28"></script>
+  <script src="js/ui.js?v=28"></script>
 </body>
 </html>

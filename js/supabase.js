@@ -522,8 +522,13 @@
       if (!client) return Promise.resolve(null);
       return auth.getUser().then(function (u) {
         if (!u) return null;
-        return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses").eq("id", u.id).maybeSingle()
-          .then(function (r) { return r.data; });
+        // Catch my own row up to the current season BEFORE reading it, so a
+        // season boundary I crossed since my last match shows correctly right
+        // away instead of waiting for my next queue/match touch.
+        return client.rpc("ranked_sync_me").catch(function () {}).then(function () {
+          return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses,season_number").eq("id", u.id).maybeSingle()
+            .then(function (r) { return r.data; });
+        });
       }).catch(function () { return null; });
     },
     leaderboardGlobal: function (limitN) {
