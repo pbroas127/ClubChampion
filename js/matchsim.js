@@ -94,7 +94,10 @@
 
     add(0, 600, { x: 0.5, y: 0.5 }, "A", "kickoff", "Kick-off!", false);
 
-    var nPoss = ri(rand, 11, 14);
+    // Fewer possessions = a shorter match without touching the pace of any
+    // individual action; floored so a high-scoring game always has enough
+    // possessions to host every goal (the assignment below needs one each).
+    var nPoss = Math.max(ri(rand, 8, 10), result.goalsA + result.goalsB + 2);
     var minutes = []; for (var i = 0; i < nPoss; i++) minutes.push(ri(rand, 3, 88));
     minutes.sort(function (a, b) { return a - b; });
     var pA = atkA / (atkA + atkB);
@@ -255,6 +258,9 @@
         } else if (type === "corner") {
           var topSide = rand() < 0.5;
           var taker = pick(rand, g.DEF.concat(g.MID));
+          // The ball must actually go out behind the goal before a corner can
+          // exist - a defender turns the attack behind first.
+          add(minute, 300, { x: side === "A" ? 1.03 : -0.03, y: topSide ? 0.30 : 0.70 }, side, "deflectOut", null, false);
           add(minute, 0, { x: side === "A" ? 0.985 : 0.015, y: topSide ? 0.06 : 0.94 }, side, "cornerSetup", "Corner Kick", false);
           add(minute, 420, { x: side === "A" ? 0.985 : 0.015, y: topSide ? 0.06 : 0.94 }, side, "corner", null, false);
           st[taker].touches++; st[taker].passes++; assist = taker;
@@ -282,6 +288,29 @@
         return goal ? pick(rand, ["GOAL! Towering header!", "GOAL! Headed home!", "GOAL! Tap-in!"]) : null;
       }
 
+      // Dead-ball restart from the defending keeper: everyone drops back into
+      // shape while the ball is placed/held (goalkickSetup), then it's played
+      // out. Used after every ball that dies behind the goal AND after any
+      // save the keeper holds onto - the "everyone backs out" moment.
+      function goalKickRestart(label) {
+        add(minute, 0, { x: def === "A" ? 0.13 : 0.87, y: 0.5 }, def, "goalkickSetup", label || "Goal Kick", false);
+        add(minute, 380, { x: def === "A" ? 0.40 : 0.60, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) }, def, "goalkick", null, false);
+      }
+      // A header from a corner that misses always ends up out behind the goal
+      // (that's what a missed header IS) -> ball out, goal kick.
+      function cornerHeader(headIdx) {
+        var res = pick(rand, ["save", "miss", "miss"]);
+        if (res === "save") {
+          add(minute, 340, goalMouth(side, rand, false), side, "save", "Header saved!", false, { _shooterIdx: headIdx });
+          dst[gkIdx(def)].saves++;
+          goalKickRestart("Keeper's Ball");
+        } else {
+          add(minute, 340, { x: side === "A" ? 1.03 : -0.03, y: clamp(0.5 + (rand() - 0.5) * 0.55, 0.2, 0.8) }, side, "miss", null, false, { _shooterIdx: headIdx });
+          goalKickRestart();
+        }
+        st[headIdx].touches++; st[headIdx].shots++;
+      }
+
       function finishNoGoal() {
         var type = pick(rand, ["save", "save", "save", "miss", "miss", "block", "tackle", "tackle", "tackle", "post"]);
         var shooter = attacker();
@@ -297,39 +326,35 @@
             var rebY = clamp(0.5 + (rand() - 0.5) * 0.4, 0.25, 0.75);
             add(minute, 380, { x: rebX, y: rebY }, def, "parry", null, false);
           } else if (saveOutcome < 0.65) {
+            // Tipped behind: the ball visibly crosses the byline FIRST, only
+            // then does the corner exist.
             var topSide = rand() < 0.5;
+            add(minute, 300, { x: side === "A" ? 1.03 : -0.03, y: topSide ? 0.32 : 0.68 }, side, "deflectOut", null, false);
             add(minute, 0, { x: side === "A" ? 0.985 : 0.015, y: topSide ? 0.06 : 0.94 }, side, "cornerSetup", "Corner Kick", false);
             add(minute, 420, { x: side === "A" ? 0.985 : 0.015, y: topSide ? 0.06 : 0.94 }, side, "corner", null, false);
-            var head = attacker(function (i) { return squads[side][i].r.ph; });
-            var res = pick(rand, ["save", "miss", "miss"]);
-            add(minute, 340, res === "save" ? goalMouth(side, rand, false) : goalMouth(side, rand, true),
-              side, res === "save" ? "save" : "miss",
-              res === "save" ? "Header saved!" : null, false, { _shooterIdx: head });
-            st[head].touches++; st[head].shots++;
-            if (res === "save") dst[gkIdx(def)].saves++;
+            cornerHeader(attacker(function (i) { return squads[side][i].r.ph; }));
+          } else {
+            // Keeper holds it - everyone backs out while he readies, then he
+            // distributes. No more play magically continuing off a caught ball.
+            goalKickRestart("Keeper's Ball");
           }
         } else if (type === "miss") {
           add(minute, 280, posOf(side, shooter, 1), side, "shot", null, false, { _shooterIdx: shooter });
           st[shooter].touches++; st[shooter].shots++;
           var wideTop = rand() < 0.5;
           add(minute, 360, { x: side === "A" ? 1.02 : -0.02, y: wideTop ? 0.18 : 0.82 }, side, "miss", null, false);
-          add(minute, 380, { x: side === "A" ? 0.40 : 0.60, y: clamp(0.5 + (rand() - 0.5) * 0.5, 0.2, 0.8) }, def, "goalkick", null, false);
+          goalKickRestart();
         } else if (type === "post") {
           add(minute, 280, posOf(side, shooter, 1), side, "shot", null, false, { _shooterIdx: shooter });
           st[shooter].touches++; st[shooter].shots++;
           var hitTop = rand() < 0.5;
           add(minute, 260, { x: side === "A" ? 0.985 : 0.015, y: hitTop ? 0.42 : 0.58 }, side, "postHit", "Off the post!", false);
           if (rand() < 0.3) {
+            // Rebound spins out behind the goal (x past the line) -> corner.
             add(minute, 320, { x: side === "A" ? 1.01 : -0.01, y: hitTop ? 0.04 : 0.96 }, side, "postBounce", null, false);
             add(minute, 0, { x: side === "A" ? 0.985 : 0.015, y: hitTop ? 0.06 : 0.94 }, side, "cornerSetup", "Corner Kick", false);
             add(minute, 420, { x: side === "A" ? 0.985 : 0.015, y: hitTop ? 0.06 : 0.94 }, side, "corner", null, false);
-            var head2 = attacker(function (i) { return squads[side][i].r.ph; });
-            var res2 = pick(rand, ["save", "miss", "miss"]);
-            add(minute, 340, res2 === "save" ? goalMouth(side, rand, false) : goalMouth(side, rand, true),
-              side, res2 === "save" ? "save" : "miss",
-              res2 === "save" ? "Header saved!" : null, false, { _shooterIdx: head2 });
-            st[head2].touches++; st[head2].shots++;
-            if (res2 === "save") dst[gkIdx(def)].saves++;
+            cornerHeader(attacker(function (i) { return squads[side][i].r.ph; }));
           } else {
             add(minute, 340, { x: side === "A" ? 0.80 : 0.20, y: hitTop ? 0.30 : 0.70 }, def, "postBounce", null, false);
           }
@@ -423,6 +448,7 @@
         case "pass":       return 0.44;
         case "dribble":    return 0.22;
         case "goalkick":   return 0.68;
+        case "deflectOut": return 0.52;
         case "blockOut":   return 0.42;
         case "kickoff":
         case "foul":       return 0.58;
@@ -436,13 +462,13 @@
     // receiver's feet; shots stay flat-out the whole way - they're struck,
     // not rolled.
     function ballEase(kind, u) {
-      if (/^(postBounce|parry|blockOut|miss|tackle)$/.test(kind)) return 1.15 - 0.85 * u;
+      if (/^(postBounce|parry|blockOut|miss|tackle|deflectOut)$/.test(kind)) return 1.15 - 0.85 * u;
       if (/^(pass|goalkick|kickoff|corner|cross)$/.test(kind)) return 1.05 - 0.35 * u;
       return 1;
     }
 
     function pickReceiver(b) {
-      if (/^(shot|goal|miss|postHit)$/.test(b.kind)) return null;
+      if (/^(shot|goal|miss|postHit|deflectOut)$/.test(b.kind)) return null;   // dead/loose - nobody receives
       if (b.kind === "save") return playersOf(b.posSide === "A" ? "B" : "A").filter(function (p) { return p.ptype === "GK"; })[0] || null;
       var pool = playersOf(b.posSide).filter(function (p) { return p.ptype !== "GK" && p !== ball.carrier; });
       if (!pool.length) pool = playersOf(b.posSide);
@@ -788,14 +814,21 @@
         return;
       }
 
-      if (b.kind === "cornerSetup") {
-        ball.x = b.ball.x; ball.y = b.ball.y; ball.moving = false; ball.dribble = false; ball.carrier = null;
-        b._formation = true; dwell = 1.3; return;
-      }
-      if (b.kind === "goalkickSetup") {
-        ball.x = b.posSide === "A" ? 0.13 : 0.87; ball.y = 0.5;
-        ball.moving = false; ball.dribble = false; ball.carrier = null;
-        b._formation = true; dwell = 1.1; return;
+      if (b.kind === "cornerSetup" || b.kind === "goalkickSetup") {
+        // Dead-ball restart: the ball ROLLS to the restart spot (it's being
+        // placed/carried back) while both teams drop into position - it never
+        // snaps there. The slow roll + long dwell is exactly the "everyone
+        // backs up while the keeper readies it" beat of a real restart.
+        var spot = b.kind === "goalkickSetup"
+          ? { x: b.posSide === "A" ? 0.13 : 0.87, y: 0.5 }
+          : { x: b.ball.x, y: b.ball.y };
+        ball.dribble = false; ball.carrier = null;
+        ball.p0 = { x: ball.x, y: ball.y }; ball.p2 = spot;
+        ball.p1 = { x: (ball.x + spot.x) / 2, y: (ball.y + spot.y) / 2 };
+        ball.len = Math.hypot(spot.x - ball.x, spot.y - ball.y) || 0.001;
+        ball.speed = 0.34 * fieldScale; ball.u = 0; ball.t = 0;
+        ball.moving = ball.len > 0.02;
+        b._formation = true; dwell = b.kind === "cornerSetup" ? 1.5 : 1.3; return;
       }
 
       if (b.kind === "goalkick") {
@@ -858,6 +891,7 @@
         postBounce: 0.75,   // loose ball settles after the rebound
         parry: 0.45,        // spilled - still live, but a beat of scramble
         tackle: 0.55, goalkick: 0.6, blockOut: 0.5,
+        deflectOut: 0.35,   // it's gone behind - brief beat before the corner is set
         corner: 0.15,       // delivery is met quickly - that's real
       };
       dwell = DWELL[b.kind] != null ? DWELL[b.kind] : 0.2;
@@ -901,7 +935,16 @@
       var b = tl.beats[bi]; if (!b) return;
       ball.t = (ball.t || 0) + dt;
 
-      if (b._formation) return;
+      if (b._formation) {
+        // Dead-ball setup: keep rolling the ball to the restart spot (set up
+        // in enterBeat); no onArrive here - the setup dwell owns the pause.
+        if (ball.moving) {
+          ball.u += (ball.speed * dt) / ball.len;
+          if (ball.u >= 1) { ball.u = 1; ball.moving = false; ball.x = ball.p2.x; ball.y = ball.p2.y; }
+          else { var uf = ball.u, iuf = 1 - uf; ball.x = iuf * iuf * ball.p0.x + 2 * iuf * uf * ball.p1.x + uf * uf * ball.p2.x; ball.y = iuf * iuf * ball.p0.y + 2 * iuf * uf * ball.p1.y + uf * uf * ball.p2.y; }
+        }
+        return;
+      }
 
       if (b._preShot && b._shooter) {
         var sp = b._shooter.pos;
@@ -995,6 +1038,32 @@
         var ty3 = clamp(p.pos0.y * 0.80 + ball.y * 0.20, 0.06, 0.94);
         return steer(p, tx3, ty3, 0.19, dt);
       });
+
+      // Gentle separation: when several players converge on the same spot
+      // (goalmouth scrambles, corners), nudge overlapping pairs apart so the
+      // action near goal stays readable instead of collapsing into one blob.
+      // Keepers are never displaced - they own their line.
+      var MIN_SEP = 0.034;
+      for (var i = 0; i < players.length; i++) {
+        for (var j = i + 1; j < players.length; j++) {
+          var pa = players[i], pb = players[j];
+          var sdx = pb.pos.x - pa.pos.x, sdy = pb.pos.y - pa.pos.y;
+          var sd = Math.hypot(sdx, sdy);
+          if (sd <= 0 || sd >= MIN_SEP) continue;
+          var nx = sdx / sd, ny = sdy / sd, push = (MIN_SEP - sd);
+          var aFixed = pa.ptype === "GK", bFixed = pb.ptype === "GK";
+          if (!aFixed) {
+            var aShare = bFixed ? push : push / 2;
+            pa.pos.x = clamp(pa.pos.x - nx * aShare, 0.03, 0.97);
+            pa.pos.y = clamp(pa.pos.y - ny * aShare, 0.06, 0.94);
+          }
+          if (!bFixed) {
+            var bShare = aFixed ? push : push / 2;
+            pb.pos.x = clamp(pb.pos.x + nx * bShare, 0.03, 0.97);
+            pb.pos.y = clamp(pb.pos.y + ny * bShare, 0.06, 0.94);
+          }
+        }
+      }
     }
 
     function steer(p, tx, ty, maxSp, dt) {
