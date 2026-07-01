@@ -121,17 +121,21 @@
       if (!poolA.length) poolA = squadA;
       if (!poolB.length) poolB = squadB;
 
-      // Build a kick sequence that nets to EXACTLY `target` goals - this is what
-      // guarantees the shootout the viewer watches always ends on the score the
-      // match was already decided on (result.pens), never something the
-      // animation invents independently.
-      function buildPenSequence(target, pool, side, r) {
+      // Build a kick sequence that nets to EXACTLY `target` goals across
+      // EXACTLY `roundCount` kicks - this is what guarantees the shootout the
+      // viewer watches always ends on the score the match was already decided
+      // on (result.pens), never something the animation invents independently.
+      // roundCount is shared by BOTH sides (computed below) rather than each
+      // side sizing its own sequence off its own target - a real shootout
+      // always has both sides take the SAME number of kicks (sudden death is
+      // played in pairs), and engine.js only returns the final goal counts,
+      // not the true round count, so reconstructing each side's length
+      // independently could land A on 5 kicks and B on 8, which played back
+      // as B taking three unanswered kicks with A never responding.
+      function buildPenSequence(target, roundCount, pool, side, r) {
         var seq = [];
-        for (var i = 0; i < 5; i++) seq.push(i < target);
+        for (var i = 0; i < roundCount; i++) seq.push(i < target);
         shuffle(seq, r);
-        var sum = seq.reduce(function (a, b) { return a + b; }, 0);
-        while (target > sum) { seq.push(true); sum++; }        // sudden death makes
-        while (target < sum && seq.length > 0) { seq.pop(); sum--; }
         return seq.map(function (goal) {
           var k = pool[Math.floor(r() * pool.length)];
           // Non-scoring kicks are portrayed as either a keeper save or an
@@ -143,30 +147,40 @@
         });
       }
 
-      var seqA = buildPenSequence(result.pens.a, poolA, "A", rand);
-      var seqB = buildPenSequence(result.pens.b, poolB, "B", rand);
+      var roundCount = Math.max(5, result.pens.a, result.pens.b);
+      var seqA = buildPenSequence(result.pens.a, roundCount, poolA, "A", rand);
+      var seqB = buildPenSequence(result.pens.b, roundCount, poolB, "B", rand);
       var maxLen = Math.max(seqA.length, seqB.length);
 
       var pensA = 0, pensB = 0, kickIdx = 0;
       for (var rnd = 0; rnd < maxLen; rnd++) {
         if (rnd < seqA.length) {
           var ka = seqA[rnd];
+          // "Pre" = the scoreboard/pips as they should still read WHILE this
+          // kick is being taken (kicker's own pip still grey/un-scored) - the
+          // renderer only swaps to the post-kick numbers once the kick is
+          // actually resolved (see drawPenaltyBoard), so the board can never
+          // spoil a kick before the ball's been struck.
+          var pensAPre = pensA, pensBPre = pensB;
+          var kicksA = 1 + Math.floor(kickIdx / 2), kicksB = Math.ceil(kickIdx / 2);
           pensA += ka.outcome === "goal" ? 1 : 0;
           add(91 + kickIdx, 3200, { x: 0.5, y: 0.5 }, "A", "penalty_kick", null, false, {
             _kickerName: ka.kicker, _penResult: ka.outcome, _penAim: ka.aim,
-            _pensA: pensA, _pensB: pensB,
-            _kicksA: 1 + Math.floor(kickIdx / 2), _kicksB: Math.ceil(kickIdx / 2),
+            _pensA: pensA, _pensB: pensB, _pensAPre: pensAPre, _pensBPre: pensBPre,
+            _kicksA: kicksA, _kicksB: kicksB, _kicksAPre: kicksA - 1, _kicksBPre: kicksB,
             _penSide: "A",
           });
           kickIdx++;
         }
         if (rnd < seqB.length) {
           var kb = seqB[rnd];
+          var pensAPre2 = pensA, pensBPre2 = pensB;
+          var kicksA2 = 1 + Math.floor(kickIdx / 2), kicksB2 = Math.ceil((kickIdx + 1) / 2);
           pensB += kb.outcome === "goal" ? 1 : 0;
           add(91 + kickIdx, 3200, { x: 0.5, y: 0.5 }, "B", "penalty_kick", null, false, {
             _kickerName: kb.kicker, _penResult: kb.outcome, _penAim: kb.aim,
-            _pensA: pensA, _pensB: pensB,
-            _kicksA: 1 + Math.floor(kickIdx / 2), _kicksB: Math.ceil((kickIdx + 1) / 2),
+            _pensA: pensA, _pensB: pensB, _pensAPre: pensAPre2, _pensBPre: pensBPre2,
+            _kicksA: kicksA2, _kicksB: kicksB2, _kicksAPre: kicksA2, _kicksBPre: kicksB2 - 1,
             _penSide: "B",
           });
           kickIdx++;
@@ -452,6 +466,7 @@
     var PEN_Z_GOAL = 1, PEN_Z_KEEPER = 0.961, PEN_Z_SPOT = 0.711, PEN_Z_RUNUP = 0.566;
     var PEN_Z_SIXYARD = 0.868, PEN_Z_BOX = 0.658;              // box near-edges, zoomed-X
     var PEN_GOAL_HALF = 0.093;                                   // goal mouth half-height, zoomed-Y
+    var PEN_KICK_DUR = 0.7, PEN_DIVE_DUR = 0.42;   // seconds: ball flight / keeper dive, phase 2
 
     function playerByName(side, name) {
       for (var i = 0; i < players.length; i++) {
@@ -484,7 +499,15 @@
     // _pensA/_pensB the beat generator built to land on the pre-decided score.
     function drawPenaltyBoard() {
       var b = penKickBeat || tl.beats[bi] || {};
-      var e = b._pensA !== undefined ? b : { _pensA: 0, _pensB: 0, _kicksA: 0, _kicksB: 0 };
+      // While a kick is still being taken (run-up through mid-flight), show
+      // the score/pips as they stood BEFORE this kick - only swap to the real
+      // post-kick numbers once the outcome actually lands (penPhase 3, same
+      // moment the GOAL!/SAVED!/MISSED! label appears), so the board can
+      // never spoil a kick before the ball's been struck.
+      var revealed = b.kind !== "penalty_kick" || penPhase >= 3;
+      var e = b._pensA === undefined ? { _pensA: 0, _pensB: 0, _kicksA: 0, _kicksB: 0 }
+        : revealed ? b
+        : { _pensA: b._pensAPre, _pensB: b._pensBPre, _kicksA: b._kicksAPre, _kicksB: b._kicksBPre };
 
       var panelW = clamp(W * 0.66, 230, 400), panelH = 76;
       var bx0 = W / 2 - panelW / 2, by0 = 36;
@@ -646,7 +669,10 @@
       }
       if (penPhase === 1 && penTimer >= 1.5) { penPhase = 2; }
       if (penPhase === 2) {
-        var prog = clamp((penTimer - 1.5) / 0.9, 0, 1);
+        // Ball flight + keeper dive are both a bit quicker than a literal
+        // real-time penalty so the strike reads as sharp/decisive rather than
+        // floaty (PEN_KICK_DUR/PEN_DIVE_DUR below).
+        var prog = clamp((penTimer - 1.5) / PEN_KICK_DUR, 0, 1);
         // Saved shots converge exactly on the keeper. Goals carry JUST past the
         // goal line - less than the net's drawn depth (~0.084 zoomed) so the
         // ball visibly lands inside the net graphic, not past it. Misses carry
@@ -657,10 +683,10 @@
         ball.x = PEN_Z_SPOT + (endX - PEN_Z_SPOT) * prog;
         ball.y = 0.5 + (b._targetY - 0.5) * prog;
         if (keeper) {
-          var dp = clamp((penTimer - 1.5) / 0.55, 0, 1);
+          var dp = clamp((penTimer - 1.5) / PEN_DIVE_DUR, 0, 1);
           keeper.pos.y = 0.5 + (b._keeperTargetY - 0.5) * dp;
         }
-        if (penTimer >= 2.4) { penPhase = 3; dwell = 0.7; }
+        if (penTimer >= 1.5 + PEN_KICK_DUR) { penPhase = 3; dwell = 0.7; }
       }
       if (penPhase === 3) { penGoalFlash = Math.min(1, penGoalFlash + dt * 6); }
     }
@@ -696,9 +722,18 @@
           } else {
             b._targetY = 0.5 + (aim - 0.5) * PEN_GOAL_HALF * 2 * 0.82;
           }
-          if (b._penResult === "saved") b._keeperTargetY = b._targetY;
-          else if (b._penResult === "goal") b._keeperTargetY = 0.5 - (b._targetY - 0.5);
-          else b._keeperTargetY = 0.5 + (b._targetY - 0.5) * 0.3;
+          if (b._penResult === "saved") {
+            b._keeperTargetY = b._targetY;
+          } else if (b._penResult === "goal") {
+            // Commit fully to a side, clearly AWAY from where the shot ends
+            // up - a plain mirror around center used to collapse back near
+            // the ball's own target for a near-central shot, which made the
+            // goal look like it went straight through the keeper's dive.
+            var awaySide = b._targetY >= 0.5 ? -1 : 1;
+            b._keeperTargetY = 0.5 + awaySide * PEN_GOAL_HALF * (0.85 + aim * 0.4);
+          } else {
+            b._keeperTargetY = 0.5 + (b._targetY - 0.5) * 0.3;
+          }
         }
 
         b._kickerObj = playerByName(b._atk, b._kickerName);
@@ -992,8 +1027,13 @@
       ctx.textAlign = "right"; ctx.fillStyle = colorB; ctx.fillText(nameB, W - 12, 15);
       ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.font = "900 16px Archivo, Inter, sans-serif";
       ctx.fillText(beat.scoreA + " - " + beat.scoreB, W / 2, 15);
-      ctx.font = "700 11px Inter, sans-serif"; ctx.fillStyle = "#9fcfb4";
-      ctx.fillText(getDisplayMinute() + "'", W / 2, 40);
+      // Minute clock is meaningless once penalties start (frozen at 90'+) and
+      // sits right where the penalty scoreboard panel begins - drop it so it
+      // never overlaps that panel's "PENALTIES" title.
+      if (!penaltyMode) {
+        ctx.font = "700 11px Inter, sans-serif"; ctx.fillStyle = "#9fcfb4";
+        ctx.fillText(getDisplayMinute() + "'", W / 2, 40);
+      }
     }
 
     function drawBanner(text, icon, a) {

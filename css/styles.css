@@ -629,10 +629,18 @@ body[data-screen="stats"] .screen--page::before {
 /* -- Post-match ranked results popup ----------------------------------------
    Same .rank-hero component as the tab, plus a "Results" card that pops in
    below it once the modal is on screen. */
-.rr-card { max-width: 400px; max-height: 90vh; overflow: auto; text-align: center; padding-top: 30px; }
+/* width (not just max-width) because .modal uses place-items:center, which
+   shrink-wraps grid items to their content - without an explicit width the
+   card was sizing off its narrowest child (the 320px progress bar) and
+   staying too narrow for the kicker line, right under the close button. */
+.rr-card { width: 92vw; max-width: 460px; max-height: 90vh; overflow: auto; text-align: center; padding-top: 30px; }
 .rr-kicker {
   font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted);
   font-weight: 700; margin-bottom: 4px;
+  /* Centered text needs its own clearance from the absolutely-positioned
+     modal-close button (top-right) - without this it can center itself
+     right underneath the button and lose its last couple of characters. */
+  padding: 0 40px;
 }
 .rr-resultbox {
   margin-top: 20px; padding: 16px 18px; border-radius: 14px; background: var(--panel-2);

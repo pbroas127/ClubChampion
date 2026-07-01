@@ -1387,7 +1387,7 @@
           '<label class="toggle">' +
             '<input type="checkbox" disabled' + (row.pro ? " checked" : "") + ' />' +
             '<span class="toggle-track"><span class="toggle-thumb"></span></span>' +
-            '<span class="toggle-label"><b>Pro Mode</b><small>Locked to inviter\'s choice.</small></span>' +
+            '<span class="toggle-label"><b>Pro Mode</b><small>' + (row.ranked ? "Ranked is always Pro." : "Locked to inviter's choice.") + '</small></span>' +
           '</label></div>' +
       '</div>' +
       '<div class="mpl-actions">' +

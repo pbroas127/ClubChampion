@@ -371,8 +371,10 @@ begin
   my_seed := floor(random() * 2147483647)::bigint;
   first_picker := case when random() < 0.5 then me else opp.user_id end;
 
+  -- Ranked is always Pro Mode (ratings hidden) - no casual/pro switch, it's
+  -- the harder, knowledge-only ladder by design.
   insert into public.match_lobby (host, guest, pool, pro, seed, first_pick, phase, ranked)
-    values (me, opp.user_id, 'club', false, my_seed, first_picker, 'formation', true)
+    values (me, opp.user_id, 'club', true, my_seed, first_picker, 'formation', true)
     returning id into new_lobby_id;
 
   update public.ranked_queue set matched_lobby_id = new_lobby_id where user_id = me;
