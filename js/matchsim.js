@@ -434,13 +434,24 @@
 
     var bi = -1, dwell = 0, celebrating = false, celebrateUntil = 0;
     var banner = null, bannerIcon = null, bannerT = 0, flash = 0, raf = null, last = 0, finished = false, frameDt = 0;
-    // Penalties reuse the SAME aerial pitch/ball/player-dot rendering as open
-    // play - penPhase/penTimer just drive two of the existing `players` (kicker,
-    // keeper) and the shared `ball` to new positions each kick. No separate
-    // front-on camera or player representation.
+    // Penalties reuse the SAME aerial player-dot/ball rendering as open play
+    // (drawPlayer/drawBall via sx/sy) - penPhase/penTimer just drive two of the
+    // existing `players` (kicker, keeper) and the shared `ball` to new
+    // positions each kick. The CAMERA, though, is zoomed: rather than the full
+    // pitch, positions during a penalty live directly in a "zoomed" logical
+    // 0..1 space that only covers the ~38% of pitch length nearest the goal
+    // being attacked (X) and the middle ~70% of pitch width (Y) - fed through
+    // the SAME sx/sy projection as everything else, so it still automatically
+    // adapts to portrait/landscape. In this space, 1 = the goal line, ALWAYS
+    // (regardless of which real side is attacking), which is what lets every
+    // position constant below be a single number instead of needing a
+    // left/right mirror for every kick.
     var penaltyMode = false, penKickBeat = null, penPhase = 0, penTimer = 0;
     var penGoalFlash = 0;   // 0-1, fades in on resolution for the result banner
-    var PEN_SPOT = 0.11, PEN_GOAL_HALF = 0.065;   // stylized pitch-fraction geometry
+    var PEN_ZOOM_X = 0.38, PEN_ZOOM_Y0 = 0.15, PEN_ZOOM_Y1 = 0.85;
+    var PEN_Z_GOAL = 1, PEN_Z_KEEPER = 0.961, PEN_Z_SPOT = 0.711, PEN_Z_RUNUP = 0.566;
+    var PEN_Z_SIXYARD = 0.868, PEN_Z_BOX = 0.658;              // box near-edges, zoomed-X
+    var PEN_GOAL_HALF = 0.093;                                   // goal mouth half-height, zoomed-Y
 
     function playerByName(side, name) {
       for (var i = 0; i < players.length; i++) {
@@ -513,54 +524,92 @@
       ctx.restore();
     }
 
-    // Aerial penalty scene: the SAME pitch, ball and player-dot rendering as
-    // open play (drawPitch/drawPlayer/drawBall), just with only the kicker and
-    // keeper on the move near the goal being attacked. No separate front-on
-    // camera - "aerial view just like the main sim" by literally reusing it.
-    function drawPenGoalHighlight(goalX) {
-      var dirPitch = goalX > 0.5 ? 1 : -1;
-      var netDepth = 0.032;
+    // Zoomed penalty scene: a close-up aerial camera on just the goal being
+    // attacked - same visual language as the open-play pitch (grass, box
+    // markings, player dots) but only ~38% of the pitch length and the middle
+    // ~70% of its width, so the goal genuinely fills the frame instead of
+    // sitting in the corner of a wide shot of an empty pitch. Every position
+    // here (goal/spot/run-up/keeper line, drawn via zx/zy) already lives in
+    // that zoomed space, fed through the SAME sx/sy projection as the real
+    // pitch so it still adapts correctly to portrait vs landscape.
+    function zx(x, y) { return sx(x, y); }
+    function zy(x, y) { return sy(x, y); }
+
+    function drawPenaltyPitchZoomed() {
+      var g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, "#1a5c33"); g.addColorStop(1, "#123f26");
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+      // Mowing stripes across the crop, oriented for the current camera.
+      ctx.fillStyle = "rgba(255,255,255,.045)";
+      var stripes = 5;
+      for (var s = 0; s < stripes; s++) {
+        if (s % 2 !== 1) continue;
+        var a = { x: zx(s / stripes, 0), y: zy(s / stripes, 0) };
+        var b2 = { x: zx((s + 1) / stripes, 1), y: zy((s + 1) / stripes, 1) };
+        ctx.fillRect(Math.min(a.x, b2.x), Math.min(a.y, b2.y), Math.abs(b2.x - a.x) || 2, Math.abs(b2.y - a.y) || 2);
+      }
+
+      function zoomedRect(x0, y0, x1, y1) {
+        var p0 = { x: zx(x0, y0), y: zy(x0, y0) }, p1 = { x: zx(x1, y1), y: zy(x1, y1) };
+        return { x: Math.min(p0.x, p1.x), y: Math.min(p0.y, p1.y), w: Math.abs(p1.x - p0.x), h: Math.abs(p1.y - p0.y) };
+      }
+
+      ctx.strokeStyle = "rgba(255,255,255,.8)"; ctx.lineWidth = 2.5;
+      var box = zoomedRect(PEN_Z_BOX, 0.5 - PEN_GOAL_HALF * 3.4, 1, 0.5 + PEN_GOAL_HALF * 3.4);
+      ctx.strokeRect(box.x, box.y, box.w, box.h);
+      var six = zoomedRect(PEN_Z_SIXYARD, 0.5 - PEN_GOAL_HALF * 1.7, 1, 0.5 + PEN_GOAL_HALF * 1.7);
+      ctx.strokeRect(six.x, six.y, six.w, six.h);
+
+      // Penalty arc: the "D" bulging away from goal, centered on the spot.
+      var spot = { x: zx(PEN_Z_SPOT, 0.5), y: zy(PEN_Z_SPOT, 0.5) };
+      var edge = { x: zx(PEN_Z_BOX, 0.5), y: zy(PEN_Z_BOX, 0.5) };
+      var arcR = Math.hypot(spot.x - edge.x, spot.y - edge.y) * 1.55;
+      var awayAngle = Math.atan2(edge.y - spot.y, edge.x - spot.x);
+      ctx.beginPath(); ctx.arc(spot.x, spot.y, arcR, awayAngle - 0.95, awayAngle + 0.95); ctx.stroke();
+
+      ctx.beginPath(); ctx.arc(spot.x, spot.y, 4, 0, 7); ctx.fillStyle = "rgba(255,255,255,.65)"; ctx.fill();
+    }
+
+    function drawPenGoalHighlight() {
+      var netDepth = 0.14;
       var y0 = 0.5 - PEN_GOAL_HALF, y1 = 0.5 + PEN_GOAL_HALF;
-      var nearTop = { x: sx(goalX, y0), y: sy(goalX, y0) };
-      var nearBot = { x: sx(goalX, y1), y: sy(goalX, y1) };
-      var farTop  = { x: sx(goalX + dirPitch * netDepth, y0), y: sy(goalX + dirPitch * netDepth, y0) };
-      var farBot  = { x: sx(goalX + dirPitch * netDepth, y1), y: sy(goalX + dirPitch * netDepth, y1) };
+      var nearTop = { x: zx(PEN_Z_GOAL, y0), y: zy(PEN_Z_GOAL, y0) };
+      var nearBot = { x: zx(PEN_Z_GOAL, y1), y: zy(PEN_Z_GOAL, y1) };
+      var farTop  = { x: zx(PEN_Z_GOAL + netDepth, y0), y: zy(PEN_Z_GOAL + netDepth, y0) };
+      var farBot  = { x: zx(PEN_Z_GOAL + netDepth, y1), y: zy(PEN_Z_GOAL + netDepth, y1) };
       var xs = [nearTop.x, nearBot.x, farTop.x, farBot.x], ys = [nearTop.y, nearBot.y, farTop.y, farBot.y];
       var rx = Math.min.apply(null, xs), rx2 = Math.max.apply(null, xs);
       var ry = Math.min.apply(null, ys), ry2 = Math.max.apply(null, ys);
       var rw = Math.max(4, rx2 - rx), rh = Math.max(4, ry2 - ry);
 
-      var cx = (rx + rx2) / 2, cy = (ry + ry2) / 2, rad = Math.max(rw, rh) * 1.8 + 24;
+      var cx = (rx + rx2) / 2, cy = (ry + ry2) / 2, rad = Math.max(rw, rh) * 1.9 + 30;
       var glow = ctx.createRadialGradient(cx, cy, 6, cx, cy, rad);
-      glow.addColorStop(0, "rgba(255,210,74,.20)"); glow.addColorStop(1, "rgba(255,210,74,0)");
+      glow.addColorStop(0, "rgba(255,210,74,.24)"); glow.addColorStop(1, "rgba(255,210,74,0)");
       ctx.fillStyle = glow;
       ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
 
-      ctx.fillStyle = "rgba(12,30,20,.6)";
+      ctx.fillStyle = "rgba(10,26,18,.65)";
       ctx.fillRect(rx, ry, rw, rh);
-      ctx.strokeStyle = "rgba(255,255,255,.20)"; ctx.lineWidth = 1;
-      var steps = 6;
+      ctx.strokeStyle = "rgba(255,255,255,.22)"; ctx.lineWidth = 1;
+      var steps = 7;
       for (var i = 0; i <= steps; i++) {
         if (rw >= rh) { var nx = rx + (rw / steps) * i; ctx.beginPath(); ctx.moveTo(nx, ry); ctx.lineTo(nx, ry + rh); ctx.stroke(); }
         else { var ny = ry + (rh / steps) * i; ctx.beginPath(); ctx.moveTo(rx, ny); ctx.lineTo(rx + rw, ny); ctx.stroke(); }
       }
 
-      ctx.strokeStyle = "#fff"; ctx.lineWidth = 3.5;
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 4;
       ctx.beginPath(); ctx.moveTo(nearTop.x, nearTop.y); ctx.lineTo(nearBot.x, nearBot.y); ctx.stroke();
       ctx.fillStyle = "#fff";
-      ctx.beginPath(); ctx.arc(nearTop.x, nearTop.y, 4, 0, 7); ctx.fill();
-      ctx.beginPath(); ctx.arc(nearBot.x, nearBot.y, 4, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(nearTop.x, nearTop.y, 5, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(nearBot.x, nearBot.y, 5, 0, 7); ctx.fill();
     }
 
     function drawPenaltyScene() {
       var b = penKickBeat || tl.beats[bi] || {};
-      drawPitch();
-      if (b.kind === "penalty_intro" || b._goalX == null) return;
-
-      drawPenGoalHighlight(b._goalX);
-
-      var spx = sx(b._spotX, 0.5), spy = sy(b._spotX, 0.5);
-      ctx.beginPath(); ctx.arc(spx, spy, 3.5, 0, 7); ctx.fillStyle = "rgba(255,255,255,.55)"; ctx.fill();
+      drawPenaltyPitchZoomed();
+      drawPenGoalHighlight();
+      if (b.kind === "penalty_intro") return;   // establishing shot only - no kicker/keeper yet
 
       if (b._keeperObj) drawPlayer(b._keeperObj);
       if (b._kickerObj) drawPlayer(b._kickerObj);
@@ -570,11 +619,11 @@
         var lc = b._penResult === "goal" ? "#2ee87f" : b._penResult === "saved" ? "#4aa8ff" : "#ff5d73";
         ctx.save();
         ctx.globalAlpha = penGoalFlash;
-        ctx.font = "900 " + Math.round(clamp(Math.min(W, H) * 0.09, 22, 40)) + "px Archivo, Inter, sans-serif";
+        ctx.font = "900 " + Math.round(clamp(Math.min(W, H) * 0.1, 24, 44)) + "px Archivo, Inter, sans-serif";
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillStyle = lc;
-        ctx.shadowColor = "rgba(0,0,0,.7)"; ctx.shadowBlur = 14;
-        ctx.fillText(label, W / 2, H * 0.42);
+        ctx.shadowColor = "rgba(0,0,0,.7)"; ctx.shadowBlur = 16;
+        ctx.fillText(label, W / 2, H * 0.38);
         ctx.restore();
         if (b._penResult === "goal") {
           ctx.save(); ctx.globalAlpha = penGoalFlash * 0.28; ctx.fillStyle = "#2ee87f"; ctx.fillRect(0, 0, W, H); ctx.restore();
@@ -592,21 +641,20 @@
       if (penPhase === 0) {
         // Run-up: walk from behind the spot to the spot.
         var t0 = clamp(penTimer / 0.5, 0, 1);
-        if (kicker) kicker.pos.x = b._runupX + (b._spotX - b._runupX) * t0;
+        if (kicker) kicker.pos.x = PEN_Z_RUNUP + (PEN_Z_SPOT - PEN_Z_RUNUP) * t0;
         if (penTimer >= 0.5) penPhase = 1;
       }
       if (penPhase === 1 && penTimer >= 1.5) { penPhase = 2; }
       if (penPhase === 2) {
         var prog = clamp((penTimer - 1.5) / 0.9, 0, 1);
         // Saved shots converge exactly on the keeper. Goals carry JUST past the
-        // goal line - less than the net's drawn depth (0.032) so the ball visibly
-        // lands inside the net graphic, not past it. Misses carry further past
-        // (and their Y is already outside the goal mouth) so they read as
-        // clearly wide rather than a graze off the frame.
-        var dirX = b._goalX > 0.5 ? 1 : -1;
-        var overshoot = b._penResult === "goal" ? 0.022 : 0.05;
-        var endX = b._penResult === "saved" ? b._keeperLineX : b._goalX + dirX * overshoot;
-        ball.x = b._spotX + (endX - b._spotX) * prog;
+        // goal line - less than the net's drawn depth (~0.084 zoomed) so the
+        // ball visibly lands inside the net graphic, not past it. Misses carry
+        // further past (and their Y is already outside the goal mouth) so they
+        // read as clearly wide rather than a graze off the frame.
+        var overshoot = b._penResult === "goal" ? 0.05 : 0.12;
+        var endX = b._penResult === "saved" ? PEN_Z_KEEPER : PEN_Z_GOAL + overshoot;
+        ball.x = PEN_Z_SPOT + (endX - PEN_Z_SPOT) * prog;
         ball.y = 0.5 + (b._targetY - 0.5) * prog;
         if (keeper) {
           var dp = clamp((penTimer - 1.5) / 0.55, 0, 1);
@@ -634,21 +682,17 @@
         penaltyMode = true; penKickBeat = b; penPhase = 0; penTimer = 0; penGoalFlash = 0; dwell = 0;
 
         // Compute + cache the kick's geometry once (not per-frame, so nothing
-        // jitters): which goal, where the spot/run-up/keeper line sit, and -
-        // critically - where the ball actually ends up. On-target aims land
-        // inside the goal mouth; a "missed" aim is pushed outside it, so the
-        // ball only ever crosses the line when _penResult is "goal".
+        // jitters), directly in the zoomed camera space (goal always at X=1).
+        // On-target aims land inside the goal mouth; a "missed" aim is pushed
+        // outside it, so the ball only ever crosses the line when _penResult
+        // is "goal".
         if (b._targetY == null) {
           var atk = b._penSide, def = atk === "A" ? "B" : "A";
-          var goalX = atk === "A" ? 1 : 0, dir = atk === "A" ? 1 : -1;
-          b._atk = atk; b._def = def; b._goalX = goalX;
-          b._spotX = goalX - dir * PEN_SPOT;
-          b._runupX = b._spotX - dir * 0.055;
-          b._keeperLineX = goalX - dir * 0.015;
+          b._atk = atk; b._def = def;
           var aim = b._penAim != null ? b._penAim : 0.5;
           if (b._penResult === "missed") {
             var sign = aim < 0.5 ? -1 : 1;
-            b._targetY = 0.5 + sign * (PEN_GOAL_HALF + 0.03 + Math.abs(aim - 0.5) * 0.10);
+            b._targetY = 0.5 + sign * (PEN_GOAL_HALF + 0.045 + Math.abs(aim - 0.5) * 0.14);
           } else {
             b._targetY = 0.5 + (aim - 0.5) * PEN_GOAL_HALF * 2 * 0.82;
           }
@@ -659,9 +703,9 @@
 
         b._kickerObj = playerByName(b._atk, b._kickerName);
         b._keeperObj = playersOf(b._def).filter(function (p) { return p.ptype === "GK"; })[0] || null;
-        if (b._kickerObj) { b._kickerObj.pos.x = b._runupX; b._kickerObj.pos.y = 0.5; }
-        if (b._keeperObj) { b._keeperObj.pos.x = b._keeperLineX; b._keeperObj.pos.y = 0.5; }
-        ball.x = b._spotX; ball.y = 0.5; ball.moving = false; ball.dribble = false; ball.carrier = null;
+        if (b._kickerObj) { b._kickerObj.pos.x = PEN_Z_RUNUP; b._kickerObj.pos.y = 0.5; }
+        if (b._keeperObj) { b._keeperObj.pos.x = PEN_Z_KEEPER; b._keeperObj.pos.y = 0.5; }
+        ball.x = PEN_Z_SPOT; ball.y = 0.5; ball.moving = false; ball.dribble = false; ball.carrier = null;
         return;
       }
 

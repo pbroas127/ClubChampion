@@ -923,17 +923,7 @@
       var box = $("rank-me"); if (!box) return;
       if (!s) { showRankMeError("Couldn't load your rank."); return; }
       var t = tierForMmr(s.mmr);
-      var pct = t.division ? t.pointsInDivision : 100;
-      box.innerHTML =
-        '<div class="rank-me-top">' +
-          '<div class="rank-badge rank-tier-' + t.tierIndex + '">' + rankTierEmoji(t.tierIndex) + '</div>' +
-          '<div class="rank-me-info"><div class="rank-me-tier">' + esc(t.label) + '</div>' +
-            '<div class="rank-me-wl">' + s.ranked_wins + "-" + s.ranked_losses + " · " + t.mmr + " pts</div></div>" +
-        "</div>" +
-        (t.division
-          ? '<div class="rank-progress"><div class="rank-progress-fill" style="width:' + pct + '%"></div></div>' +
-            '<div class="rank-progress-label">' + t.pointsInDivision + "/100 to " + nextDivisionLabel(t) + "</div>"
-          : '<div class="rank-progress-label">Top of the ladder - no ceiling.</div>');
+      box.innerHTML = rankHeroHTML("rank-tab", t, s.ranked_wins, s.ranked_losses);
     }).catch(function (e) {
       console.error("renderRanked myStats failed:", e && e.message);
       // Show the ACTUAL error text - this is exactly the class of failure
@@ -952,9 +942,6 @@
     var rb = $("rank-me-retry"); if (rb) rb.onclick = renderRanked;
   }
 
-  function rankTierEmoji(tierIndex) {
-    return ["🥉", "⚪", "🥇", "💠", "💎", "👑"][tierIndex] || "🏅";
-  }
   function nextDivisionLabel(t) {
     if (t.division === 1) {
       var nextTier = RANKED_TIERS[t.tierIndex + 1] || "Champion";
@@ -981,6 +968,7 @@
         var me = r.id === state.user.id;
         return '<div class="rank-row' + (me ? " is-me" : "") + '">' +
           '<div class="rank-row-pos">' + (i + 1) + '</div>' +
+          '<img class="rank-row-badge" src="' + (RANKED_BADGE_URLS[t.tierIndex] || RANKED_BADGE_URLS[0]) + '" alt="" />' +
           '<div class="rank-row-name">' + esc(r.username) + (me ? " (you)" : "") + '</div>' +
           '<div class="rank-row-tier">' + esc(t.label) + '</div>' +
           '<div class="rank-row-wl">' + r.ranked_wins + "-" + r.ranked_losses + '</div>' +
@@ -1006,6 +994,12 @@
   // anywhere can be matched.
   var rankedQ = { active: false, channel: null, pollHandle: null, elapsed: 0 };
 
+  // Every ranked game played since the last FRESH entry into ranked (i.e.
+  // since the Kick Off button on the home screen, not "Find Another Match" -
+  // that keeps the same session going). Consumed and cleared once the results
+  // popup is shown on Return Home.
+  var rankedSession = { games: [], startMmr: null };
+
   // 100 mmr per division, 5 divisions per tier (500/tier). Matches the
   // ranked_k_win/ranked_k_loss bands in schema.sql 1:1 (0-499/500-999/.../2000+).
   var RANKED_TIERS = ["Bronze", "Silver", "Gold", "Platinum", "Diamond"];
@@ -1025,9 +1019,107 @@
     };
   }
 
+  // Transparent-PNG shield badges, one per tier (Bronze/Silver/Gold/Platinum/
+  // Diamond/Champion), generated via Higgsfield + background removal.
+  var RANKED_BADGE_URLS = [
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260701_172403_5758a2a6-2212-4c6e-a7ba-d38e5d2fb9c2.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260701_172411_721570d2-fcd7-4fe0-8cd4-faa02a2a8fc6.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260701_172423_ac8ce5c5-4469-4215-afd4-226e78f9390c.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260701_172435_2f1c0a27-98e0-4ec3-a317-b45004bf79ed.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260701_172442_92aee393-bdb0-45f2-91a4-4c8f239c5fd3.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260701_172449_9163075f-0f31-46e6-bb91-ee1ae96c6890.png",
+  ];
+
+  // Shared "hero" header used by BOTH the Ranked tab and the post-match popup:
+  // big centered badge, tier name above it, record below, animated bar below
+  // that. idPrefix keeps element ids unique when both could theoretically
+  // exist in the DOM at once.
+  function rankHeroHTML(idPrefix, t, wins, losses) {
+    var barPct = t.division ? t.pointsInDivision : 100;
+    var badgeUrl = RANKED_BADGE_URLS[t.tierIndex] || RANKED_BADGE_URLS[0];
+    return '<div class="rank-hero">' +
+      '<div class="rank-hero-name rank-tier-' + t.tierIndex + '" id="' + idPrefix + '-name">' + esc(t.label) + '</div>' +
+      '<div class="rank-hero-badge-wrap"><img class="rank-hero-badge" id="' + idPrefix + '-badge" src="' + badgeUrl + '" alt="' + esc(t.label) + ' badge" /></div>' +
+      '<div class="rank-hero-record" id="' + idPrefix + '-record">' + wins + "-" + losses + " · " + t.mmr + " pts</div>" +
+      '<div class="rank-hero-bar-wrap">' +
+        '<div class="rank-hero-bar"><div class="rank-hero-bar-fill rank-tier-' + t.tierIndex + '" id="' + idPrefix + '-barfill" style="width:' + barPct + '%"></div></div>' +
+        '<div class="rank-hero-bar-label" id="' + idPrefix + '-barlabel">' +
+          (t.division ? (t.pointsInDivision + "/100 to " + nextDivisionLabel(t)) : "Top of the ladder - no ceiling.") +
+        "</div>" +
+      "</div>" +
+    "</div>";
+  }
+
+  function clampPct(v) { return Math.max(0, Math.min(100, v)); }
+  function tweenBarWidth(fillEl, fromPct, toPct, ms, cb) {
+    if (!fillEl) { if (cb) cb(); return; }
+    fillEl.style.transition = "none";
+    fillEl.style.width = clampPct(fromPct) + "%";
+    void fillEl.offsetWidth;   // force reflow so "none" takes effect before re-enabling below
+    fillEl.style.transition = "width " + ms + "ms cubic-bezier(.22,.9,.34,1)";
+    requestAnimationFrame(function () { fillEl.style.width = clampPct(toPct) + "%"; });
+    if (cb) setTimeout(cb, ms + 60);
+  }
+
+  // Animates a rank-hero (by idPrefix) from fromMmr to toMmr. Promotions fill
+  // the bar to 100%, pop, reset, and continue for EVERY 100-point division
+  // boundary crossed (so a big multi-win session correctly plays through
+  // several "level ups" in a row, not just one), swapping the badge/tier name
+  // in sync each time a tier itself changes. Demotions are a single plain
+  // tween - no overflow theatrics, just the number moving down.
+  function animateRankProgression(idPrefix, fromMmr, toMmr, cb) {
+    var fillEl = $(idPrefix + "-barfill"), nameEl = $(idPrefix + "-name"),
+        badgeEl = $(idPrefix + "-badge"), labelEl = $(idPrefix + "-barlabel");
+    if (!fillEl) { if (cb) cb(); return; }
+    fromMmr = Math.max(0, Math.round(fromMmr)); toMmr = Math.max(0, Math.round(toMmr));
+
+    function pctOf(mmr) { var t = tierForMmr(mmr); return t.division ? t.pointsInDivision : 100; }
+    function syncTierUI(mmrPoint) {
+      var tt = tierForMmr(mmrPoint);
+      if (nameEl) { nameEl.textContent = tt.label; nameEl.className = "rank-hero-name rank-tier-" + tt.tierIndex; }
+      if (fillEl) fillEl.className = "rank-hero-bar-fill rank-tier-" + tt.tierIndex;
+      if (labelEl) labelEl.textContent = tt.division ? (tt.pointsInDivision + "/100 to " + nextDivisionLabel(tt)) : "Top of the ladder - no ceiling.";
+      var badgeUrl = RANKED_BADGE_URLS[tt.tierIndex];
+      if (badgeEl && badgeUrl && badgeEl.getAttribute("src") !== badgeUrl) { badgeEl.setAttribute("src", badgeUrl); badgeEl.setAttribute("alt", tt.label + " badge"); }
+      return tt;
+    }
+
+    if (toMmr === fromMmr) { syncTierUI(toMmr); if (cb) cb(); return; }
+
+    if (toMmr < fromMmr) {
+      tweenBarWidth(fillEl, pctOf(fromMmr), pctOf(toMmr), 900, function () { syncTierUI(toMmr); if (cb) cb(); });
+      return;
+    }
+
+    var boundariesLeft = Math.floor(toMmr / 100) - Math.floor(fromMmr / 100);
+    var cur = fromMmr;
+    (function step() {
+      if (boundariesLeft <= 0) {
+        tweenBarWidth(fillEl, pctOf(cur), pctOf(toMmr), 900, function () { syncTierUI(toMmr); if (cb) cb(); });
+        return;
+      }
+      var nextBoundary = (Math.floor(cur / 100) + 1) * 100;
+      tweenBarWidth(fillEl, pctOf(cur), 100, 650, function () {
+        fillEl.classList.add("rank-bar-pop");
+        setTimeout(function () {
+          fillEl.classList.remove("rank-bar-pop");
+          cur = nextBoundary; boundariesLeft--;
+          syncTierUI(cur);
+          fillEl.style.transition = "none"; fillEl.style.width = "0%"; void fillEl.offsetWidth;
+          setTimeout(step, 120);
+        }, 340);
+      });
+    })();
+  }
+
   function onRankedKickoff() {
     if (!state.user) { openAuth("in"); return; }
     if (!BE.configured) { toast("Accounts aren't set up yet."); return; }
+    // Fresh entry point (home screen Kick Off, not "Find Another Match") ->
+    // start a new results-popup session. startMmr is captured lazily, the
+    // first time a match actually starts (see enterMpMatch).
+    rankedSession.games = [];
+    rankedSession.startMmr = null;
     startRankedSearch();
   }
 
@@ -2064,7 +2156,7 @@
     started: false, lobbyId: null, meIsHost: false, row: null,
     mySquad: null, oppSquad: null, meName: "", oppName: "",
     canon: null, myResult: null, sim: null, out: null,
-    kickTimer: null, rematchTimer: null, isRanked: false,
+    kickTimer: null, rematchTimer: null, isRanked: false, preMmr: null, sessionRecorded: false,
   };
 
   // Set true only during the brief hand-off between the last draft pick and the
@@ -2078,7 +2170,7 @@
     if (mpMatch.rematchTimer) clearInterval(mpMatch.rematchTimer);
     mpMatch = { started: false, lobbyId: null, meIsHost: false, row: null, mySquad: null,
       oppSquad: null, meName: "", oppName: "", canon: null, myResult: null, sim: null,
-      out: null, kickTimer: null, rematchTimer: null, isRanked: false };
+      out: null, kickTimer: null, rematchTimer: null, isRanked: false, preMmr: null, sessionRecorded: false };
     // clear draft state too, so a rematch's fresh draft isn't read as stale by the
     // lobby subscribe patch (which intercepts draft-phase updates by lobby id).
     stopMpTurnTimer();
@@ -2202,6 +2294,22 @@
     mpMatch.canon = canon;
 
     mpMatch.isRanked = !!row.ranked;
+    mpMatch.preMmr = null;
+    // Snapshot my mmr NOW, before the result gets recorded, so the results
+    // screen/session tracker can compute this game's exact delta later. Fired
+    // once at match entry - by the time results actually show (lineup intro +
+    // full sim), this has always long since resolved.
+    if (mpMatch.isRanked && BE.ranked && BE.ranked.myStats) {
+      BE.ranked.myStats().then(function (s) {
+        if (!s) return;
+        mpMatch.preMmr = s.mmr;
+        // First match of this ranked session (onRankedKickoff cleared this to
+        // null) -> this is the "before" state the post-match popup animates
+        // FROM. "Find Another Match" leaves it set, so a multi-game session
+        // still animates from the very start of the session, not per-game.
+        if (rankedSession.startMmr == null) rankedSession.startMmr = s.mmr;
+      }).catch(function () {});
+    }
 
     // Host writes the head-to-head + match row once (no double count). Wrapped so
     // a backend hiccup here can never block the lineup from rendering.
@@ -2303,6 +2411,11 @@
 
   function showMpResults(out) {
     var wrap = $("mpl-wrap"); if (!wrap) return;
+    // Captured by REFERENCE (not mpMatch.foo lookups below) so a quick "Find
+    // Another Match" click - which reassigns the mpMatch variable to a brand
+    // new object via resetMpMatch() - can never cross-contaminate this game's
+    // still-in-flight rank fetch with the NEXT match's state.
+    var matchRef = mpMatch;
     var canon = mpMatch.canon, meIsHost = mpMatch.meIsHost;
     var youWin = meIsHost ? (canon.winner === "A") : (canon.winner === "B");
     var myGoals = meIsHost ? canon.goalsA : canon.goalsB;
@@ -2348,27 +2461,130 @@
       setTimeout(function () { fetchH2H(0); }, 800);
     }
     // Ranked: fetch MY updated rank after a delay so the host's Elo RPC has time
-    // to commit (same delayed-refresh pattern as H2H above).
+    // to commit (same delayed-refresh pattern as H2H above). This is also where
+    // the game's result lands in the session tracker for the eventual Return
+    // Home popup - delta is computed against the mmr snapshot taken when the
+    // match started (matchRef.preMmr), and "hasn't moved yet" (rather than a
+    // fixed sentinel value) is what drives the retry, since a real result
+    // always moves mmr by at least ±1 (never exactly 0).
     if (isRanked && BE.ranked && BE.ranked.myStats) {
+      var preMmr = matchRef.preMmr;
+      var recordSessionGame = function (s) {
+        if (matchRef.sessionRecorded) return;
+        matchRef.sessionRecorded = true;
+        var delta = (preMmr != null && s) ? (s.mmr - preMmr) : 0;
+        rankedSession.games.push({
+          delta: delta, myGoals: myGoals, oppGoals: oppGoals, won: youWin,
+          // Snapshot the resulting state right here so the post-match popup
+          // never needs another network round-trip to know where you landed.
+          mmrAfter: s ? s.mmr : (preMmr != null ? preMmr : 0),
+          winsAfter: s ? s.ranked_wins : null, lossesAfter: s ? s.ranked_losses : null,
+        });
+      };
       var fetchRank = function (attempt) {
         BE.ranked.myStats().then(function (s) {
-          var e = $("mp-rank"); if (!e || !s) return;
-          if (attempt < 2 && s.mmr === 100 && s.ranked_wins === 0 && s.ranked_losses === 0) {
-            setTimeout(function () { fetchRank(attempt + 1); }, 1200);
+          var e = $("mp-rank");
+          if (attempt < 4 && preMmr != null && s && s.mmr === preMmr) {
+            setTimeout(function () { fetchRank(attempt + 1); }, 1000);
             return;
           }
-          var t = tierForMmr(s.mmr);
-          e.textContent = t.label + " · " + s.ranked_wins + "-" + s.ranked_losses;
-        }).catch(function () {});
+          if (e && s) { var t = tierForMmr(s.mmr); e.textContent = t.label + " · " + s.ranked_wins + "-" + s.ranked_losses; }
+          recordSessionGame(s);
+        }).catch(function () { recordSessionGame(null); });
       };
       setTimeout(function () { fetchRank(0); }, 900);
     }
     // #7: post-game Return Home tears down LOCALLY only  never yanks the opponent.
-    $("mp-home").onclick = function () { resetMpMatch(); teardownLobby(); enteredLobbyOnce = true; setTab("play"); };
+    // Ranked with at least one game recorded this session -> show the results
+    // popup first. If the rank fetch above is still in flight, wait for it
+    // (briefly disabling the button) so the popup always has real numbers
+    // instead of racing ahead of the just-finished game's own result.
+    $("mp-home").onclick = function () {
+      var goHome = function () { resetMpMatch(); teardownLobby(); enteredLobbyOnce = true; setTab("play"); };
+      if (!isRanked) { goHome(); return; }
+      var btn = $("mp-home");
+      var proceed = function () { showRankedResultsPopup(goHome); };
+      if (matchRef.sessionRecorded) { proceed(); return; }
+      // Also lock "Find Another Match" for the wait - it tears down mpMatch/the
+      // lobby via a totally different path (startRankedSearch), and letting
+      // both run at once would race goHome's teardown against a search that's
+      // already in flight.
+      var rematchBtn = $("mp-rematch");
+      if (btn) { btn.disabled = true; btn.textContent = "Finishing…"; }
+      if (rematchBtn) rematchBtn.disabled = true;
+      var tries = 0;
+      (function waitForRecord() {
+        if (matchRef.sessionRecorded || ++tries > 40) { proceed(); return; }
+        setTimeout(waitForRecord, 200);
+      })();
+    };
     $("mp-rematch").onclick = isRanked
       ? function () { resetMpMatch(); teardownLobby(); enteredLobbyOnce = true; startRankedSearch(); }
       : requestRematch;
     if (!isRanked) handleRematchFlags(mpMatch.row);   // reflect any rematch request that already arrived
+  }
+
+  // Post-match "Ranked" results popup, shown when returning home from a ranked
+  // match (single game or a multi-game "Find Another Match" streak). Reuses
+  // the exact rank-hero component from the Ranked tab so the badge/name/bar
+  // are pixel-identical, then plays: result card pops in -> bar animates from
+  // the session's starting mmr to the current mmr (playing through any
+  // promotion/demotion exactly like animateRankProgression already does).
+  function rankedResultsCardHTML(games) {
+    var n = games.length, totalDelta = 0, wins = 0;
+    for (var i = 0; i < n; i++) { totalDelta += games[i].delta; if (games[i].won) wins++; }
+    var losses = n - wins;
+    var deltaStr = (totalDelta > 0 ? "+" : "") + totalDelta;
+    var deltaClass = totalDelta > 0 ? "rr-delta--up" : (totalDelta < 0 ? "rr-delta--down" : "");
+    if (n === 1) {
+      var g = games[0];
+      return '<div class="rr-label">Result</div>' +
+        '<div class="rr-score ' + (g.won ? "rr-score--win" : "rr-score--loss") + '">' + g.myGoals + " - " + g.oppGoals + (g.won ? " Win" : " Loss") + '</div>' +
+        '<div class="rr-delta ' + deltaClass + '">' + deltaStr + ' MMR</div>';
+    }
+    return '<div class="rr-label">Results (' + n + ' games)</div>' +
+      '<div class="rr-score">' + wins + "-" + losses + '</div>' +
+      '<div class="rr-delta ' + deltaClass + '">' + deltaStr + ' MMR</div>';
+  }
+
+  function showRankedResultsPopup(onClose) {
+    var games = rankedSession.games.slice();
+    rankedSession.games = [];
+    if (!games.length) { onClose(); return; }
+    var last = games[games.length - 1];
+    var endMmr = last.mmrAfter != null ? last.mmrAfter : 0;
+    var totalDelta = games.reduce(function (s, g) { return s + g.delta; }, 0);
+    var startMmr = rankedSession.startMmr != null ? rankedSession.startMmr : Math.max(0, endMmr - totalDelta);
+    rankedSession.startMmr = null;
+    var finalWins = last.winsAfter != null ? last.winsAfter : 0;
+    var finalLosses = last.lossesAfter != null ? last.lossesAfter : 0;
+    var startTier = tierForMmr(startMmr);
+
+    var closed = false;
+    var ov = el("div", "modal"); ov.id = "ranked-result-modal";
+    ov.innerHTML =
+      '<div class="modal-card rr-card">' +
+        '<button class="icon-btn modal-close" id="rr-x">✕</button>' +
+        '<div class="rr-kicker">Champions Cup · Ranked</div>' +
+        rankHeroHTML("rr", startTier, finalWins, finalLosses) +
+        '<div class="rr-resultbox rr-resultbox--in">' + rankedResultsCardHTML(games) + "</div>" +
+        '<button class="btn btn--kickoff btn--sm" id="rr-close" style="margin-top:18px;width:100%">Continue</button>' +
+      "</div>";
+    document.body.appendChild(ov);
+    // rankHeroHTML bakes the record line's "N pts" off the tier object it was
+    // given (startTier, so name/badge/bar all animate from the right place) -
+    // but the record itself isn't part of that animation and should read your
+    // real current mmr from the moment the popup opens, not the pre-session one.
+    var recEl = $("rr-record");
+    if (recEl) recEl.textContent = finalWins + "-" + finalLosses + " · " + Math.max(0, Math.round(endMmr)) + " pts";
+    var doClose = function () { if (closed) return; closed = true; ov.remove(); onClose(); };
+    ov.addEventListener("click", function (e) { if (e.target === ov) doClose(); });
+    $("rr-x").onclick = doClose;
+    $("rr-close").onclick = doClose;
+
+    // Let the result card's own pop-in animation (CSS: .rr-resultbox--in,
+    // delayed .3s, .5s duration) land before the bar starts moving.
+    setTimeout(function () { animateRankProgression("rr", startMmr, endMmr); }, 850);
   }
 
   /* ================================================== PHASE 10  REMATCH */
