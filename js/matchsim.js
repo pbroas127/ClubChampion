@@ -376,7 +376,10 @@
       vertical = H > W;
       if (vertical) { FL = W * 0.04; FR = W * 0.96; FT = H * 0.045; FB = H * 0.955; }
       else          { FL = W * 0.075; FR = W * 0.925; FT = H * 0.07; FB = H * 0.93; }
-      fieldScale = 800 / Math.max(400, FR - FL);
+      // Keep time-to-cross-the-pitch roughly constant across canvas sizes.
+      // Uncapped, this hit 2.0x on phones (field ~400px), literally doubling
+      // every ball speed on mobile - the single biggest "pinball" factor.
+      fieldScale = clamp(800 / Math.max(400, FR - FL), 0.85, 1.1);
     }
     function sx(x, y) { return vertical ? FL + y * (FR - FL) : FL + x * (FR - FL); }
     function sy(x, y) { return vertical ? FT + x * (FB - FT) : FT + y * (FB - FT); }
@@ -403,26 +406,39 @@
     function nearest(list, pt) { var best = null, bd = 1e9; list.forEach(function (p) { var d = d2(p.pos, pt); if (d < bd) { bd = d; best = p; } }); return best; }
 
     var ball = { x: 0.5, y: 0.5, p0: null, p1: null, p2: null, u: 1, len: 1, speed: 0.6, moving: false, dribble: false, carrier: null, t: 0 };
-    // Scaled down ~25-30% from the original set - still brisk, but slow enough
-    // to actually track a specific kick rather than blurring past.
+    // Launch speeds (pitch-lengths/sec). Shots stay the fastest thing on the
+    // pitch but every kind is slow enough to follow with the eye; ballEase
+    // below then bleeds pace off rolling/deflected balls so nothing glides
+    // at constant speed like an air-hockey puck.
     function speedFor(k) {
       switch (k) {
-        case "goal":       return 1.05;
-        case "shot":       return 0.95;
-        case "postHit":    return 0.95;
-        case "postBounce": return 0.65;
-        case "save":       return 0.85;
-        case "parry":      return 0.58;
-        case "cross":      return 0.55;
-        case "corner":     return 0.50;
-        case "pass":       return 0.46;
-        case "dribble":    return 0.24;
-        case "goalkick":   return 0.75;
-        case "blockOut":   return 0.45;
+        case "goal":       return 0.95;
+        case "shot":       return 0.88;
+        case "postHit":    return 0.90;
+        case "postBounce": return 0.55;
+        case "save":       return 0.80;
+        case "parry":      return 0.50;
+        case "cross":      return 0.52;
+        case "corner":     return 0.48;
+        case "pass":       return 0.44;
+        case "dribble":    return 0.22;
+        case "goalkick":   return 0.68;
+        case "blockOut":   return 0.42;
         case "kickoff":
-        case "foul":       return 0.62;
-        default:           return 0.48;
+        case "foul":       return 0.58;
+        default:           return 0.46;
       }
+    }
+
+    // Pace multiplier over the flight (u = 0 start -> 1 arrival). Rebounds,
+    // deflections and balls rolling dead start lively off the contact and
+    // shed most of their pace (friction); ground passes ease up into the
+    // receiver's feet; shots stay flat-out the whole way - they're struck,
+    // not rolled.
+    function ballEase(kind, u) {
+      if (/^(postBounce|parry|blockOut|miss|tackle)$/.test(kind)) return 1.15 - 0.85 * u;
+      if (/^(pass|goalkick|kickoff|corner|cross)$/.test(kind)) return 1.05 - 0.35 * u;
+      return 1;
     }
 
     function pickReceiver(b) {
@@ -494,7 +510,7 @@
     var PEN_Z_GOAL = 1, PEN_Z_KEEPER = 0.961, PEN_Z_SPOT = 0.711, PEN_Z_RUNUP = 0.566;
     var PEN_Z_SIXYARD = 0.868, PEN_Z_BOX = 0.658;              // box near-edges, zoomed-X
     var PEN_GOAL_HALF = 0.093;                                   // goal mouth half-height, zoomed-Y
-    var PEN_KICK_DUR = 0.7, PEN_DIVE_DUR = 0.42;   // seconds: ball flight / keeper dive, phase 2
+    var PEN_KICK_DUR = 0.8, PEN_DIVE_DUR = 0.45;   // seconds: ball flight / keeper dive, phase 2
 
     function playerByName(side, name) {
       for (var i = 0; i < players.length; i++) {
@@ -714,7 +730,7 @@
           var dp = clamp((penTimer - 1.5) / PEN_DIVE_DUR, 0, 1);
           keeper.pos.y = 0.5 + (b._keeperTargetY - 0.5) * dp;
         }
-        if (penTimer >= 1.5 + PEN_KICK_DUR) { penPhase = 3; dwell = 0.7; }
+        if (penTimer >= 1.5 + PEN_KICK_DUR) { penPhase = 3; dwell = 1.1; }
       }
       if (penPhase === 3) { penGoalFlash = Math.min(1, penGoalFlash + dt * 6); }
     }
@@ -829,7 +845,22 @@
     function onArrive() {
       var b = tl.beats[bi];
       if (b.kind === "goal") return celebrate(b);
-      dwell = /^(save|parry|corner|postHit|miss|tackle|goalkick)$/.test(b.kind) ? 0.22 : 0.06;
+      // Per-outcome pause once the ball gets there, so each moment actually
+      // registers instead of the next kick launching within a frame or two.
+      // The ONE exception is postHit: the rebound beat must fire immediately,
+      // because a ball pinging off the post doesn't pause on the woodwork -
+      // that instant ricochet (into a decelerating postBounce roll) is what
+      // makes a post shot read as physics instead of a teleport.
+      var DWELL = {
+        postHit: 0.03,      // ricochet - the bounce IS the next beat
+        save: 0.95,         // keeper gathers / it's dead, let it land
+        miss: 0.9,          // ball rolls out, dead-ball beat
+        postBounce: 0.75,   // loose ball settles after the rebound
+        parry: 0.45,        // spilled - still live, but a beat of scramble
+        tackle: 0.55, goalkick: 0.6, blockOut: 0.5,
+        corner: 0.15,       // delivery is met quickly - that's real
+      };
+      dwell = DWELL[b.kind] != null ? DWELL[b.kind] : 0.2;
     }
 
     function celebrate(b) {
@@ -896,13 +927,16 @@
         return;
       }
       if (ball.moving && b._recv) {
-        var tg = b._recv.pos, dx3 = tg.x - ball.x, dy3 = tg.y - ball.y, d3 = Math.hypot(dx3, dy3) || 1e-4, step = ball.speed * dt;
-        if (d3 <= step + 0.02 || ball.t > 2.5) { ball.x = tg.x; ball.y = tg.y; ball.moving = false; onArrive(); }
+        // Ease the ball up over the last stretch into the receiver's feet -
+        // a real ground pass arrives slower than it left the boot.
+        var tg = b._recv.pos, dx3 = tg.x - ball.x, dy3 = tg.y - ball.y, d3 = Math.hypot(dx3, dy3) || 1e-4;
+        var step = ball.speed * (d3 < 0.14 ? (0.55 + 0.45 * d3 / 0.14) : 1) * dt;
+        if (d3 <= step + 0.02 || ball.t > 3.2) { ball.x = tg.x; ball.y = tg.y; ball.moving = false; onArrive(); }
         else { ball.x += dx3 / d3 * step; ball.y += dy3 / d3 * step; }
         return;
       }
       if (ball.moving) {
-        ball.u += (ball.speed * dt) / ball.len;
+        ball.u += (ball.speed * ballEase(b.kind, ball.u) * dt) / ball.len;
         if (ball.u >= 1) { ball.u = 1; ball.moving = false; ball.x = ball.p2.x; ball.y = ball.p2.y; onArrive(); }
         else { var u = ball.u, iu = 1 - u; ball.x = iu * iu * ball.p0.x + 2 * iu * u * ball.p1.x + u * u * ball.p2.x; ball.y = iu * iu * ball.p0.y + 2 * iu * u * ball.p1.y + u * u * ball.p2.y; }
       }
