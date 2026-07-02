@@ -437,3 +437,161 @@ $$;
 -- supabase_realtime), or run:
 --   alter publication supabase_realtime add table public.ranked_queue;
 
+-- ============================================================================
+-- RANKED v2: idempotent Elo with exact deltas, forfeits, streaks, history,
+-- player collection.  (Run this whole block once; idempotent, safe to re-run.)
+-- ============================================================================
+
+-- Win streak (consecutive ranked wins; any loss resets to 0).
+alter table public.profiles add column if not exists ranked_streak int not null default 0;
+
+-- Recording state lives ON the lobby row: elo_done makes the result write
+-- idempotent no matter which client(s) call it, and the stored deltas mean
+-- EVERY caller (including the second one) gets the exact server-computed
+-- +/- for display - no more client-side mmr-diff guessing races.
+alter table public.match_lobby add column if not exists elo_done  boolean not null default false;
+alter table public.match_lobby add column if not exists mmr_dw    int;
+alter table public.match_lobby add column if not exists mmr_dl    int;
+-- What phase the lobby was in when someone left (written by leave_lobby) -
+-- forfeit claims are only honored for leaves from reveal/draft/match.
+alter table public.match_lobby add column if not exists done_from text;
+-- Liveness heartbeats so a vanished (tab-closed) opponent is detectable.
+alter table public.match_lobby add column if not exists host_seen  timestamptz;
+alter table public.match_lobby add column if not exists guest_seen timestamptz;
+
+alter table public.matches add column if not exists forfeit boolean not null default false;
+
+-- Atomic leave: stamps WHERE the leaver left from, then closes the lobby.
+create or replace function public.leave_lobby(lobby uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  update public.match_lobby set done_from = phase, phase = 'done'
+    where id = lobby and auth.uid() in (host, guest) and phase <> 'done';
+end;
+$$;
+
+-- Heartbeat: refresh MY seen-at, return how stale the OPPONENT's is (seconds,
+-- null if they've never beaten). All timestamps are server-side now(), so
+-- client clock skew can't fake or mask an abandonment.
+create or replace function public.lobby_heartbeat(lobby uuid)
+returns numeric language plpgsql security definer set search_path = public as $$
+declare l record; opp_seen timestamptz;
+begin
+  if auth.uid() is null then return null; end if;
+  update public.match_lobby set
+      host_seen  = case when auth.uid() = host  then now() else host_seen  end,
+      guest_seen = case when auth.uid() = guest then now() else guest_seen end
+    where id = lobby and auth.uid() in (host, guest);
+  select * into l from public.match_lobby where id = lobby;
+  if not found or auth.uid() not in (l.host, l.guest) then return null; end if;
+  opp_seen := case when auth.uid() = l.host then l.guest_seen else l.host_seen end;
+  if opp_seen is null then return null; end if;
+  return extract(epoch from (now() - opp_seen));
+end;
+$$;
+
+-- Shared Elo core: applies the mmr/W-L/streak updates for one decided ranked
+-- lobby exactly once, stores the deltas on the lobby, optionally records the
+-- match-history row. Returns [delta_winner, delta_loser].
+create or replace function public.apply_ranked_result(l public.match_lobby, winner uuid, loser uuid,
+                                                      g_host int, g_guest int, is_forfeit boolean)
+returns int[] language plpgsql security definer set search_path = public as $$
+declare w_mmr int; l_mmr int; e_w numeric; e_l numeric; d_w int; d_l int;
+begin
+  perform public.ranked_rollover_user(winner);
+  perform public.ranked_rollover_user(loser);
+  select mmr into w_mmr from public.profiles where id = winner;
+  select mmr into l_mmr from public.profiles where id = loser;
+  if w_mmr is null or l_mmr is null then return null; end if;
+  e_w := 1.0 / (1.0 + power(10, (l_mmr - w_mmr) / 400.0));
+  e_l := 1.0 / (1.0 + power(10, (w_mmr - l_mmr) / 400.0));
+  d_w := greatest(1, round(public.ranked_k_win(w_mmr) * (1 - e_w)));
+  d_l := least(-1, round(-1 * public.ranked_k_loss(l_mmr) * e_l));
+  update public.profiles set mmr = greatest(0, mmr + d_w), ranked_wins = ranked_wins + 1,
+      ranked_streak = greatest(ranked_streak, 0) + 1 where id = winner;
+  update public.profiles set mmr = greatest(0, mmr + d_l), ranked_losses = ranked_losses + 1,
+      ranked_streak = 0 where id = loser;
+  update public.match_lobby set elo_done = true, mmr_dw = d_w, mmr_dl = d_l where id = l.id;
+  insert into public.matches (lobby_id, player_a, player_b, goals_a, goals_b, winner, ranked, forfeit)
+    values (l.id, l.host, l.guest, g_host, g_guest, winner, true, is_forfeit);
+  return array[d_w, d_l];
+end;
+$$;
+
+-- Record a decided ranked match. EITHER participant may call it (fixes the
+-- old host-only fragility); the elo_done lock guarantees the elo/W-L/history
+-- write happens exactly once, and repeat calls just return the stored deltas.
+create or replace function public.record_ranked_result_lobby(lobby uuid, winner uuid, loser uuid,
+                                                             goals_host int, goals_guest int)
+returns int[] language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid(); l public.match_lobby%rowtype;
+begin
+  if me is null then return null; end if;
+  select * into l from public.match_lobby where id = lobby for update;
+  if not found or not l.ranked then return null; end if;
+  if me not in (l.host, l.guest) then return null; end if;
+  if winner not in (l.host, l.guest) or loser not in (l.host, l.guest) or winner = loser then return null; end if;
+  if l.elo_done then return array[l.mmr_dw, l.mmr_dl]; end if;
+  return public.apply_ranked_result(l, winner, loser, goals_host, goals_guest, false);
+end;
+$$;
+
+-- Forfeit claim: the player who STAYED wins automatically; the leaver takes a
+-- normal Elo loss they'll see next time they look at their rank. Only valid
+-- when the game had really started (left from reveal/draft/match, or the
+-- opponent's heartbeat has been dead 20s+) and nothing was recorded yet.
+create or replace function public.claim_ranked_forfeit(lobby uuid)
+returns int[] language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid(); l public.match_lobby%rowtype; opp uuid; opp_seen timestamptz;
+begin
+  if me is null then return null; end if;
+  select * into l from public.match_lobby where id = lobby for update;
+  if not found or not l.ranked then return null; end if;
+  if me not in (l.host, l.guest) then return null; end if;
+  if l.elo_done then return null; end if;
+  opp := case when me = l.host then l.guest else l.host end;
+  opp_seen := case when me = l.host then l.guest_seen else l.host_seen end;
+  if not ( (l.phase = 'done' and coalesce(l.done_from, '') in ('reveal', 'draft', 'match'))
+        or (l.phase in ('reveal', 'draft', 'match') and opp_seen is not null
+            and opp_seen < now() - interval '20 seconds') ) then
+    return null;
+  end if;
+  if l.phase <> 'done' then
+    update public.match_lobby set done_from = phase, phase = 'done' where id = l.id;
+  end if;
+  return public.apply_ranked_result(l, me, opp, null, null, true);
+end;
+$$;
+
+-- ---------- Player collection (drafted-player album) -----------------------
+create table if not exists public.player_collection (
+  user_id  uuid not null references auth.users(id) on delete cascade,
+  name     text not null,
+  club     text not null default '',
+  year     int  not null default 0,
+  pos      text,
+  ovr      int,
+  times    int not null default 1,
+  first_at timestamptz default now(),
+  primary key (user_id, name, club, year)
+);
+alter table public.player_collection enable row level security;
+drop policy if exists "collection read own" on public.player_collection;
+create policy "collection read own" on public.player_collection for select using (auth.uid() = user_id);
+
+-- Batch add (called after every completed draft). Upsert bumps the times
+-- counter and keeps the best OVR seen for that exact player/club/year card.
+create or replace function public.collection_add(players jsonb)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or players is null then return; end if;
+  insert into public.player_collection (user_id, name, club, year, pos, ovr)
+  select auth.uid(), p->>'n', coalesce(p->>'club', ''), coalesce((p->>'year')::int, 0), p->>'pos', (p->>'ovr')::int
+    from jsonb_array_elements(players) p
+    where coalesce(p->>'n', '') <> ''
+  on conflict (user_id, name, club, year) do update
+    set times = public.player_collection.times + 1,
+        ovr = greatest(coalesce(public.player_collection.ovr, 0), coalesce(excluded.ovr, 0));
+end;
+$$;
+

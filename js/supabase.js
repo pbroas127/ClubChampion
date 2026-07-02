@@ -160,6 +160,32 @@
         .then(function (r) { if (r && r.error) throw r.error; return r; })
         .catch(function (e) { console.error("recordMatch failed:", e && e.message); });
     },
+    // My recent multiplayer matches, newest first, with the exact per-match
+    // mmr deltas (stored on the lobby row by the ranked result RPC) stitched
+    // in as m._lobby for ranked rows.
+    myMatches: function (limitN) {
+      if (!client) return Promise.resolve([]);
+      return auth.getUser().then(function (u) {
+        if (!u) return [];
+        return client.from("matches").select("*")
+          .or("player_a.eq." + u.id + ",player_b.eq." + u.id)
+          .order("created_at", { ascending: false }).limit(limitN || 12)
+          .then(function (r) {
+            if (r && r.error) throw r.error;
+            var rows = r.data || [];
+            var lids = [];
+            rows.forEach(function (m) { if (m.ranked && m.lobby_id) lids.push(m.lobby_id); });
+            if (!lids.length) return rows;
+            return client.from("match_lobby").select("id,mmr_dw,mmr_dl,elo_done").in("id", lids)
+              .then(function (r2) {
+                var map = {};
+                ((r2 && r2.data) || []).forEach(function (l) { map[l.id] = l; });
+                rows.forEach(function (m) { m._lobby = map[m.lobby_id] || null; });
+                return rows;
+              });
+          });
+      }).catch(function (e) { console.error("myMatches failed:", e && e.message); return []; });
+    },
   };
 
   function profilesByIds(ids) {
@@ -460,15 +486,17 @@
     },
     leave: function (lobbyId) {
       if (!client) return Promise.resolve();
-      // .then() before .catch() - same bare-builder .catch() bug as
-      // recordResult/recordMatch above. This one meant the phase="done" write
-      // never actually reached the server (the call threw before the fetch
-      // ever fired), so the opponent's "X left the lobby" realtime echo never
-      // arrived either - only caught here because the CALLER already wraps
-      // lobby.leave() in its own try/catch.
-      return client.from("match_lobby").update({ phase: "done" }).eq("id", lobbyId)
+      // Prefer the atomic leave_lobby RPC: it stamps done_from = the phase we
+      // left FROM before closing the lobby, which is what lets the opponent's
+      // forfeit claim prove the game had actually started. Falls back to the
+      // plain phase write if the RPC isn't deployed yet.
+      return client.rpc("leave_lobby", { lobby: lobbyId })
         .then(function (r) { if (r && r.error) throw r.error; return r; })
-        .catch(function (e) { console.error("lobby.leave failed:", e && e.message); });
+        .catch(function () {
+          return client.from("match_lobby").update({ phase: "done" }).eq("id", lobbyId)
+            .then(function (r) { if (r && r.error) throw r.error; return r; })
+            .catch(function (e) { console.error("lobby.leave failed:", e && e.message); });
+        });
     },
     subscribe: function (lobbyId, cb) {
       if (!client) return null;
@@ -560,7 +588,7 @@
           .catch(function (e) {
             console.warn("ranked_sync_me failed (continuing with existing mmr):", e && e.message);
           }).then(function () {
-          return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses,season_number").eq("id", u.id).maybeSingle();
+          return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses,ranked_streak,season_number").eq("id", u.id).maybeSingle();
         }).then(function (r) {
           // A real DB/RLS error here must NOT be swallowed to null - that's
           // exactly what left the Ranked tab stuck on "Loading your rank..."
@@ -572,7 +600,7 @@
     },
     leaderboardGlobal: function (limitN) {
       if (!client) return Promise.resolve([]);
-      return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses")
+      return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses,ranked_streak")
         .order("mmr", { ascending: false }).limit(limitN || 50)
         .then(function (r) {
           if (r && r.error) { console.error("leaderboardGlobal failed:", r.error.message); throw r.error; }
@@ -581,7 +609,7 @@
     },
     leaderboardFriends: function (friendIds) {
       if (!client || !friendIds || !friendIds.length) return Promise.resolve([]);
-      return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses")
+      return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses,ranked_streak")
         .in("id", friendIds).order("mmr", { ascending: false })
         .then(function (r) {
           if (r && r.error) { console.error("leaderboardFriends failed:", r.error.message); throw r.error; }
@@ -593,12 +621,61 @@
     // ranked lobby screen to show who you're up against.
     statsFor: function (userId) {
       if (!client || !userId) return Promise.resolve(null);
-      return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses")
+      return client.from("profiles").select("id,username,mmr,ranked_wins,ranked_losses,ranked_streak")
         .eq("id", userId).maybeSingle()
         .then(function (r) {
           if (r && r.error) { console.error("ranked.statsFor failed:", r.error.message); throw r.error; }
           return r ? r.data : null;
         }).catch(function (e) { console.error("ranked.statsFor failed:", e && e.message); return null; });
+    },
+    // Record a decided ranked match. Idempotent server-side (elo_done lock on
+    // the lobby row) and callable by EITHER player, so the result can never be
+    // lost to a vanished host. Resolves to [deltaWinner, deltaLoser] - the
+    // exact server-computed swing, same values for whichever client asks.
+    recordResultLobby: function (lobbyId, winnerId, loserId, goalsHost, goalsGuest) {
+      if (!client || !lobbyId) return Promise.resolve(null);
+      return client.rpc("record_ranked_result_lobby", {
+        lobby: lobbyId, winner: winnerId, loser: loserId,
+        goals_host: goalsHost, goals_guest: goalsGuest,
+      }).then(function (r) { if (r && r.error) throw r.error; return r.data || null; })
+        .catch(function (e) { console.error("record_ranked_result_lobby failed:", e && e.message); return null; });
+    },
+    // Claim a forfeit win after the opponent left/vanished mid-game. Server
+    // enforces validity (real leave from reveal/draft/match, or a 20s-dead
+    // heartbeat) and awards a normal Elo win/loss. Returns [myDelta, theirDelta].
+    claimForfeit: function (lobbyId) {
+      if (!client || !lobbyId) return Promise.resolve(null);
+      return client.rpc("claim_ranked_forfeit", { lobby: lobbyId })
+        .then(function (r) { if (r && r.error) throw r.error; return r.data || null; })
+        .catch(function (e) { console.error("claim_ranked_forfeit failed:", e && e.message); return null; });
+    },
+    // Refresh my liveness on the lobby; resolves to how stale the OPPONENT's
+    // heartbeat is in seconds (null if unknown). All server-side clocks.
+    heartbeat: function (lobbyId) {
+      if (!client || !lobbyId) return Promise.resolve(null);
+      return client.rpc("lobby_heartbeat", { lobby: lobbyId })
+        .then(function (r) { if (r && r.error) throw r.error; return r.data != null ? Number(r.data) : null; })
+        .catch(function () { return null; });
+    },
+  };
+
+  /* ------------------------------------------------ PLAYER COLLECTION --- */
+  var collection = {
+    // Fire-and-forget: fold a completed draft's squad into my album.
+    add: function (players) {
+      if (!client || !players || !players.length) return Promise.resolve();
+      return client.rpc("collection_add", { players: players })
+        .then(function (r) { if (r && r.error) throw r.error; return r; })
+        .catch(function (e) { console.error("collection_add failed:", e && e.message); });
+    },
+    mine: function () {
+      if (!client) return Promise.resolve([]);
+      return auth.getUser().then(function (u) {
+        if (!u) return [];
+        return client.from("player_collection").select("*").eq("user_id", u.id)
+          .order("ovr", { ascending: false }).limit(400)
+          .then(function (r) { if (r && r.error) throw r.error; return r.data || []; });
+      }).catch(function (e) { console.error("collection.mine failed:", e && e.message); return []; });
     },
   };
 
@@ -606,5 +683,6 @@
     configured: configured, client: client,
     auth: auth, profile: profile, data: data, friends: friends,
     account: account, invites: invites, lobby: lobby, ranked: ranked,
+    collection: collection,
   };
 })(window);

@@ -678,6 +678,60 @@ body[data-screen="stats"] .screen--page::before {
 .rank-row-wl { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .rank-row-mmr { font-weight: 800; color: var(--green); text-align: right; min-width: 36px; }
 
+/* -- Win streak flame -------------------------------------------------------- */
+.streak-flame { color: #ff9d3f; font-weight: 800; font-size: 0.9em; white-space: nowrap; }
+
+/* -- Stats tab: overview tiles / match history / collection album ------------ */
+.stat-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+.stat-tile {
+  background: linear-gradient(180deg, var(--panel), var(--bg-2)); border: 1px solid var(--line-soft);
+  border-radius: 14px; padding: 14px 10px; text-align: center;
+}
+.stat-tile b { display: block; font-family: "Archivo"; font-weight: 900; font-size: 22px; line-height: 1.1; }
+.stat-tile small { display: block; margin-top: 4px; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted-2); font-weight: 700; }
+.stat-tile .streak-flame { display: block; margin-top: 2px; font-size: 12px; }
+
+.mh-list { margin-top: 6px; }
+.mh-row {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center;
+  padding: 9px 2px; border-top: 1px solid var(--line-soft); font-size: 13.5px;
+}
+.mh-row:first-child { border-top: none; }
+.mh-ago { color: var(--muted-2); }
+.mh-delta { font-family: "Archivo"; font-weight: 800; font-size: 13px; min-width: 44px; text-align: right; }
+.mh-delta--up { color: var(--green); }
+.mh-delta--down { color: var(--red); }
+.mh-delta--none { color: var(--muted-2); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; }
+.mh-result { font-family: "Archivo"; font-weight: 800; min-width: 64px; text-align: right; }
+.mh-result--w { color: var(--green); }
+.mh-result--l { color: var(--red); }
+
+.album-count { float: right; font-size: 11px; color: var(--muted-2); font-weight: 600; text-transform: none; letter-spacing: 0; }
+#stats-history .card, #stats-album .card { margin-top: 16px; }
+
+/* -- Man of the Match banner (multiplayer results) --------------------------- */
+.motm-card {
+  display: flex; align-items: center; gap: 14px; margin: 16px 0;
+  background: linear-gradient(90deg, rgba(255,210,74,.10), var(--panel));
+  border: 1px solid rgba(255,210,74,.45); border-radius: 14px; padding: 12px 16px;
+}
+.motm-card--mine { border-color: var(--green); background: linear-gradient(90deg, rgba(46,232,127,.10), var(--panel)); }
+.motm-star { font-size: 26px; color: var(--gold); flex: none; }
+.motm-info { flex: 1; min-width: 0; text-align: left; }
+.motm-info small { display: block; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.motm-info b { display: block; font-family: "Archivo"; font-weight: 900; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.motm-info span { display: block; font-size: 12px; color: var(--muted); }
+.motm-num { text-align: right; flex: none; }
+.motm-num span { display: block; font-size: 11.5px; color: var(--muted); }
+.motm-num b { display: block; font-family: "Archivo"; font-weight: 900; font-size: 24px; color: var(--gold); }
+
+/* -- Forfeit ("opponent left") countdown ------------------------------------- */
+.ff-count {
+  font-family: "Archivo"; font-weight: 900; font-size: clamp(40px, 9vw, 60px);
+  color: var(--gold); margin: 14px 0 6px; line-height: 1;
+}
+.ff-count--won { color: var(--green); }
+
 /* -- Matchmaking "searching" screen ----------------------------------------- */
 .ranked-search-spin {
   width: 56px; height: 56px; margin: 0 auto; border-radius: 50%;
@@ -821,6 +875,9 @@ body[data-screen="stats"] .screen--page::before {
   .mode-grid { grid-template-columns: 1fr 1fr; }
   .mode-grid--4 { grid-template-columns: 1fr 1fr; }
   .formation-grid { grid-template-columns: 1fr 1fr; }
+  .stat-tiles { grid-template-columns: 1fr 1fr; }
+  .stat-tile b { font-size: 19px; }
+  .motm-info b { font-size: 15px; }
   .ranked-banner { flex-direction: column; gap: 2px; padding: 8px 12px; text-align: center; }
   .ranked-banner-cd::before { content: ""; }
   .skip-btn { padding: 7px 9px; }

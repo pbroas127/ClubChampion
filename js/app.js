@@ -378,8 +378,20 @@
     });
   }
 
+  // Fold a completed draft's squad into the player collection album (Stats
+  // tab). Fire-and-forget; needs the raw squad objects (with .r ratings).
+  function collectSquad(squad) {
+    try {
+      if (!state.user || !BE.collection || !BE.collection.add || !root.CC_ENGINE || !squad) return;
+      BE.collection.add(squad.map(function (p) {
+        return { n: p.n, pos: p.pos, club: p.club, year: p.year, ovr: Math.round(root.CC_ENGINE.overall(p)) };
+      }));
+    } catch (e) {}
+  }
+
   function recordSeason(R) {
     if (!state.user || !BE.configured) { toast("Sign in to save"); return; }
+    collectSquad(R.squad);
     var ss = R.seasonStats || (UI && UI.seasonStatsFor ? UI.seasonStatsFor(R.squad, R.you, 1) : null);
     var rec = R.you.record;
     var season = {
@@ -396,6 +408,7 @@
 
   function recordRun(s) {
     if (!state.user || !BE.configured) { toast("Sign in to save"); return; }
+    collectSquad(s.squad);
     var run = {
       mode: s.mode, formation: s.formation ? s.formation.name + " " + s.formation.tag : "",
       wins: s.roundsWon, draws: 0, losses: s.champion ? 0 : 1, points: s.roundsWon,
@@ -421,14 +434,102 @@
   var statsSub = "solo", statsData = null;
   var STATS_TABS = [["solo", "Season"], ["cpu", "vs CPU"], ["ucl", "UCL"], ["wc", "World Cup"]];
 
+  // "2h ago" style relative timestamps for the match history list.
+  function fmtAgo(ts) {
+    var d = new Date(ts).getTime();
+    if (!isFinite(d)) return "";
+    var s = Math.max(0, (Date.now() - d) / 1000);
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.floor(s / 60) + "m ago";
+    if (s < 86400) return Math.floor(s / 3600) + "h ago";
+    if (s < 604800) return Math.floor(s / 86400) + "d ago";
+    if (s < 3024000) return Math.floor(s / 604800) + "w ago";   // up to ~5 weeks
+    return new Date(ts).toLocaleDateString();
+  }
+
+  function statsTiles(seasons, matches, rank) {
+    var mpWins = 0;
+    matches.forEach(function (m) { if (m.winner === state.user.id) mpWins++; });
+    var best = bestSeason(seasons.filter(function (s) { return s.mode === "solo" || s.mode === "cpu"; }));
+    var trophies = seasons.filter(function (s) { return (s.mode === "ucl" || s.mode === "wc") && s.unbeaten; }).length;
+    function tile(big, label, extra) {
+      return '<div class="stat-tile"><b>' + big + "</b><small>" + label + "</small>" + (extra || "") + "</div>";
+    }
+    return '<div class="stat-tiles">' +
+      tile(seasons.length + matches.length, "games played") +
+      tile(rank ? rank.ranked_wins + "-" + rank.ranked_losses : "—", "ranked W-L",
+        rank && rank.ranked_streak >= 3 ? '<span class="streak-flame">🔥' + rank.ranked_streak + "</span>" : "") +
+      tile(best ? best.points + " pts" : "—", "best season") +
+      tile(trophies, "cup trophies") +
+    "</div>";
+  }
+
+  function statsHistoryCard(matches) {
+    if (!matches.length) return '<div class="card"><h3>Recent Matches</h3><div class="muted-line">No multiplayer matches yet.</div></div>';
+    var me = state.user.id;
+    var rows = matches.map(function (m) {
+      var iAmA = m.player_a === me;
+      var won = m.winner === me;
+      var gf = iAmA ? m.goals_a : m.goals_b, ga = iAmA ? m.goals_b : m.goals_a;
+      var result = m.forfeit
+        ? (won ? "W · forfeit" : "L · forfeit")
+        : (won ? "W " : "L ") + (gf != null ? gf + "-" + ga : "");
+      var delta = "";
+      if (m.ranked && m._lobby && m._lobby.elo_done) {
+        var d = won ? m._lobby.mmr_dw : m._lobby.mmr_dl;
+        if (d != null) delta = '<span class="mh-delta ' + (d > 0 ? "mh-delta--up" : "mh-delta--down") + '">' + (d > 0 ? "+" : "") + d + '</span>';
+      } else if (!m.ranked) {
+        delta = '<span class="mh-delta mh-delta--none">casual</span>';
+      }
+      return '<div class="mh-row">' +
+        '<span class="mh-ago">' + fmtAgo(m.created_at) + '</span>' +
+        delta +
+        '<span class="mh-result ' + (won ? "mh-result--w" : "mh-result--l") + '">' + result + '</span>' +
+      '</div>';
+    }).join("");
+    return '<div class="card"><h3>Recent Matches</h3><div class="mh-list">' + rows + "</div></div>";
+  }
+
+  // Best XI album: strongest collected player per slot of a 2-2-2 (GK, 2 DEF,
+  // 2 MID, 2 FWD), plus the collection size.
+  function statsAlbumCard(coll) {
+    if (!coll.length) return '<div class="card"><h3>Best XI · Collection</h3><div class="muted-line">Draft players in any mode to start your collection.</div></div>';
+    var byPos = { GK: [], DEF: [], MID: [], FWD: [] };
+    coll.forEach(function (p) { if (byPos[p.pos]) byPos[p.pos].push(p); });
+    Object.keys(byPos).forEach(function (k) { byPos[k].sort(function (a, b) { return (b.ovr || 0) - (a.ovr || 0); }); });
+    var xi = [].concat(byPos.GK.slice(0, 1), byPos.DEF.slice(0, 2), byPos.MID.slice(0, 2), byPos.FWD.slice(0, 2));
+    var rows = xi.map(function (p) {
+      return '<div class="st-row"><div class="st-pos pos-' + p.pos + '">' + p.pos + "</div>" +
+        '<div class="st-name">' + esc(p.name) + "<small>" + esc(p.club || "") + (p.year ? " · " + p.year : "") +
+          (p.times > 1 ? " · drafted ×" + p.times : "") + "</small></div>" +
+        '<div class="st-rtg ' + mpOvrClass(p.ovr || 0) + '">' + (p.ovr || "") + "</div></div>";
+    }).join("");
+    return '<div class="card"><h3>Best XI · Collection <span class="album-count">' + coll.length + ' players collected</span></h3>' +
+      '<div class="stat-list stat-list--full" style="margin-top:10px">' + rows + "</div></div>";
+  }
+
   function renderStats() {
     var wrap = $("screen-stats"); if (!wrap) return;
     var head = '<div class="page-head"><h2>Your Stats</h2><p>' +
-      (state.user ? "Tracked per mode." : "Sign in to save and track.") + "</p></div>";
+      (state.user ? "Career overview, match history, and your collection." : "Sign in to save and track.") + "</p></div>";
     if (!state.user) { statsData = null; wrap.innerHTML = head + signInCard("Sign in to track stats."); wireSignInCard(); return; }
-    wrap.innerHTML = head + statsTabBar() + '<div id="stats-body" class="muted-line">Loading...</div>';
+    wrap.innerHTML = head +
+      '<div id="stats-top" class="muted-line">Loading...</div>' +
+      '<div id="stats-history"></div>' +
+      '<div id="stats-album"></div>' +
+      '<div class="card" style="margin-top:16px"><h3>Best By Mode</h3>' + statsTabBar() +
+        '<div id="stats-body" class="muted-line">Loading...</div></div>';
     wireStatsTabs();
-    BE.data.mySeasons().then(function (seasons) {
+    var seasonsP = BE.data.mySeasons().catch(function () { return []; });
+    var matchesP = (BE.data.myMatches ? BE.data.myMatches(12) : Promise.resolve([])).catch(function () { return []; });
+    var rankP = (BE.ranked && BE.ranked.myStats ? BE.ranked.myStats() : Promise.resolve(null)).catch(function () { return null; });
+    var collP = (BE.collection && BE.collection.mine ? BE.collection.mine() : Promise.resolve([])).catch(function () { return []; });
+    Promise.all([seasonsP, matchesP, rankP, collP]).then(function (r) {
+      var seasons = r[0] || [], matches = r[1] || [], rank = r[2], coll = r[3] || [];
+      if (state.tab !== "stats") return;   // navigated away while loading
+      var top = $("stats-top"); if (top) { top.className = ""; top.innerHTML = statsTiles(seasons, matches, rank); }
+      var hist = $("stats-history"); if (hist) hist.innerHTML = statsHistoryCard(matches);
+      var alb = $("stats-album"); if (alb) alb.innerHTML = statsAlbumCard(coll);
       statsData = { solo: [], cpu: [], ucl: [], wc: [] };
       seasons.forEach(function (s) { if (statsData[s.mode]) statsData[s.mode].push(s); });
       renderStatsBody();
@@ -923,7 +1024,7 @@
       var box = $("rank-me"); if (!box) return;
       if (!s) { showRankMeError("Couldn't load your rank."); return; }
       var t = tierForMmr(s.mmr);
-      box.innerHTML = rankHeroHTML("rank-tab", t, s.ranked_wins, s.ranked_losses);
+      box.innerHTML = rankHeroHTML("rank-tab", t, s.ranked_wins, s.ranked_losses, s.ranked_streak);
     }).catch(function (e) {
       console.error("renderRanked myStats failed:", e && e.message);
       // Show the ACTUAL error text - this is exactly the class of failure
@@ -969,7 +1070,8 @@
         return '<div class="rank-row' + (me ? " is-me" : "") + '">' +
           '<div class="rank-row-pos">' + (i + 1) + '</div>' +
           '<img class="rank-row-badge" src="' + (RANKED_BADGE_URLS[t.tierIndex] || RANKED_BADGE_URLS[0]) + '" alt="" />' +
-          '<div class="rank-row-name">' + esc(r.username) + (me ? " (you)" : "") + '</div>' +
+          '<div class="rank-row-name">' + esc(r.username) + (me ? " (you)" : "") +
+            (r.ranked_streak >= 3 ? ' <span class="streak-flame">🔥' + r.ranked_streak + '</span>' : "") + '</div>' +
           '<div class="rank-row-tier">' + esc(t.label) + '</div>' +
           '<div class="rank-row-wl">' + r.ranked_wins + "-" + r.ranked_losses + '</div>' +
           '<div class="rank-row-mmr">' + t.mmr + "</div></div>";
@@ -1034,13 +1136,14 @@
   // big centered badge, tier name above it, record below, animated bar below
   // that. idPrefix keeps element ids unique when both could theoretically
   // exist in the DOM at once.
-  function rankHeroHTML(idPrefix, t, wins, losses) {
+  function rankHeroHTML(idPrefix, t, wins, losses, streak) {
     var barPct = t.division ? t.pointsInDivision : 100;
     var badgeUrl = RANKED_BADGE_URLS[t.tierIndex] || RANKED_BADGE_URLS[0];
+    var flame = (streak && streak >= 3) ? ' <span class="streak-flame">🔥' + streak + '</span>' : "";
     return '<div class="rank-hero">' +
       '<div class="rank-hero-name rank-tier-' + t.tierIndex + '" id="' + idPrefix + '-name">' + esc(t.label) + '</div>' +
       '<div class="rank-hero-badge-wrap"><img class="rank-hero-badge" id="' + idPrefix + '-badge" src="' + badgeUrl + '" alt="' + esc(t.label) + ' badge" /></div>' +
-      '<div class="rank-hero-record" id="' + idPrefix + '-record">' + wins + "-" + losses + " · " + t.mmr + " pts</div>" +
+      '<div class="rank-hero-record" id="' + idPrefix + '-record">' + wins + "-" + losses + " · " + t.mmr + " pts" + flame + "</div>" +
       '<div class="rank-hero-bar-wrap">' +
         '<div class="rank-hero-bar"><div class="rank-hero-bar-fill rank-tier-' + t.tierIndex + '" id="' + idPrefix + '-barfill" style="width:' + barPct + '%"></div></div>' +
         '<div class="rank-hero-bar-label" id="' + idPrefix + '-barlabel">' +
@@ -1246,6 +1349,7 @@
     lobbyId: null, isHost: false, channel: null,
     timerHandle: null, deadline: 0, chosenFormation: null, profiles: {},
     rankStats: {},          // userId -> {mmr, ranked_wins, ranked_losses}, ranked lobbies only
+    hbTimer: null,          // ranked liveness heartbeat (see startLobbyHeartbeat)
     // Local, per-entry deadlines so timers can't freeze on a lost DB write:
     formationDeadline: 0,   // gold 20s  set once both have joined (this client)
     greyDeadline: 0,        // grey 30s  "waiting for opponent to join"
@@ -1277,6 +1381,9 @@
         lobbyState.profiles = pmap;
         renderLobby(row);
       });
+      // Ranked: liveness heartbeat so an abandoned game can be claimed as a
+      // forfeit win (and my own abandonment costs me the loss).
+      if (row.ranked) startLobbyHeartbeat(lobbyId);
       // Ranked only: fetch both players' rank so the lobby can show what
       // you're up against. Fetched once per entry (not on every re-render)
       // and patched in whenever it resolves - guarded so a slow fetch from a
@@ -1363,7 +1470,8 @@
     return '<div class="mpl-rank-mini">' +
       '<img class="mpl-rank-mini-badge" src="' + badgeUrl + '" alt="' + esc(t.label) + ' badge" />' +
       '<div class="mpl-rank-mini-text"><b class="rank-tier-' + t.tierIndex + '">' + esc(t.label) + '</b>' +
-        '<small>' + stats.ranked_wins + '-' + stats.ranked_losses + '</small></div>' +
+        '<small>' + stats.ranked_wins + '-' + stats.ranked_losses +
+        (stats.ranked_streak >= 3 ? ' 🔥' + stats.ranked_streak : "") + '</small></div>' +
     '</div>';
   }
 
@@ -1491,6 +1599,7 @@
 
     // Stop every timer
     stopLobbyTimer();
+    stopLobbyHeartbeat();
     stopMpTurnTimer();
     if (mpMatch.kickTimer) { clearInterval(mpMatch.kickTimer); mpMatch.kickTimer = null; }
     if (mpMatch.rematchTimer) { clearInterval(mpMatch.rematchTimer); mpMatch.rematchTimer = null; }
@@ -1593,6 +1702,7 @@
     if (lobbyState.exiting) return;
     lobbyState.exiting = true;
     stopLobbyTimer();
+    stopLobbyHeartbeat();
     // Stop anything live (sim/kick/rematch) right away so replacing the DOM can't
     // leave a detached canvas animating or a timer firing into nothing.
     if (mpMatch.sim) { try { mpMatch.sim.destroy(); } catch (e) {} mpMatch.sim = null; }
@@ -1686,10 +1796,36 @@
     if (lobbyState.timerHandle) { clearInterval(lobbyState.timerHandle); lobbyState.timerHandle = null; }
   }
 
+  function stopLobbyHeartbeat() {
+    if (lobbyState.hbTimer) { clearInterval(lobbyState.hbTimer); lobbyState.hbTimer = null; }
+  }
+
+  // Ranked liveness: ping the lobby every 8s and watch the opponent's pulse.
+  // If theirs has been dead 25s+ while a ranked game is actually underway
+  // (reveal/draft/match, no result recorded), they abandoned - run the same
+  // forfeit flow as an explicit leave. Server re-verifies staleness on claim.
+  function startLobbyHeartbeat(lobbyId) {
+    stopLobbyHeartbeat();
+    if (!BE.ranked || !BE.ranked.heartbeat) return;
+    lobbyState.hbTimer = setInterval(function () {
+      if (lobbyState.lobbyId !== lobbyId || lobbyState.exiting) { stopLobbyHeartbeat(); return; }
+      BE.ranked.heartbeat(lobbyId).then(function (staleSec) {
+        if (lobbyState.lobbyId !== lobbyId || lobbyState.exiting || mpMatch.out) return;
+        var row = lobbyState.lastRow || {};
+        var live = /^(reveal|draft|match)$/.test(row.phase || "");
+        if (staleSec != null && staleSec > 25 && live && row.ranked) {
+          stopLobbyHeartbeat();
+          showForfeitCountdown(row);
+        }
+      });
+    }, 8000);
+  }
+
   function teardownLobby() {
     if (lobbyState.channel) BE.lobby.unsubscribe(lobbyState.channel);
     lobbyState.channel = null;
     stopLobbyTimer();
+    stopLobbyHeartbeat();
     lobbyState.lobbyId = null;
     enteredLobbyOnce = false;
   }
@@ -2211,14 +2347,87 @@
     mpDraft.lobbyId = null; mpDraft.row = null;
   }
 
-  function onOpponentLeft() {
-    if (!mpMatch.started && !lobbyState.lobbyId) return;
+  function lobbyOppName() {
     var oppName = "Your opponent";
     try {
       var row = lobbyState.lastRow;
       if (row) { var oppId = row.host === state.user.id ? row.guest : row.host; oppName = (lobbyState.profiles[oppId] || {}).username || oppName; }
     } catch (e) {}
+    return oppName;
+  }
+
+  function onOpponentLeft() {
+    if (!mpMatch.started && !lobbyState.lobbyId) return;
+    var row = lobbyState.lastRow || {};
+    var oppName = lobbyOppName();
+    // Results already on screen: the match is decided and recorded - the
+    // opponent leaving changes nothing, so don't yank the stayer anywhere.
+    // Just note it and kill the (now pointless) rematch button.
+    if (mpMatch.out) {
+      var note = $("mp-rematch-note"); if (note) note.textContent = oppName + " left.";
+      if (!row.ranked) { var rb = $("mp-rematch"); if (rb) rb.disabled = true; }
+      return;
+    }
+    // Ranked + the game had genuinely started (leave_lobby stamps done_from):
+    // the stayer claims the win, the leaver takes the Elo loss - they'll see
+    // it the next time they look at their rank.
+    var claimable = !!row.ranked && /^(reveal|draft|match)$/.test(row.done_from || "");
+    if (claimable && BE.ranked && BE.ranked.claimForfeit) { showForfeitCountdown(row, oppName); return; }
     exitLobbyWithMessage(oppName + " has left  returning home.");
+  }
+
+  // "Opponent left" screen for a live ranked game: short grace countdown (in
+  // case they reconnect), then claim the forfeit win server-side and show the
+  // exact +MMR awarded before heading home.
+  function showForfeitCountdown(row, oppName) {
+    if (lobbyState.exiting) return;
+    lobbyState.exiting = true;
+    oppName = oppName || lobbyOppName();
+    stopLobbyTimer();
+    stopLobbyHeartbeat();
+    stopMpTurnTimer();
+    if (mpMatch.sim) { try { mpMatch.sim.destroy(); } catch (e) {} mpMatch.sim = null; }
+    if (mpMatch.kickTimer) { clearInterval(mpMatch.kickTimer); mpMatch.kickTimer = null; }
+    if (mpMatch.rematchTimer) { clearInterval(mpMatch.rematchTimer); mpMatch.rematchTimer = null; }
+    if (mpDraft.spinTick) { clearInterval(mpDraft.spinTick); mpDraft.spinTick = null; }
+    showLobbyScreen();
+    var wrap = $("mpl-wrap"); if (!wrap) return;
+    wrap.innerHTML =
+      '<div class="mpl-head"><div class="mpl-kicker">Champions Cup · Ranked</div>' +
+        '<div class="mpl-title">Opponent Left</div></div>' +
+      '<div class="mpl-panel" style="text-align:center;padding:36px 18px">' +
+        '<div class="fp-result"><div class="fp-winner-sub">' + esc(oppName) + ' left the match.</div></div>' +
+        '<div class="ff-count" id="ff-count">5</div>' +
+        '<div class="muted-line" id="ff-note">Claiming the win…</div></div>';
+    var lid = row.id;
+    var n = 5;
+    var tick = setInterval(function () {
+      n--;
+      var e = $("ff-count"); if (e) e.textContent = Math.max(0, n);
+      if (n > 0) return;
+      clearInterval(tick);
+      BE.ranked.claimForfeit(lid).then(function (d) {
+        var el = $("ff-count"), note = $("ff-note");
+        if (d && d[0] != null) {
+          if (el) { el.textContent = "+" + d[0] + " MMR"; el.classList.add("ff-count--won"); }
+          if (note) note.textContent = "Victory by forfeit!";
+          toast("Opponent forfeited - you win! +" + d[0] + " MMR");
+        } else {
+          // Already recorded (e.g. they left AFTER the result committed) or
+          // the claim wasn't valid - nothing gained, nothing lost.
+          if (el) el.textContent = "—";
+          if (note) note.textContent = "Match closed.";
+        }
+        setTimeout(function () {
+          if (lobbyState.channel) { try { BE.lobby.unsubscribe(lobbyState.channel); } catch (e) {} lobbyState.channel = null; }
+          lobbyState.lobbyId = null;
+          enteredLobbyOnce = true;
+          resetMpMatch();
+          document.body.dataset.screen = "home";
+          setTab("play");
+        }, 2200);
+      });
+    }, 1000);
   }
 
   // Persist the final draft (phase → "match") with a few retries so a flaky
@@ -2327,36 +2536,25 @@
     mpMatch.canon = canon;
 
     mpMatch.isRanked = !!row.ranked;
-    mpMatch.preMmr = null;
-    // Snapshot my mmr NOW, before the result gets recorded, so the results
-    // screen/session tracker can compute this game's exact delta later. Fired
-    // once at match entry - by the time results actually show (lineup intro +
-    // full sim), this has always long since resolved.
-    if (mpMatch.isRanked && BE.ranked && BE.ranked.myStats) {
-      BE.ranked.myStats().then(function (s) {
-        if (!s) return;
-        mpMatch.preMmr = s.mmr;
-        // First match of this ranked session (onRankedKickoff cleared this to
-        // null) -> this is the "before" state the post-match popup animates
-        // FROM. "Find Another Match" leaves it set, so a multi-game session
-        // still animates from the very start of the session, not per-game.
-        if (rankedSession.startMmr == null) rankedSession.startMmr = s.mmr;
-      }).catch(function () {});
-    }
 
-    // Host writes the head-to-head + match row once (no double count). Wrapped so
-    // a backend hiccup here can never block the lineup from rendering.
+    // Every drafted squad feeds the player collection album (Stats tab).
+    collectSquad(mpMatch.mySquad);
+
+    // Host writes the head-to-head + CASUAL match row once at entry (no double
+    // count). RANKED results are NOT recorded here anymore - they go through
+    // the idempotent record_ranked_result_lobby RPC at the results screen
+    // (either client can commit it, and it also writes the history row +
+    // exact mmr deltas), so a vanished host can't lose the result and a
+    // forfeit claim can still win an abandoned game.
     try {
       if (meIsHost) {
         var winnerId = canon.winner === "A" ? row.host : row.guest;
         var loserId = canon.winner === "A" ? row.guest : row.host;
         if (BE.friends.recordResult) BE.friends.recordResult(winnerId, loserId);
-        if (BE.data.recordMatch) BE.data.recordMatch({
+        if (!row.ranked && BE.data.recordMatch) BE.data.recordMatch({
           lobby_id: row.id, player_a: row.host, player_b: row.guest,
-          goals_a: canon.goalsA, goals_b: canon.goalsB, winner: winnerId, ranked: !!row.ranked,
+          goals_a: canon.goalsA, goals_b: canon.goalsB, winner: winnerId, ranked: false,
         });
-        // Ranked: atomic Elo + W/L update, banded off each player's own mmr.
-        if (row.ranked && BE.ranked && BE.ranked.recordResult) BE.ranked.recordResult(winnerId, loserId);
       }
     } catch (e) { console.error("record result/match failed:", e); }
 
@@ -2442,6 +2640,29 @@
     return '<div class="card"><h3>' + title + " · player ratings</h3><div class=\"stat-list\">" + rows + "</div></div>";
   }
 
+  // Highest-rated player on the pitch across BOTH squads - the Man of the
+  // Match banner between the verdict and the rating cards.
+  function motmHTML(out, meIsHost, meName, oppName) {
+    var best = null, bestSide = null;
+    ["A", "B"].forEach(function (sd) {
+      (out.stats[sd] || []).forEach(function (s) {
+        if (!best || (s.rating || 0) > (best.rating || 0)) { best = s; bestSide = sd; }
+      });
+    });
+    if (!best) return "";
+    var mine = (bestSide === "A") === meIsHost;
+    var teamName = mine ? meName + " (you)" : oppName;
+    var line = (best.goals ? best.goals + "G " : "") + (best.assists ? best.assists + "A " : "") +
+      (best.saves ? best.saves + " saves " : "") + (best.tackles && !best.goals && !best.assists && !best.saves ? best.tackles + " tackles " : "");
+    return '<div class="motm-card' + (mine ? " motm-card--mine" : "") + '">' +
+      '<div class="motm-star">★</div>' +
+      '<div class="motm-info"><small>Man of the Match</small><b>' + esc(best.n) + '</b>' +
+        '<span>' + esc(teamName) + ' · ' + best.pos + '</span></div>' +
+      '<div class="motm-num">' + (line ? '<span>' + esc(line.trim()) + '</span>' : "") +
+        '<b>' + (best.rating != null ? best.rating.toFixed(1) : "") + '</b></div>' +
+    '</div>';
+  }
+
   function showMpResults(out) {
     var wrap = $("mpl-wrap"); if (!wrap) return;
     // Captured by REFERENCE (not mpMatch.foo lookups below) so a quick "Find
@@ -2467,6 +2688,7 @@
             (isRanked ? '<span id="mp-rank" class="dim">Updating rank …</span>' : '<span id="mp-h2h" class="dim">H2H …</span>') +
           "</div>" +
         "</div>" +
+        motmHTML(out, meIsHost, mpMatch.meName, mpMatch.oppName) +
         '<div class="res-grid">' + mpStatCard(myStats, "Your XI") + mpStatCard(oppStats, esc(mpMatch.oppName)) + "</div>" +
         '<div class="mpl-actions" style="margin-top:16px">' +
           '<button class="btn btn--ghost btn--sm flex1" id="mp-home">Return Home</button>' +
@@ -2493,39 +2715,37 @@
       };
       setTimeout(function () { fetchH2H(0); }, 800);
     }
-    // Ranked: fetch MY updated rank after a delay so the host's Elo RPC has time
-    // to commit (same delayed-refresh pattern as H2H above). This is also where
-    // the game's result lands in the session tracker for the eventual Return
-    // Home popup - delta is computed against the mmr snapshot taken when the
-    // match started (matchRef.preMmr), and "hasn't moved yet" (rather than a
-    // fixed sentinel value) is what drives the retry, since a real result
-    // always moves mmr by at least ±1 (never exactly 0).
-    if (isRanked && BE.ranked && BE.ranked.myStats) {
-      var preMmr = matchRef.preMmr;
-      var recordSessionGame = function (s) {
+    // Ranked: commit the result through the idempotent RPC (either client can
+    // be first; repeat calls get the SAME stored deltas back), then read the
+    // post-match rank. The popup/session delta is the server's own number now
+    // - no more racing an mmr snapshot against the elo write, which is exactly
+    // what produced the "+0 MMR" popup after a real ~+30 win.
+    if (isRanked && BE.ranked && BE.ranked.recordResultLobby && matchRef.row) {
+      var rWinner = canon.winner === "A" ? matchRef.row.host : matchRef.row.guest;
+      var rLoser = canon.winner === "A" ? matchRef.row.guest : matchRef.row.host;
+      var recordSessionGame = function (myDelta, s) {
         if (matchRef.sessionRecorded) return;
         matchRef.sessionRecorded = true;
-        var delta = (preMmr != null && s) ? (s.mmr - preMmr) : 0;
         rankedSession.games.push({
-          delta: delta, myGoals: myGoals, oppGoals: oppGoals, won: youWin,
-          // Snapshot the resulting state right here so the post-match popup
-          // never needs another network round-trip to know where you landed.
-          mmrAfter: s ? s.mmr : (preMmr != null ? preMmr : 0),
+          delta: myDelta || 0, myGoals: myGoals, oppGoals: oppGoals, won: youWin,
+          mmrAfter: s ? s.mmr : null,
           winsAfter: s ? s.ranked_wins : null, lossesAfter: s ? s.ranked_losses : null,
         });
       };
-      var fetchRank = function (attempt) {
-        BE.ranked.myStats().then(function (s) {
-          var e = $("mp-rank");
-          if (attempt < 4 && preMmr != null && s && s.mmr === preMmr) {
-            setTimeout(function () { fetchRank(attempt + 1); }, 1000);
-            return;
-          }
-          if (e && s) { var t = tierForMmr(s.mmr); e.textContent = t.label + " · " + s.ranked_wins + "-" + s.ranked_losses; }
-          recordSessionGame(s);
-        }).catch(function () { recordSessionGame(null); });
-      };
-      setTimeout(function () { fetchRank(0); }, 900);
+      BE.ranked.recordResultLobby(matchRef.row.id, rWinner, rLoser, canon.goalsA, canon.goalsB)
+        .then(function (d) {
+          var myDelta = d ? (youWin ? d[0] : d[1]) : 0;
+          return BE.ranked.myStats().then(function (s) {
+            var e = $("mp-rank");
+            if (e && s) {
+              var t = tierForMmr(s.mmr);
+              e.textContent = t.label + " · " + s.ranked_wins + "-" + s.ranked_losses +
+                (myDelta ? " · " + (myDelta > 0 ? "+" : "") + myDelta + " MMR" : "");
+            }
+            recordSessionGame(myDelta, s);
+          });
+        })
+        .catch(function () { recordSessionGame(0, null); });
     }
     // #7: post-game Return Home tears down LOCALLY only  never yanks the opponent.
     // Ranked with at least one game recorded this session -> show the results
