@@ -13,13 +13,19 @@ create table if not exists public.shop_items (
   name          text not null,
   description   text not null default '',
   price_cents   int  not null default 0,        -- 0 = free (e.g. the default skin)
-  image_url     text,                           -- null for CSS-only skins
+  image_url     text,                           -- null for CSS-only skins / unreleased art
   bundle_of     text[],                         -- item ids this bundle grants (null for non-bundles)
-  stripe_price_id text,                         -- filled in once you create the Price in Stripe
+  stripe_price_id text,                         -- filled in once you create the Price in Stripe (web)
+  revenuecat_product_id text,                   -- App Store Connect product id, mirrored into RevenueCat (native iOS)
+  kit_scope     text check (kit_scope in ('club', 'nation')), -- kits only: which disc art style to render (crest vs flag)
   release_at    timestamptz default now(),      -- drives the "NEW" badge (< 14 days old)
   sort_order    int not null default 0,
   active        bool not null default true
 );
+-- Safe on an already-migrated database too (create table if not exists above
+-- is a no-op once the table exists, so these columns need their own guard).
+alter table public.shop_items add column if not exists revenuecat_product_id text;
+alter table public.shop_items add column if not exists kit_scope text check (kit_scope in ('club', 'nation'));
 alter table public.shop_items enable row level security;
 drop policy if exists "shop catalog readable by all" on public.shop_items;
 create policy "shop catalog readable by all" on public.shop_items for select using (active = true);
@@ -28,16 +34,21 @@ create policy "shop catalog readable by all" on public.shop_items for select usi
 
 -- ------------------------------------------------------------ ENTITLEMENTS --
 -- What each user owns. Deliberately NOT client-writable (no insert policy for
--- authenticated) - the only way to gain a row is the Stripe webhook (service
--- role, bypasses RLS) or the free-item grant inside equip_item() below. This
--- is what stops a client from just granting itself paid items.
+-- authenticated) - the only way to gain a row is the Stripe webhook or the
+-- RevenueCat webhook (both service role, bypass RLS), or the free-item grant
+-- inside equip_item() below. This is what stops a client from just granting
+-- itself paid items.
 create table if not exists public.entitlements (
   user_id     uuid not null references auth.users(id) on delete cascade,
   item_id     text not null references public.shop_items(id),
-  source      text not null default 'stripe' check (source in ('stripe', 'free', 'promo')),
+  source      text not null default 'stripe' check (source in ('stripe', 'revenuecat', 'free', 'promo')),
   acquired_at timestamptz default now(),
   primary key (user_id, item_id)
 );
+-- Widen the source check for an already-migrated database (the constraint's
+-- default auto-generated name matches Postgres's <table>_<column>_check convention).
+alter table public.entitlements drop constraint if exists entitlements_source_check;
+alter table public.entitlements add constraint entitlements_source_check check (source in ('stripe', 'revenuecat', 'free', 'promo'));
 alter table public.entitlements enable row level security;
 drop policy if exists "entitlements readable by owner" on public.entitlements;
 create policy "entitlements readable by owner" on public.entitlements for select using (auth.uid() = user_id);
@@ -82,9 +93,10 @@ $$;
 grant execute on function public.equip_item(text) to authenticated;
 
 -- Redeem a bundle: grants entitlements for every item it contains. Called by
--- the Stripe webhook (service role) after a bundle purchase - not directly
--- callable in a way that grants anything for free (see grant below).
-create or replace function public.grant_bundle_entitlements(p_user_id uuid, p_bundle_id text)
+-- the Stripe webhook or the RevenueCat webhook (both service role) after a
+-- bundle purchase - not directly callable in a way that grants anything for
+-- free (see grant below).
+create or replace function public.grant_bundle_entitlements(p_user_id uuid, p_bundle_id text, p_source text default 'stripe')
 returns void language plpgsql security definer set search_path = public as $$
 declare
   contents text[];
@@ -92,9 +104,9 @@ begin
   select bundle_of into contents from public.shop_items where id = p_bundle_id and category = 'bundle';
   if contents is null then return; end if;
   insert into public.entitlements (user_id, item_id, source)
-    select p_user_id, unnest(contents), 'stripe'
+    select p_user_id, unnest(contents), p_source
   on conflict (user_id, item_id) do nothing;
-  insert into public.entitlements (user_id, item_id, source) values (p_user_id, p_bundle_id, 'stripe')
+  insert into public.entitlements (user_id, item_id, source) values (p_user_id, p_bundle_id, p_source)
   on conflict (user_id, item_id) do nothing;
 end;
 $$;
@@ -105,9 +117,9 @@ $$;
 -- ================================================================ SHOP READ HELPERS
 -- Everything a signed-in user needs for the Shop/Locker screens in one call.
 create or replace function public.my_locker()
-returns table (item_id text, category text, name text, image_url text, equipped boolean)
+returns table (item_id text, category text, name text, image_url text, kit_scope text, equipped boolean)
 language sql security definer set search_path = public as $$
-  select si.id, si.category, si.name, si.image_url,
+  select si.id, si.category, si.name, si.image_url, si.kit_scope,
     si.id in (
       select p.equipped_kit from public.profiles p where p.id = auth.uid()
       union select p.equipped_ball from public.profiles p where p.id = auth.uid()
@@ -248,19 +260,26 @@ $$;
 -- ============================================================================
 
 -- -- Kits ($1.99 each) --------------------------------------------------------
-insert into public.shop_items (id, category, name, description, price_cents, sort_order) values
-  ('kit_argentina',    'kit', 'Argentina Home',   'Sky blue & white stripes.', 199, 1),
-  ('kit_brazil',       'kit', 'Brazil Home',      'Iconic canary yellow.',      199, 2),
-  ('kit_france',       'kit', 'France Home',      'Les Bleus royal blue.',      199, 3),
-  ('kit_england',      'kit', 'England Home',     'Classic Three Lions white.', 199, 4),
-  ('kit_portugal',     'kit', 'Portugal Home',    'Deep red & green trim.',     199, 5),
-  ('kit_spain',        'kit', 'Spain Home',       'La Roja red.',               199, 6),
-  ('kit_germany',      'kit', 'Germany Home',     'Crisp white & black.',       199, 7),
-  ('kit_italy',        'kit', 'Italy Home',       'Azzurri blue.',              199, 8),
-  ('kit_argentina_98', 'kit', 'Argentina ''98 Retro', 'Throwback stripes from a golden era.', 199, 9),
-  ('kit_brazil_02',    'kit', 'Brazil ''02 Retro',    'Yellow that won it all.',              199, 10),
-  ('kit_germany_14',   'kit', 'Germany ''14 Retro',   'The kit that lifted the trophy in Rio.', 199, 11)
+-- kit_scope drives which disc art style js/shop.js renders: 'nation' kits show
+-- the country's real flag; 'club' kits show an original stylized crest (never
+-- a real club's actual logo - see the club-kit note further down).
+insert into public.shop_items (id, category, name, description, price_cents, sort_order, kit_scope) values
+  ('kit_argentina',    'kit', 'Argentina Home',   'Sky blue & white stripes.', 199, 1, 'nation'),
+  ('kit_brazil',       'kit', 'Brazil Home',      'Iconic canary yellow.',      199, 2, 'nation'),
+  ('kit_france',       'kit', 'France Home',      'Les Bleus royal blue.',      199, 3, 'nation'),
+  ('kit_england',      'kit', 'England Home',     'Classic Three Lions white.', 199, 4, 'nation'),
+  ('kit_portugal',     'kit', 'Portugal Home',    'Deep red & green trim.',     199, 5, 'nation'),
+  ('kit_spain',        'kit', 'Spain Home',       'La Roja red.',               199, 6, 'nation'),
+  ('kit_germany',      'kit', 'Germany Home',     'Crisp white & black.',       199, 7, 'nation'),
+  ('kit_italy',        'kit', 'Italy Home',       'Azzurri blue.',              199, 8, 'nation'),
+  ('kit_argentina_98', 'kit', 'Argentina ''98 Retro', 'Throwback stripes from a golden era.', 199, 9, 'nation'),
+  ('kit_brazil_02',    'kit', 'Brazil ''02 Retro',    'Yellow that won it all.',              199, 10, 'nation'),
+  ('kit_germany_14',   'kit', 'Germany ''14 Retro',   'The kit that lifted the trophy in Rio.', 199, 11, 'nation'),
+  ('kit_club_barcelona', 'kit', 'Barcelona Home', 'Club colors, original crest art.', 199, 12, 'club')
 on conflict (id) do nothing;
+-- Backfill for a database that already ran the old version of this insert
+-- (kit_scope didn't exist yet, so those 11 rows landed with it null).
+update public.shop_items set kit_scope = 'nation' where category = 'kit' and kit_scope is null and id <> 'kit_club_barcelona';
 
 -- -- Match balls ($0.99 each) -------------------------------------------------
 insert into public.shop_items (id, category, name, description, price_cents, sort_order) values
@@ -299,3 +318,14 @@ insert into public.shop_items (id, category, name, description, price_cents, bun
     'Night, Snow & Rain match-sim skins.', 499,
     array['skin_night','skin_snow','skin_rain'], 4)
 on conflict (id) do nothing;
+
+-- -- First real art (everything else in the catalog above stays a placeholder
+-- coin until more art gets generated) -----------------------------------------
+-- kit_argentina: real flag graphic (kit_scope='nation' -> js/shop.js renders
+-- it full-bleed/cover). kit_club_barcelona: original stylized crest, not
+-- Barcelona's actual trademarked badge - see the club-kit IP note this
+-- session; safe because it's original art, not a reproduced logo mark.
+update public.shop_items set image_url = 'https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260702_221259_7943f8d2-bd5a-4c50-9f10-3ad3c054dcad.png' where id = 'kit_argentina';
+update public.shop_items set image_url = 'https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260702_221300_23c24c07-35ff-43e2-84ee-ad1534aaf096.svg' where id = 'kit_club_barcelona';
+update public.shop_items set image_url = 'https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260702_221256_49ad7ffa-4bc8-4930-b9b1-8dce63d955c4.png' where id = 'ball_al_rihla';
+update public.shop_items set image_url = 'https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260702_222118_0ced08f2-7e60-4013-bac7-5b211241bd02.png' where id = 'ball_brazuca';

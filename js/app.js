@@ -303,6 +303,7 @@
       if (state.tab === "friends") renderFriends();
       if (state.tab === "shop" && root.CC_SHOP) root.CC_SHOP.render(state.user);
       if (p.push_nudges_enabled !== false && root.CC_NATIVE && root.CC_NATIVE.registerPush) root.CC_NATIVE.registerPush();
+      if (root.CC_IAP && root.CC_IAP.init) root.CC_IAP.init(user.id);
     });
   }
 

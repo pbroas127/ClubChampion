@@ -42,16 +42,22 @@
       return;
     }
 
+    // Apple requires a Restore Purchases affordance wherever IAP is sold -
+    // only meaningful (and only shown) inside the native iOS app.
+    var restoreBtn = (root.CC_IAP && root.CC_IAP.isNative())
+      ? '<button class="link-btn shop-restore-btn" id="shop-restore">Restore Purchases</button>' : '';
+
     wrap.innerHTML = head +
       '<div class="seg shop-subseg" id="shop-subseg">' +
         '<button data-s="shop"' + (subTab === "shop" ? ' class="is-selected"' : "") + '>Shop</button>' +
         '<button data-s="locker"' + (subTab === "locker" ? ' class="is-selected"' : "") + '>Locker</button>' +
       '</div>' +
-      '<div id="shop-body"></div>';
+      '<div id="shop-body"></div>' + restoreBtn;
 
     $("shop-subseg").querySelectorAll("button").forEach(function (b) {
       b.onclick = function () { subTab = b.dataset.s; render(user); };
     });
+    if (restoreBtn) $("shop-restore").onclick = function () { restorePurchases($("shop-restore")); };
 
     if (subTab === "locker") {
       if (root.CC_LOCKER) root.CC_LOCKER.render($("shop-body"));
@@ -105,7 +111,8 @@
   function itemCardHTML(it) {
     var ownedIt = !!(owned && owned[it.id]) || it.price_cents === 0;
     var isBundle = it.category === "bundle";
-    var thumbClass = "shop-thumb" + (it.category === "kit" ? " shop-thumb--round" : "");
+    var isCoin = it.category === "kit" || it.category === "ball";
+    var thumbClass = "shop-thumb" + (isCoin ? " shop-thumb--round" : "");
     var thumb = thumbHTML(it);
     var badges = '';
     if (isNew(it.release_at)) badges += '<span class="shop-badge shop-badge--new">NEW</span>';
@@ -129,34 +136,46 @@
   // derived from its id so the card still reads as a real preview.
   function skinSwatchClass(id) { return "swatch-" + id.replace(/^skin_/, ""); }
 
-  // Real kit/ball art hasn't been sourced yet - render a deterministic colored
-  // placeholder (hue derived from the item id, so the same item always gets
-  // the same color) with a category emoji until real assets are dropped in.
+  // Real kit/ball art hasn't been sourced for most of the catalog yet -
+  // render a deterministic colored placeholder (hue derived from the item
+  // id, so the same item always gets the same color) with a category emoji
+  // sitting inside the same coin frame real art will later drop into.
   var PLACEHOLDER_EMOJI = { kit: "👕", ball: "⚽", bundle: "🎁" };
   function hueFromId(id) { var h = 0; for (var i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return h % 360; }
-  function thumbHTML(it) {
-    if (it.image_url) return '<img src="' + esc(it.image_url) + '" alt="" loading="lazy" />';
-    if (it.category === "skin") return '<span class="shop-thumb-fallback ' + skinSwatchClass(it.id) + '"></span>';
+  function placeholderFaceHTML(it) {
     var hue = hueFromId(it.id);
     return '<span class="shop-thumb-fallback shop-thumb-emoji" style="background:linear-gradient(160deg, hsl(' + hue + ',55%,38%), hsl(' + hue + ',55%,18%))">' +
       (PLACEHOLDER_EMOJI[it.category] || "🏷️") + '</span>';
   }
+  function thumbHTML(it) {
+    if (it.category === "skin") {
+      return it.image_url ? '<img src="' + esc(it.image_url) + '" alt="" loading="lazy" />' : '<span class="shop-thumb-fallback ' + skinSwatchClass(it.id) + '"></span>';
+    }
+    if (it.category !== "kit" && it.category !== "ball") {
+      return it.image_url ? '<img src="' + esc(it.image_url) + '" alt="" loading="lazy" />' : placeholderFaceHTML(it);
+    }
+    // Kits + balls: real or placeholder face, always inside the same silver
+    // coin bezel (see .cc-coin in shop.css) so the whole catalog reads as one
+    // consistent collection regardless of which items have real art yet.
+    var face = it.image_url
+      // Nation kits use their flag full-bleed (cover); club crests and ball
+      // art keep their own transparent padding intact (contain).
+      ? '<img src="' + esc(it.image_url) + '" alt="" loading="lazy"' + (it.kit_scope === "nation" ? ' class="cc-face-cover"' : '') + ' />'
+      : placeholderFaceHTML(it);
+    return '<span class="cc-coin"><span class="cc-coin-face">' + face + '</span></span>';
+  }
 
+  // Apple requires real IAP for anything bought inside the iOS app (App
+  // Review 3.1.1) - Stripe Checkout only runs for web purchases. See js/iap.js.
   function buy(it, btn) {
     if (!BE.configured) return;
+    if (root.CC_IAP && root.CC_IAP.isNative() && root.CC_IAP.isConfigured()) { buyNative(it, btn); return; }
     btn.disabled = true; var orig = btn.textContent; btn.textContent = "…";
     BE.shop.buy(it.id).then(function (r) {
       if (r && r.url) {
-        // Stripe Checkout - see supabase/functions/create-checkout-session.
-        // Native: open in the system browser (SFSafariViewController), not
-        // the app's own WKWebView, which is locked to WKAppBoundDomains and
-        // would silently fail to load checkout.stripe.com. native.js catches
-        // the redirect back (clubchampion://checkout-success) and closes it.
-        if (root.CC_NATIVE && root.CC_NATIVE.isNative && root.CC_NATIVE.isNative() && root.Capacitor.Plugins.Browser) {
-          root.Capacitor.Plugins.Browser.open({ url: r.url });
-        } else {
-          location.href = r.url;
-        }
+        // Stripe Checkout (web only at this point - native never reaches
+        // here) - see supabase/functions/create-checkout-session.
+        location.href = r.url;
         return;
       }
       // Free item (e.g. a promo) - already granted server-side, just refresh.
@@ -165,6 +184,50 @@
       renderShopBody(root.CC_APP && root.CC_APP.currentUser ? root.CC_APP.currentUser() : true);
     }).catch(function (e) {
       toast((e && e.message) || "Couldn't start checkout.");
+      btn.disabled = false; btn.textContent = orig;
+    });
+  }
+
+  function buyNative(it, btn) {
+    if (!it.revenuecat_product_id) { toast("This item isn't available on iOS yet - try the web version."); return; }
+    btn.disabled = true; var orig = btn.textContent; btn.textContent = "…";
+    root.CC_IAP.buy(it.revenuecat_product_id).then(function () {
+      return pollForEntitlement(it.id);
+    }).then(function (got) {
+      catalog = null; owned = null;
+      if (got) { onReturnFromCheckout(); return; }
+      toast("Purchase received - check your Locker in a moment.");
+      renderShopBody(root.CC_APP && root.CC_APP.currentUser ? root.CC_APP.currentUser() : true);
+    }).catch(function (e) {
+      btn.disabled = false; btn.textContent = orig;
+      if (e && e.userCancelled) return;
+      toast((e && e.message) || "Purchase failed.");
+    });
+  }
+
+  // The RevenueCat webhook grants the entitlement server-side a moment after
+  // the purchase resolves client-side - poll briefly rather than showing the
+  // purchase as "done" before it's actually reflected in the Locker.
+  function pollForEntitlement(itemId, triesLeft) {
+    triesLeft = triesLeft == null ? 6 : triesLeft;
+    return BE.shop.myLocker().then(function (rows) {
+      var got = (rows || []).some(function (r) { return r.item_id === itemId; });
+      if (got || triesLeft <= 1) return got;
+      return new Promise(function (resolve) { setTimeout(resolve, 900); }).then(function () {
+        return pollForEntitlement(itemId, triesLeft - 1);
+      });
+    });
+  }
+
+  function restorePurchases(btn) {
+    if (!root.CC_IAP || !root.CC_IAP.isNative()) return;
+    var orig = btn.textContent; btn.disabled = true; btn.textContent = "Restoring…";
+    root.CC_IAP.restore().then(function () {
+      catalog = null; owned = null;
+      toast("Purchases restored");
+      renderShopBody(root.CC_APP && root.CC_APP.currentUser ? root.CC_APP.currentUser() : true);
+    }).catch(function (e) {
+      toast((e && e.message) || "Couldn't restore purchases.");
       btn.disabled = false; btn.textContent = orig;
     });
   }

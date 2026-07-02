@@ -57,7 +57,7 @@
   function catLabel(c) { return { kit: "Jerseys", ball: "Balls", skin: "Skins" }[c] || c; }
 
   function chipThumb(r) {
-    return root.CC_SHOP ? root.CC_SHOP.thumbHTML({ id: r.item_id, category: r.category, image_url: r.image_url }) :
+    return root.CC_SHOP ? root.CC_SHOP.thumbHTML({ id: r.item_id, category: r.category, image_url: r.image_url, kit_scope: r.kit_scope }) :
       (r.image_url ? '<img src="' + esc(r.image_url) + '" alt="" />' : '<span class="shop-thumb-fallback swatch-' + r.item_id.replace(/^skin_/, "") + '"></span>');
   }
 
@@ -76,13 +76,11 @@
       return;
     }
     grid.innerHTML = items.map(function (r) {
-      var thumb = r.image_url
-        ? '<img src="' + esc(r.image_url) + '" alt="" loading="lazy" />'
-        : '<span class="shop-thumb-fallback swatch-' + r.item_id.replace(/^skin_/, "") + '"></span>';
+      var isCoin = r.category === "kit" || r.category === "ball";
       return (
         '<div class="shop-card locker-card' + (r.equipped ? " is-equipped" : "") + '" data-id="' + esc(r.item_id) + '">' +
           (r.equipped ? '<div class="shop-badges"><span class="shop-badge shop-badge--equipped">EQUIPPED</span></div>' : "") +
-          '<div class="shop-thumb' + (r.category === "kit" ? " shop-thumb--round" : "") + '">' + thumb + '</div>' +
+          '<div class="shop-thumb' + (isCoin ? " shop-thumb--round" : "") + '">' + chipThumb(r) + '</div>' +
           '<div class="shop-name">' + esc(r.name) + '</div>' +
           '<div class="shop-cta">' +
             (r.equipped

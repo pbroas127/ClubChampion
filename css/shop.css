@@ -43,8 +43,39 @@
   background: rgba(0,0,0,.25); display: grid; place-items: center; margin-top: 6px;
 }
 .shop-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.shop-thumb--round { border-radius: 50%; }
-.shop-thumb--round img { object-fit: cover; }
+.shop-thumb--round { border-radius: 50%; background: none; }
+
+/* -- collectible coin/disc (kits + balls) -----------------------------------
+   One shared token design for both categories - a silver bezel with a milled
+   edge and a glossy sheen, like a challenge coin. Only the face content
+   differs per item (flag / crest / ball art / placeholder emoji); the bezel,
+   size, and shadow are identical across every item so the set reads as one
+   collection. Edge color is deliberately uniform silver for now - a future
+   idea is using edge color for jersey *variant* (alt colorway), not rarity. */
+.cc-coin {
+  position: relative; width: 100%; height: 100%; border-radius: 50%; isolation: isolate;
+  background: radial-gradient(circle at 32% 26%, #f6f8fa, #d3dade 42%, #a3abb2 72%, #767f86 100%);
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,.4),
+    inset 0 0 0 3px rgba(255,255,255,.6),
+    inset 0 0 0 4.5px rgba(0,0,0,.22),
+    inset 0 2px 3px rgba(255,255,255,.55),
+    inset 0 -3px 6px rgba(0,0,0,.3),
+    0 3px 9px rgba(0,0,0,.4);
+}
+.cc-coin::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  background: linear-gradient(125deg, rgba(255,255,255,.7) 0%, rgba(255,255,255,.15) 24%, transparent 44%, transparent 62%, rgba(0,0,0,.24) 100%);
+  mix-blend-mode: overlay;
+}
+.cc-coin-face {
+  position: absolute; inset: 11%; border-radius: 50%; overflow: hidden;
+  background: var(--bg-2); display: grid; place-items: center;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.35), inset 0 2px 5px rgba(0,0,0,.4);
+}
+.cc-coin-face img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.cc-coin-face img.cc-face-cover { object-fit: cover; }   /* flags: full-bleed, no letterboxing */
+.cc-coin-face .shop-thumb-emoji { width: 100%; height: 100%; background: none !important; font-size: 55%; }
 
 .shop-name { font-family: "Archivo"; font-weight: 700; font-size: 13.5px; line-height: 1.2; }
 .shop-desc { font-size: 11px; color: var(--muted); line-height: 1.35; flex: 1; }
@@ -59,7 +90,14 @@
 .locker-equipped-card { margin-bottom: 16px; }
 .locker-equipped-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
 .locker-equipped-chip { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 76px; text-align: center; }
-.locker-equipped-chip img, .locker-equipped-chip .shop-thumb-fallback { width: 56px; height: 56px; border-radius: 50%; display: block; box-shadow: 0 0 0 2px var(--green); }
+.locker-equipped-chip img, .locker-equipped-chip .shop-thumb-fallback, .locker-equipped-chip .cc-coin { width: 56px; height: 56px; border-radius: 50%; display: block; }
+.locker-equipped-chip img, .locker-equipped-chip .shop-thumb-fallback { box-shadow: 0 0 0 2px var(--green); }
+.locker-equipped-chip .cc-coin {
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,.4), inset 0 0 0 3px rgba(255,255,255,.6), inset 0 0 0 4.5px rgba(0,0,0,.22),
+    inset 0 2px 3px rgba(255,255,255,.55), inset 0 -3px 6px rgba(0,0,0,.3),
+    0 0 0 3px var(--green), 0 3px 9px rgba(0,0,0,.4);
+}
 .locker-equipped-chip span { font-size: 10.5px; color: var(--muted); line-height: 1.2; }
 
 /* -- CSS-only skin swatches (no image asset needed) ------------------------ */
@@ -75,10 +113,17 @@
 .swatch-retro_crt       { background: linear-gradient(160deg, #063a1f, #001a0d); box-shadow: inset 0 0 0 2px rgba(46,232,127,.5); }
 .swatch-golden_hour     { background: linear-gradient(160deg, #f6b93b, #c0392b); }
 
+.shop-restore-btn { display: block; margin: 22px auto 0; }
+
 /* -- equipped-kit badge on team-sheet headers (lineup + MP lineup) --------- */
-.ts-kit-badge { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; overflow: hidden; margin-right: 6px; vertical-align: -5px; box-shadow: 0 0 0 1px rgba(0,0,0,.3); }
-.ts-kit-badge img, .ts-kit-badge .shop-thumb-fallback { width: 100%; height: 100%; display: block; }
+.ts-kit-badge { display: inline-flex; width: 22px; height: 22px; border-radius: 50%; overflow: hidden; margin-right: 6px; vertical-align: -5px; box-shadow: 0 0 0 1px rgba(0,0,0,.3); }
+.ts-kit-badge img, .ts-kit-badge .shop-thumb-fallback, .ts-kit-badge .cc-coin, .ts-kit-badge .cc-coin-face { width: 100%; height: 100%; display: block; }
 .ts-kit-badge .shop-thumb-emoji { font-size: 11px; }
+/* At this size the full multi-ring bezel just reads as mud - flatten the
+   coin down to a single thin silver ring and drop the inset face padding. */
+.ts-kit-badge .cc-coin { border-radius: 50%; background: none; box-shadow: 0 0 0 1.5px #c2c9ce; }
+.ts-kit-badge .cc-coin::after { display: none; }
+.ts-kit-badge .cc-coin-face { position: static; inset: 0; box-shadow: none; }
 
 /* -- purchase confetti moment ----------------------------------------------- */
 .shop-confetti-toast {

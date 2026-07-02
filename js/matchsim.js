@@ -24,18 +24,28 @@
   }
   function lastName(n) { var p = (n || "").replace(/\(alt\)/, "").trim().split(" "); return p[p.length - 1]; }
 
-  // Pitch color palettes for purchased/equipped match-sim skins (Shop tab).
-  // Classic Green is the default/free skin and matches the original hardcoded
-  // colors exactly, so an unequipped or unrecognized skin id looks unchanged.
+  // Real pitch photo, shared across every match/skin - see FIELD_IMG below.
+  // Skins are derived from this ONE image via Canvas2D ctx.filter (same idea
+  // as a CSS filter) rather than each needing its own generated asset. `line`/
+  // `stripe` still need per-skin colors since the vector-drawn pitch markings
+  // sit on TOP of the filtered photo and have to stay legible against it
+  // (e.g. white lines disappear on the whitened-out Snow filter).
   var SKIN_PALETTES = {
-    skin_classic_green: { g0: "#16542f", g1: "#103f24", line: "rgba(255,255,255,.75)", stripe: "rgba(255,255,255,.04)" },
-    skin_night:         { g0: "#0c1830", g1: "#060a18", line: "rgba(160,190,255,.55)", stripe: "rgba(160,190,255,.05)" },
-    skin_snow:          { g0: "#c9d6e3", g1: "#93a6ba", line: "rgba(20,30,40,.55)",    stripe: "rgba(20,30,40,.06)" },
-    skin_rain:          { g0: "#233842", g1: "#141f26", line: "rgba(210,230,235,.55)", stripe: "rgba(210,230,235,.05)" },
-    skin_retro_crt:     { g0: "#052e18", g1: "#00110a", line: "rgba(46,232,127,.85)",  stripe: "rgba(46,232,127,.08)" },
-    skin_golden_hour:   { g0: "#c9631f", g1: "#6e1f1f", line: "rgba(255,240,210,.7)",  stripe: "rgba(255,240,210,.06)" },
+    skin_classic_green: { filter: "none",                                                             line: "rgba(255,255,255,.75)", stripe: "rgba(255,255,255,.05)" },
+    skin_night:         { filter: "brightness(.48) contrast(1.2) saturate(.85) hue-rotate(-6deg)",     line: "rgba(170,195,255,.6)",  stripe: "rgba(170,195,255,.05)" },
+    skin_snow:          { filter: "grayscale(.55) brightness(1.4) saturate(.45)",                       line: "rgba(20,30,40,.55)",    stripe: "rgba(20,30,40,.05)" },
+    skin_rain:          { filter: "saturate(.5) brightness(.78) contrast(1.05) hue-rotate(8deg)",       line: "rgba(215,230,235,.6)",  stripe: "rgba(215,230,235,.05)" },
+    skin_retro_crt:     { filter: "grayscale(1) contrast(1.5) brightness(.5)", tint: "rgba(46,232,127,.28)", scanlines: true,           line: "rgba(46,232,127,.9)",   stripe: "rgba(46,232,127,.08)" },
+    skin_golden_hour:   { filter: "sepia(.4) saturate(1.35) hue-rotate(-8deg) brightness(1.05)",        line: "rgba(255,240,210,.7)",  stripe: "rgba(255,240,210,.05)" },
   };
   function getSkinPalette(id) { return SKIN_PALETTES[id] || SKIN_PALETTES.skin_classic_green; }
+
+  // Loaded once at module scope and reused by every match instance (same
+  // pattern as any other static asset - no per-match reload).
+  var FIELD_IMG = new Image();
+  FIELD_IMG.src = "https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260702_222936_97013afe-109c-43f7-aa7c-6801da86b437.png";
+  var GOAL_IMG = new Image();
+  GOAL_IMG.src = "https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260702_222937_61cf29c8-2b65-485c-a223-b0f4e5c26641.png";
 
   function byPos(squad) {
     var g = { GK: [], DEF: [], MID: [], FWD: [] };
@@ -1138,6 +1148,9 @@
       players.forEach(drawPlayer);
       if (flash > 0) { ctx.fillStyle = "rgba(255,210,74," + (flash * 0.3) + ")"; ctx.fillRect(0, 0, W, H); if (!celebrating) flash = Math.max(0, flash - 0.03); }
       drawBall();
+      // Goal netting painted AFTER the ball so a ball in/near the goal mouth
+      // reads as tucking IN BEHIND the frame, not floating on top of it.
+      drawGoalOverlay();
       drawHud();
       if (banner && bannerT > 0 && !celebrating) { drawBanner(banner, bannerIcon, bannerT); bannerT = Math.max(0, bannerT - frameDt * 0.7); }
     }
@@ -1152,11 +1165,57 @@
       ctx.fillText(isGK ? "GK" : lastName(squads[p.side][p.idx].n).slice(0, 3), x, y);
     }
 
+    // Cover-crops `img` into the dest rect like CSS object-fit:cover - fills
+    // completely on any aspect ratio without distorting the source. Returns
+    // false (drawing nothing) while the image is still loading, so callers
+    // can fall back to a plain fill rather than flashing a blank/broken frame.
+    function drawCoverImage(img, dx, dy, dw, dh) {
+      if (!img || !img.complete || !img.naturalWidth) return false;
+      var iw = img.naturalWidth, ih = img.naturalHeight;
+      var scale = Math.max(dw / iw, dh / ih);
+      var sw = dw / scale, sh = dh / scale;
+      ctx.drawImage(img, (iw - sw) / 2, (ih - sh) / 2, sw, sh, dx, dy, dw, dh);
+      return true;
+    }
+
     function drawPitch() {
-      var g = ctx.createLinearGradient(0, 0, 0, H);
-      g.addColorStop(0, skinPal.g0); g.addColorStop(1, skinPal.g1);
-      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
       var fw = FR - FL, fh = FB - FT;
+      ctx.save();
+      ctx.filter = skinPal.filter || "none";
+      var drew;
+      if (vertical) {
+        // The real field photo is landscape (pitch length running left-right).
+        // In portrait/vertical layout the pitch's LENGTH runs top-to-bottom on
+        // screen (see sx/sy above), so draw the same image rotated 90 into a
+        // landscape-shaped rect in the rotated space - it lands portrait on screen.
+        ctx.save();
+        ctx.translate(FL + fw / 2, FT + fh / 2);
+        ctx.rotate(Math.PI / 2);
+        drew = drawCoverImage(FIELD_IMG, -fh / 2, -fw / 2, fh, fw);
+        ctx.restore();
+      } else {
+        drew = drawCoverImage(FIELD_IMG, FL, FT, fw, fh);
+      }
+      ctx.restore();
+      if (!drew) {
+        // Fallback while FIELD_IMG is still loading (or failed to load).
+        var g = ctx.createLinearGradient(0, 0, 0, H);
+        g.addColorStop(0, "#16542f"); g.addColorStop(1, "#103f24");
+        ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      }
+      if (skinPal.tint) {
+        ctx.save();
+        ctx.globalCompositeOperation = "overlay";
+        ctx.fillStyle = skinPal.tint;
+        ctx.fillRect(FL, FT, fw, fh);
+        ctx.restore();
+      }
+      if (skinPal.scanlines) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.lineWidth = 1;
+        for (var sl = FT; sl < FB; sl += 3) { ctx.beginPath(); ctx.moveTo(FL, sl); ctx.lineTo(FR, sl); ctx.stroke(); }
+        ctx.restore();
+      }
       ctx.strokeStyle = skinPal.line; ctx.lineWidth = 2;
       ctx.fillStyle = skinPal.stripe;
 
@@ -1192,6 +1251,35 @@
         ctx.fillStyle = "rgba(255,255,255,.16)"; ctx.lineWidth = 2.5; ctx.strokeStyle = "#fff";
         ctx.fillRect(FL - gd2, gy1, gd2, gy2 - gy1); ctx.strokeRect(FL - gd2, gy1, gd2, gy2 - gy1);
         ctx.fillRect(FR, gy1, gd2, gy2 - gy1); ctx.strokeRect(FR, gy1, gd2, gy2 - gy1);
+      }
+    }
+
+    // Real goal-frame art, drawn in the same footprint as the vector goal
+    // boxes above but AFTER the ball (see draw()) so a ball entering the net
+    // reads as going in BEHIND the frame - the depth cue the flat vector
+    // goal box never had. No-ops silently until GOAL_IMG finishes loading.
+    function drawGoalOverlay() {
+      if (!GOAL_IMG.complete || !GOAL_IMG.naturalWidth) return;
+      var fw = FR - FL, fh = FB - FT;
+      if (vertical) {
+        var gd = Math.max(10, fh * 0.035) * 1.7, gx1 = FL + fw * 0.42, gx2 = FL + fw * 0.58, gw = gx2 - gx1;
+        ctx.drawImage(GOAL_IMG, gx1, FT - gd, gw, gd);
+        // Bottom goal faces the opposite way - flip vertically so the open
+        // net still reads as facing INTO the pitch, not out the back wall.
+        ctx.save();
+        ctx.translate(gx1, FB + gd); ctx.scale(1, -1);
+        ctx.drawImage(GOAL_IMG, 0, 0, gw, gd);
+        ctx.restore();
+      } else {
+        var gd2 = Math.max(10, fw * 0.045) * 1.7, gy1 = py(0.42), gy2 = py(0.58), gh = gy2 - gy1;
+        ctx.save();
+        ctx.translate(FL - gd2, gy1); ctx.rotate(Math.PI / 2);
+        ctx.drawImage(GOAL_IMG, 0, 0, gh, gd2);
+        ctx.restore();
+        ctx.save();
+        ctx.translate(FR + gd2, gy2); ctx.rotate(-Math.PI / 2);
+        ctx.drawImage(GOAL_IMG, 0, 0, gh, gd2);
+        ctx.restore();
       }
     }
 
