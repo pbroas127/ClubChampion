@@ -66,7 +66,7 @@
     },
     getMany: function (ids) {
       if (!client || !ids || !ids.length) return Promise.resolve({});
-      return client.from("profiles").select("id,username,last_seen").in("id", ids).then(function (r) {
+      return client.from("profiles").select("id,username,last_seen,equipped_kit").in("id", ids).then(function (r) {
         var map = {}; (r.data || []).forEach(function (p) { map[p.id] = p; }); return map;
       }).catch(function () { return {}; });
     },
@@ -102,6 +102,31 @@
       return auth.getUser().then(function (u) {
         if (!u) return; return client.from("profiles").update({ pro_default: !!on }).eq("id", u.id);
       }).catch(function () {});
+    },
+    // Equip an owned shop item (kit/ball/skin) - server-side ownership check,
+    // see the equip_item() RPC in supabase/schema-shop.sql.
+    equip: function (itemId) {
+      need();
+      return client.rpc("equip_item", { p_item_id: itemId }).then(function (r) { if (r && r.error) throw r.error; return r; });
+    },
+    setPushNudges: function (on) {
+      if (!client) return Promise.resolve();
+      return auth.getUser().then(function (u) {
+        if (!u) return; return client.from("profiles").update({ push_nudges_enabled: !!on }).eq("id", u.id);
+      }).catch(function () {});
+    },
+    // Register this device's push token so server-triggered notifications
+    // (invites, nudges, drops) can reach it. Upserts on (user_id, token) so
+    // re-registering the same device is a no-op besides bumping updated_at.
+    registerDeviceToken: function (token, platform) {
+      if (!client || !token) return Promise.resolve();
+      return auth.getUser().then(function (u) {
+        if (!u) return;
+        return client.from("device_tokens").upsert(
+          { user_id: u.id, token: token, platform: platform, updated_at: new Date().toISOString() },
+          { onConflict: "user_id,token" }
+        );
+      }).catch(function (e) { console.warn("registerDeviceToken failed:", e && e.message); });
     },
   };
 
@@ -677,10 +702,38 @@
     },
   };
 
+  var shop = {
+    // Full catalog (RLS: readable by anyone signed in, active items only).
+    list: function () {
+      if (!client) return Promise.resolve([]);
+      return client.from("shop_items").select("*").eq("active", true).order("sort_order")
+        .then(function (r) { if (r && r.error) throw r.error; return r.data || []; });
+    },
+    // What I own + which is currently equipped in each category.
+    myLocker: function () {
+      if (!client) return Promise.resolve([]);
+      return client.rpc("my_locker").then(function (r) { if (r && r.error) throw r.error; return r.data || []; });
+    },
+    // Starts a purchase. Free items resolve immediately (granted server-side
+    // by the checkout webhook equivalent isn't needed for $0 items - equip_item
+    // allows price_cents=0 without an entitlement row). Paid items return a
+    // Stripe Checkout URL to redirect to; see supabase/functions/create-checkout-session.
+    buy: function (itemId) {
+      need();
+      var native = root.CC_NATIVE && root.CC_NATIVE.isNative && root.CC_NATIVE.isNative();
+      var platform = native && root.Capacitor.getPlatform ? root.Capacitor.getPlatform() : "web";
+      return client.functions.invoke("create-checkout-session", { body: { item_id: itemId, platform: platform } })
+        .then(function (r) {
+          if (r && r.error) throw r.error;
+          return r.data || {};
+        });
+    },
+  };
+
   root.CC_BACKEND = {
     configured: configured, client: client,
     auth: auth, profile: profile, data: data, friends: friends,
     account: account, invites: invites, lobby: lobby, ranked: ranked,
-    collection: collection,
+    collection: collection, shop: shop,
   };
 })(window);

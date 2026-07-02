@@ -24,6 +24,19 @@
   }
   function lastName(n) { var p = (n || "").replace(/\(alt\)/, "").trim().split(" "); return p[p.length - 1]; }
 
+  // Pitch color palettes for purchased/equipped match-sim skins (Shop tab).
+  // Classic Green is the default/free skin and matches the original hardcoded
+  // colors exactly, so an unequipped or unrecognized skin id looks unchanged.
+  var SKIN_PALETTES = {
+    skin_classic_green: { g0: "#16542f", g1: "#103f24", line: "rgba(255,255,255,.75)", stripe: "rgba(255,255,255,.04)" },
+    skin_night:         { g0: "#0c1830", g1: "#060a18", line: "rgba(160,190,255,.55)", stripe: "rgba(160,190,255,.05)" },
+    skin_snow:          { g0: "#c9d6e3", g1: "#93a6ba", line: "rgba(20,30,40,.55)",    stripe: "rgba(20,30,40,.06)" },
+    skin_rain:          { g0: "#233842", g1: "#141f26", line: "rgba(210,230,235,.55)", stripe: "rgba(210,230,235,.05)" },
+    skin_retro_crt:     { g0: "#052e18", g1: "#00110a", line: "rgba(46,232,127,.85)",  stripe: "rgba(46,232,127,.08)" },
+    skin_golden_hour:   { g0: "#c9631f", g1: "#6e1f1f", line: "rgba(255,240,210,.7)",  stripe: "rgba(255,240,210,.06)" },
+  };
+  function getSkinPalette(id) { return SKIN_PALETTES[id] || SKIN_PALETTES.skin_classic_green; }
+
   function byPos(squad) {
     var g = { GK: [], DEF: [], MID: [], FWD: [] };
     squad.forEach(function (p, i) { g[p.pos].push(i); });
@@ -381,6 +394,7 @@
 
     var ctx = canvas.getContext("2d");
     var colorA = opts.colorA || "#2ee87f", colorB = opts.colorB || "#ff5d73";
+    var skinPal = getSkinPalette(opts.skin);
     var nameA = opts.teamAName || "Your XI", nameB = opts.teamBName || "CPU";
     var onDone = opts.onDone || function () {};
     var onTick = opts.onTick || function () {};
@@ -1140,11 +1154,11 @@
 
     function drawPitch() {
       var g = ctx.createLinearGradient(0, 0, 0, H);
-      g.addColorStop(0, "#16542f"); g.addColorStop(1, "#103f24");
+      g.addColorStop(0, skinPal.g0); g.addColorStop(1, skinPal.g1);
       ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
       var fw = FR - FL, fh = FB - FT;
-      ctx.strokeStyle = "rgba(255,255,255,.75)"; ctx.lineWidth = 2;
-      ctx.fillStyle = "rgba(255,255,255,.04)";
+      ctx.strokeStyle = skinPal.line; ctx.lineWidth = 2;
+      ctx.fillStyle = skinPal.stripe;
 
       if (vertical) {
         for (var s = 0; s < 10; s++) if (s % 2) ctx.fillRect(FL, FT + (s / 10) * fh, fw, fh / 10);

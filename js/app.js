@@ -21,11 +21,12 @@
     if (tab === "stats") renderStats();
     if (tab === "friends") renderFriends();
     if (tab === "ranked") renderRanked();
+    if (tab === "shop" && root.CC_SHOP) root.CC_SHOP.render(state.user);
   }
 
   function onScreen(name) {
     var map = { home: "play" };
-    var tab = map[name] || (["stats", "friends", "ranked"].indexOf(name) >= 0 ? name : null);
+    var tab = map[name] || (["stats", "friends", "ranked", "shop"].indexOf(name) >= 0 ? name : null);
     if (tab) document.querySelectorAll(".nav-tab").forEach(function (b) { b.classList.toggle("is-active", b.dataset.tab === tab); });
   }
 
@@ -84,6 +85,8 @@
         '<button class="btn btn--ghost btn--sm" id="set-pass">Send password reset email</button></div>' +
       '<div class="set-block set-row"><div><b>Pro Mode default</b><div class="set-hint">Start every game with ratings hidden.</div></div>' +
         '<label class="toggle" style="width:auto;gap:0"><input type="checkbox" id="set-pro"' + (state.profile && state.profile.pro_default ? " checked" : "") + ' /><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>' +
+      '<div class="set-block set-row"><div><b>Push notifications</b><div class="set-hint">Invites, shop drops, and rank nudges.</div></div>' +
+        '<label class="toggle" style="width:auto;gap:0"><input type="checkbox" id="set-push"' + (!state.profile || state.profile.push_nudges_enabled !== false ? " checked" : "") + ' /><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>' +
       '<div class="set-block"><label class="set-label set-danger-label">Danger zone</label>' +
         '<button class="btn btn--ghost btn--sm set-danger-btn" id="set-wipe">Wipe all my stats</button>' +
         '<button class="btn btn--ghost btn--sm set-danger-btn" id="set-delete" style="margin-top:8px">Delete my account</button>' +
@@ -119,6 +122,11 @@
       BE.profile.setProDefault(e.target.checked);
       if (state.profile) state.profile.pro_default = e.target.checked;
       if (root.CC_UI && root.CC_UI.setProDefault) root.CC_UI.setProDefault(e.target.checked);
+    };
+    $("set-push").onchange = function (e) {
+      BE.profile.setPushNudges(e.target.checked);
+      if (state.profile) state.profile.push_nudges_enabled = e.target.checked;
+      if (e.target.checked && root.CC_NATIVE && root.CC_NATIVE.registerPush) root.CC_NATIVE.registerPush();
     };
     $("set-wipe").onclick = function () {
       if (confirm("Delete ALL your saved stats? Can't be undone.")) {
@@ -274,6 +282,7 @@
       state.profile = null; stopHeartbeat(); teardownInviteRealtime(); refreshAccountButton();
       if (rankedQ.active) cancelRankedSearch();
       if (state.tab === "friends" || state.tab === "stats") (state.tab === "friends" ? renderFriends : renderStats)();
+      if (state.tab === "shop" && root.CC_SHOP) root.CC_SHOP.render(null);
       return;
     }
     BE.profile.mine().then(function (p) {
@@ -292,6 +301,8 @@
       setupInviteRealtime();   // #1: listen for challenges from any tab
       if (state.tab === "stats") renderStats();
       if (state.tab === "friends") renderFriends();
+      if (state.tab === "shop" && root.CC_SHOP) root.CC_SHOP.render(state.user);
+      if (p.push_nudges_enabled !== false && root.CC_NATIVE && root.CC_NATIVE.registerPush) root.CC_NATIVE.registerPush();
     });
   }
 
@@ -2535,6 +2546,8 @@
     mpMatch.meName = meIsHost ? hostP.username : guestP.username;
     mpMatch.oppName = meIsHost ? guestP.username : hostP.username;
     mpMatch.oppId = meIsHost ? row.guest : row.host;
+    mpMatch.meKit = meIsHost ? hostP.equipped_kit : guestP.equipped_kit;
+    mpMatch.oppKit = meIsHost ? guestP.equipped_kit : hostP.equipped_kit;
 
     // Identical on BOTH clients: host=A, guest=B, same seed → same plays / score
     var seed = (row.seed >>> 0) || 1;
@@ -2586,7 +2599,11 @@
   }
 
   function mpOvrClass(v) { return v >= 86 ? "ovr-hi" : v >= 78 ? "ovr-mid" : "ovr-lo"; }
-  function mpTeamSheet(side, name, which) {
+  function kitBadgeHTML(kitId) {
+    if (!kitId || !root.CC_SHOP) return "";
+    return '<span class="ts-kit-badge">' + root.CC_SHOP.thumbHTML({ id: kitId, category: "kit", image_url: null }) + "</span>";
+  }
+  function mpTeamSheet(side, name, which, kitId) {
     var E = root.CC_ENGINE, CPU = root.CC_CPU, R = E.teamRatings(side);
     var order = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
     var rows = side.slice().sort(function (a, b) { return order[a.pos] - order[b.pos]; }).map(function (p) {
@@ -2597,7 +2614,7 @@
     }).join("");
     function cat(k, v) { return '<div class="ts-cat"><span>' + k + '</span><b class="' + mpOvrClass(v) + '">' + v + "</b></div>"; }
     return '<div class="card teamsheet ts-' + which + '">' +
-      '<div class="ts-head"><div class="ts-name-big">' + esc(name) + "</div>" +
+      '<div class="ts-head"><div class="ts-name-big">' + kitBadgeHTML(kitId) + esc(name) + "</div>" +
         '<div class="ts-ovr"><b>' + R.ovr + "</b><small>OVR</small></div>" +
         '<div class="ts-cats">' + cat("ATT", R.att) + cat("DEF", R.def) + cat("GOA", R.gk) + "</div></div>" +
       '<div class="ts-list">' + rows + "</div></div>";
@@ -2609,8 +2626,8 @@
     wrap.innerHTML =
       '<div class="lineup-head"><div class="lineup-round">Champions Cup · Final</div>' +
         "<h2>Team sheets</h2><p>Match starting in <b id=\"mp-kick\">0:10</b></p></div>" +
-      '<div class="lineup-sheets">' + mpTeamSheet(mpMatch.mySquad, mpMatch.meName + " (you)", "you") +
-        '<div class="lineup-vs">VS</div>' + mpTeamSheet(mpMatch.oppSquad, mpMatch.oppName, "opp") + "</div>" +
+      '<div class="lineup-sheets">' + mpTeamSheet(mpMatch.mySquad, mpMatch.meName + " (you)", "you", mpMatch.meKit) +
+        '<div class="lineup-vs">VS</div>' + mpTeamSheet(mpMatch.oppSquad, mpMatch.oppName, "opp", mpMatch.oppKit) + "</div>" +
       '<div class="mpl-actions"><button class="btn btn--kickoff flex1" id="mp-kick-now">Kick off now <span>→</span></button></div>';
     var n = 10;
     var go = function () { if (mpMatch.kickTimer) { clearInterval(mpMatch.kickTimer); mpMatch.kickTimer = null; } runMpSim(); };
@@ -2645,10 +2662,12 @@
     if (mpMatch.sim) { try { mpMatch.sim.destroy(); } catch (e) {} mpMatch.sim = null; }
     try {
       // host=A / guest=B for BOTH clients → identical match on both screens.
+      var myEq = root.CC_APP && root.CC_APP.equipped ? root.CC_APP.equipped() : null;
       mpMatch.sim = root.CC_MATCHSIM.create(canvas, {
         squadA: mpMatch.hostSquad, squadB: mpMatch.guestSquad, result: mpMatch.canon,
         teamAName: mpMatch.hostName, teamBName: mpMatch.guestName,
         colorA: "#2ee87f", colorB: "#ff5d73", seed: (mpMatch.row.seed >>> 0) || 1,
+        skin: myEq ? myEq.skin : null,
         onDone: function (out) { mpMatch.sim = null; mpMatch.out = out; showMpResults(out); },
         onTick: function (t) {
           var sc = $("mp-score"); if (sc) sc.textContent = t.scoreA + "-" + t.scoreB;
@@ -2992,16 +3011,27 @@
     UI = root.CC_UI;
     if (!BE) { BE = root.CC_BACKEND || { configured: false, auth: {}, profile: {}, data: {}, friends: {} }; }
     if (root.CC_NATIVE) root.CC_NATIVE.init();
+    if (root.CC_SHOP) root.CC_SHOP.init();
     wireNav();
     refreshAccountButton();
     if (BE.configured) {
       BE.auth.onChange(onAuth);
       BE.auth.getUser().then(function (u) { if (u) onAuth(u); });
     }
+    // Landed back here from a Stripe Checkout redirect (web purchase flow).
+    if (/[?&]checkout=success/.test(location.search) && root.CC_SHOP) {
+      root.CC_SHOP.onReturnFromCheckout();
+      history.replaceState(null, "", location.pathname);
+    }
   }
 
   root.CC_APP = {
     init: init, onScreen: onScreen, recordSeason: recordSeason, recordRun: recordRun,
     openAuth: openAuth, setTab: setTab, onRankedKickoff: onRankedKickoff,
+    equipped: function () {
+      var p = state.profile;
+      return p ? { kit: p.equipped_kit || null, ball: p.equipped_ball || null, skin: p.equipped_skin || null } : null;
+    },
+    currentUser: function () { return state.user; },
   };
 })(window);

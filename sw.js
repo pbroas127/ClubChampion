@@ -1,23 +1,26 @@
 // Bump CACHE and the ?v= list below together with index.html's ?v= on every deploy.
-const CACHE = 'cc-shell-v40';
+const CACHE = 'cc-shell-v41';
 const SHELL = [
   '/',
   '/index.html',
   '/privacy.html',
   '/terms.html',
-  '/css/styles.css?v=40',
+  '/css/styles.css?v=41',
   '/css/legal.css?v=1',
-  '/js/config.js?v=40',
-  '/js/native.js?v=40',
-  '/js/supabase.js?v=40',
-  '/js/data.js?v=40',
-  '/js/data-nations.js?v=40',
-  '/js/engine.js?v=40',
-  '/js/cpu.js?v=40',
-  '/js/game.js?v=40',
-  '/js/matchsim.js?v=40',
-  '/js/app.js?v=40',
-  '/js/ui.js?v=40',
+  '/css/shop.css?v=41',
+  '/js/config.js?v=41',
+  '/js/native.js?v=41',
+  '/js/supabase.js?v=41',
+  '/js/data.js?v=41',
+  '/js/data-nations.js?v=41',
+  '/js/engine.js?v=41',
+  '/js/cpu.js?v=41',
+  '/js/game.js?v=41',
+  '/js/matchsim.js?v=41',
+  '/js/shop.js?v=41',
+  '/js/locker.js?v=41',
+  '/js/app.js?v=41',
+  '/js/ui.js?v=41',
 ];
 
 self.addEventListener('install', (event) => {

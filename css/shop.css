@@ -1,0 +1,91 @@
+/* ============================================================================
+ * CLUB CHAMPION  Shop / Locker
+ * ========================================================================== */
+
+/* -- sub-tab segments (Shop/Locker, category filters) --------------------- */
+.shop-subseg, .shop-catseg {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; width: 100%;
+  margin-bottom: 14px; padding: 4px; border-radius: 12px;
+  background: rgba(0,0,0,.28); box-shadow: inset 0 0 0 1px rgba(0,0,0,.3);
+}
+.shop-subseg button, .shop-catseg button {
+  padding: 9px 8px; font-size: 13px; font-weight: 600; border-radius: 8px;
+  color: var(--muted); white-space: nowrap; transition: background-color .15s, color .15s;
+}
+.shop-subseg button:hover, .shop-catseg button:hover { color: var(--text); }
+.shop-subseg button.is-selected, .shop-catseg button.is-selected { background: var(--green); color: #052914; font-weight: 700; }
+.shop-catseg button small { opacity: .75; font-weight: 700; margin-left: 3px; }
+@media (max-width: 480px) { .shop-catseg { grid-auto-flow: row; grid-template-columns: repeat(2,1fr); } }
+
+/* -- grid + cards ----------------------------------------------------------- */
+.shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.shop-card {
+  position: relative; background: linear-gradient(180deg, var(--panel), var(--bg-2));
+  border-radius: var(--radius-sm); padding: 14px 12px 12px; text-align: center;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.3), var(--shadow-sm, 0 2px 8px rgba(0,0,0,.25));
+  transition: transform .18s var(--ease, ease), box-shadow .18s var(--ease, ease);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.shop-card:hover { transform: translateY(-2px); box-shadow: 0 0 0 1px rgba(0,0,0,.35), var(--shadow-md, 0 8px 20px rgba(0,0,0,.3)); }
+.shop-card.is-owned, .shop-card.is-equipped { box-shadow: 0 0 0 1.5px var(--green), var(--shadow-sm, 0 2px 8px rgba(0,0,0,.25)); }
+
+.shop-badges { position: absolute; top: 8px; left: 8px; right: 8px; display: flex; justify-content: space-between; gap: 4px; z-index: 2; }
+.shop-badge {
+  font-family: "Archivo"; font-size: 8.5px; font-weight: 800; letter-spacing: .05em;
+  padding: 3px 7px; border-radius: 999px; text-transform: uppercase;
+}
+.shop-badge--new { background: rgba(74,168,255,.18); color: var(--blue); border: 1px solid rgba(74,168,255,.4); }
+.shop-badge--save { background: rgba(255,210,74,.18); color: var(--gold); border: 1px solid rgba(255,210,74,.4); }
+.shop-badge--equipped { background: rgba(46,232,127,.18); color: var(--green); border: 1px solid rgba(46,232,127,.4); margin-left: auto; }
+
+.shop-thumb {
+  width: 100%; aspect-ratio: 1; border-radius: 12px; overflow: hidden;
+  background: rgba(0,0,0,.25); display: grid; place-items: center; margin-top: 6px;
+}
+.shop-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.shop-thumb--round { border-radius: 50%; }
+.shop-thumb--round img { object-fit: cover; }
+
+.shop-name { font-family: "Archivo"; font-weight: 700; font-size: 13.5px; line-height: 1.2; }
+.shop-desc { font-size: 11px; color: var(--muted); line-height: 1.35; flex: 1; }
+.shop-cta { margin-top: 4px; }
+.shop-cta .btn { padding: 8px; font-size: 13px; }
+.shop-owned-tag { display: inline-block; font-family: "Archivo"; font-size: 12px; font-weight: 700; color: var(--green); }
+
+.locker-equip-btn { display: block; width: 100%; padding: 8px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line-soft); font-weight: 700; font-size: 12.5px; color: var(--text); transition: .15s; }
+.locker-equip-btn:hover { border-color: var(--green); color: var(--green); }
+
+/* -- "currently equipped" strip -------------------------------------------- */
+.locker-equipped-card { margin-bottom: 16px; }
+.locker-equipped-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+.locker-equipped-chip { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 76px; text-align: center; }
+.locker-equipped-chip img, .locker-equipped-chip .shop-thumb-fallback { width: 56px; height: 56px; border-radius: 50%; display: block; box-shadow: 0 0 0 2px var(--green); }
+.locker-equipped-chip span { font-size: 10.5px; color: var(--muted); line-height: 1.2; }
+
+/* -- CSS-only skin swatches (no image asset needed) ------------------------ */
+.shop-thumb-fallback { width: 100%; height: 100%; display: block; border-radius: inherit; }
+/* Placeholder kit/ball/bundle art (real assets not sourced yet) - a colored
+   tile with a category emoji so the catalog still reads clearly pre-art. */
+.shop-thumb-emoji { display: flex; align-items: center; justify-content: center; font-size: 30px; line-height: 1; }
+.locker-equipped-chip .shop-thumb-emoji { font-size: 22px; }
+.swatch-classic_green { background: linear-gradient(160deg, #1f6b3d, #0f3f25); }
+.swatch-night         { background: linear-gradient(160deg, #131c2e, #060a14); }
+.swatch-snow           { background: linear-gradient(160deg, #cdd9e6, #8fa3b8); }
+.swatch-rain           { background: linear-gradient(160deg, #2b3b45, #17232b); }
+.swatch-retro_crt       { background: linear-gradient(160deg, #063a1f, #001a0d); box-shadow: inset 0 0 0 2px rgba(46,232,127,.5); }
+.swatch-golden_hour     { background: linear-gradient(160deg, #f6b93b, #c0392b); }
+
+/* -- equipped-kit badge on team-sheet headers (lineup + MP lineup) --------- */
+.ts-kit-badge { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; overflow: hidden; margin-right: 6px; vertical-align: -5px; box-shadow: 0 0 0 1px rgba(0,0,0,.3); }
+.ts-kit-badge img, .ts-kit-badge .shop-thumb-fallback { width: 100%; height: 100%; display: block; }
+.ts-kit-badge .shop-thumb-emoji { font-size: 11px; }
+
+/* -- purchase confetti moment ----------------------------------------------- */
+.shop-confetti-toast {
+  position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 20px);
+  background: linear-gradient(180deg, var(--panel), var(--bg-2)); border: 1px solid rgba(46,232,127,.4);
+  border-radius: 14px; padding: 14px 22px; font-family: "Archivo"; font-weight: 700; font-size: 14px;
+  color: var(--text); box-shadow: var(--shadow-lg, 0 20px 50px rgba(0,0,0,.45));
+  opacity: 0; transition: opacity .3s ease, transform .3s ease; z-index: 80; pointer-events: none;
+}
+.shop-confetti-toast.show { opacity: 1; transform: translate(-50%, 0); }

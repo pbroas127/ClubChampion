@@ -325,6 +325,12 @@
     return '<div class="ts-ovr"><b>' + R.ovr + "</b><small>OVR</small></div>" +
       '<div class="ts-cats">' + cat("ATT", R.att) + cat("DEF", R.def) + cat("GOA", R.gk) + "</div>";
   }
+  function kitBadgeHTML(which) {
+    if (which !== "you" || !window.CC_APP || !window.CC_APP.equipped || !window.CC_SHOP) return "";
+    var eq = window.CC_APP.equipped();
+    if (!eq || !eq.kit) return "";
+    return '<span class="ts-kit-badge">' + window.CC_SHOP.thumbHTML({ id: eq.kit, category: "kit", image_url: null }) + "</span>";
+  }
   function teamSheet(side, which) {
     var order = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
     var rows = side.squad.slice().sort(function (a, b) { return order[a.pos] - order[b.pos]; }).map(function (p) {
@@ -334,7 +340,7 @@
         '<div class="ts-rtg ' + ovrClass(ovr) + '">' + ovr + "</div></div>";
     }).join("");
     return '<div class="card teamsheet ts-' + which + '">' +
-      '<div class="ts-head"><div class="ts-name-big">' + esc(side.name) + "</div>" + ratingChips(side.ratings) + "</div>" +
+      '<div class="ts-head"><div class="ts-name-big">' + kitBadgeHTML(which) + esc(side.name) + "</div>" + ratingChips(side.ratings) + "</div>" +
       '<div class="ts-list">' + rows + "</div></div>";
   }
 
@@ -380,10 +386,12 @@
     $("sim-sub").textContent = "";
     var canvas = $("sim-canvas");
     if (activeSim) { activeSim.destroy(); activeSim = null; }
+    var eq = window.CC_APP && window.CC_APP.equipped ? window.CC_APP.equipped() : null;
     activeSim = MATCHSIM.create(canvas, {
       squadA: cfg.squadA, squadB: cfg.squadB, result: cfg.result,
       teamAName: "Your XI", teamBName: cfg.nameB || "CPU",
       colorA: "#2ee87f", colorB: "#ff5d73", seed: cfg.seed || 1,
+      skin: eq ? eq.skin : null,
       onDone: function (out) { activeSim = null; cfg.onDone(out); },
       onTick: function (t) {
         $("sim-score").textContent = t.scoreA + "-" + t.scoreB;

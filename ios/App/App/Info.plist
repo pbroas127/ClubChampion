@@ -68,5 +68,30 @@
 		<string>cdn.jsdelivr.net</string>
 		<string>d8j0ntlcm91z4.cloudfront.net</string>
 	</array>
+
+	<!-- Stripe Checkout (checkout.stripe.com) is NOT app-bound and would be
+	     silently blocked if opened inside the main WKWebView, so js/shop.js
+	     opens it in @capacitor/browser's SFSafariViewController instead - an
+	     unrestricted native browser, not subject to WKAppBoundDomains. This
+	     custom scheme is where Stripe redirects back to after payment (see
+	     the platform branch in supabase/functions/create-checkout-session);
+	     js/native.js listens for it via @capacitor/app's appUrlOpen. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>clubchampion</string>
+			</array>
+		</dict>
+	</array>
+
+	<!-- Lets APNs deliver silently in the background too (not just visible
+	     banners) - needed for @capacitor/push-notifications registration to
+	     behave correctly across app states. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>
