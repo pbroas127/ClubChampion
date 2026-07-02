@@ -136,16 +136,15 @@
   // derived from its id so the card still reads as a real preview.
   function skinSwatchClass(id) { return "swatch-" + id.replace(/^skin_/, ""); }
 
-  // Real kit/ball art hasn't been sourced for most of the catalog yet -
-  // render a deterministic colored placeholder (hue derived from the item
-  // id, so the same item always gets the same color) with a category emoji
-  // sitting inside the same coin frame real art will later drop into.
-  var PLACEHOLDER_EMOJI = { kit: "👕", ball: "⚽", bundle: "🎁" };
-  function hueFromId(id) { var h = 0; for (var i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0; return h % 360; }
+  // Real kit/ball art hasn't been sourced for most of the catalog yet. Kits
+  // without unique art fall back to a plain red/blue two-tone disc (no
+  // generated image needed - pure CSS); balls without unique art fall back
+  // to one shared generic classic-ball image. Bundles keep the emoji tile.
+  var GENERIC_BALL_IMG = "https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260702_225514_af667896-4208-47e0-b06e-887de605259f.png";
   function placeholderFaceHTML(it) {
-    var hue = hueFromId(it.id);
-    return '<span class="shop-thumb-fallback shop-thumb-emoji" style="background:linear-gradient(160deg, hsl(' + hue + ',55%,38%), hsl(' + hue + ',55%,18%))">' +
-      (PLACEHOLDER_EMOJI[it.category] || "🏷️") + '</span>';
+    if (it.category === "kit") return '<span class="cc-face-default-kit"></span>';
+    if (it.category === "ball") return '<img src="' + esc(GENERIC_BALL_IMG) + '" alt="" loading="lazy" />';
+    return '<span class="shop-thumb-fallback shop-thumb-emoji" style="background:linear-gradient(160deg, hsl(43,55%,38%), hsl(43,55%,18%))">🎁</span>';
   }
   function thumbHTML(it) {
     if (it.category === "skin") {

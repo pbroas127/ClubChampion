@@ -43,9 +43,9 @@
   // Loaded once at module scope and reused by every match instance (same
   // pattern as any other static asset - no per-match reload).
   var FIELD_IMG = new Image();
-  FIELD_IMG.src = "https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260702_222936_97013afe-109c-43f7-aa7c-6801da86b437.png";
+  FIELD_IMG.src = "https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260702_225512_4febcf83-3d9d-4670-9140-77d20cab3920.png";
   var GOAL_IMG = new Image();
-  GOAL_IMG.src = "https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260702_222937_61cf29c8-2b65-485c-a223-b0f4e5c26641.png";
+  GOAL_IMG.src = "https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260702_225509_752745ed-3d3a-4b20-9b6f-863b7df93bfd.png";
 
   function byPos(squad) {
     var g = { GK: [], DEF: [], MID: [], FWD: [] };
@@ -1262,7 +1262,7 @@
       if (!GOAL_IMG.complete || !GOAL_IMG.naturalWidth) return;
       var fw = FR - FL, fh = FB - FT;
       if (vertical) {
-        var gd = Math.max(10, fh * 0.035) * 1.7, gx1 = FL + fw * 0.42, gx2 = FL + fw * 0.58, gw = gx2 - gx1;
+        var gd = Math.max(10, fh * 0.035) * 2.2, gx1 = FL + fw * 0.42, gx2 = FL + fw * 0.58, gw = gx2 - gx1;
         ctx.drawImage(GOAL_IMG, gx1, FT - gd, gw, gd);
         // Bottom goal faces the opposite way - flip vertically so the open
         // net still reads as facing INTO the pitch, not out the back wall.
@@ -1271,7 +1271,7 @@
         ctx.drawImage(GOAL_IMG, 0, 0, gw, gd);
         ctx.restore();
       } else {
-        var gd2 = Math.max(10, fw * 0.045) * 1.7, gy1 = py(0.42), gy2 = py(0.58), gh = gy2 - gy1;
+        var gd2 = Math.max(10, fw * 0.045) * 2.2, gy1 = py(0.42), gy2 = py(0.58), gh = gy2 - gy1;
         ctx.save();
         ctx.translate(FL - gd2, gy1); ctx.rotate(Math.PI / 2);
         ctx.drawImage(GOAL_IMG, 0, 0, gh, gd2);

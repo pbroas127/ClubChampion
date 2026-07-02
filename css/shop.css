@@ -76,6 +76,9 @@
 .cc-coin-face img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .cc-coin-face img.cc-face-cover { object-fit: cover; }   /* flags: full-bleed, no letterboxing */
 .cc-coin-face .shop-thumb-emoji { width: 100%; height: 100%; background: none !important; font-size: 55%; }
+/* Default kit face until a jersey/crest/flag has real art - a plain two-tone
+   disc rather than an emoji, split with the app's own red/blue tokens. */
+.cc-face-default-kit { width: 100%; height: 100%; display: block; background: conic-gradient(from 135deg, var(--red) 0deg 180deg, var(--blue) 180deg 360deg); }
 
 .shop-name { font-family: "Archivo"; font-weight: 700; font-size: 13.5px; line-height: 1.2; }
 .shop-desc { font-size: 11px; color: var(--muted); line-height: 1.35; flex: 1; }
