@@ -9,7 +9,7 @@
 
   <link rel="icon" type="image/png" href="https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260702_035347_8b24b8ea-69c9-4ba9-b6f5-7e2b8950d85c.png" />
   <link rel="apple-touch-icon" href="https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260702_035455_4c04ba83-71c8-4399-ac00-1f4a3547de92.png" />
-  <link rel="manifest" href="manifest.json?v=37" />
+  <link rel="manifest" href="manifest.json?v=38" />
 
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Club Champion  Can your squad go unbeaten?" />
@@ -26,7 +26,7 @@
   <link rel="preconnect" href="https://d8j0ntlcm91z4.cloudfront.net" crossorigin />   <!-- background image CDN -->
   <link rel="dns-prefetch" href="https://d8j0ntlcm91z4.cloudfront.net" />
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css?v=37" />
+  <link rel="stylesheet" href="css/styles.css?v=38" />
 </head>
 <body>
   <div id="app">
@@ -51,6 +51,7 @@
           <div class="brand-mark">
             <img src="https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260702_035347_8b24b8ea-69c9-4ba9-b6f5-7e2b8950d85c.png" alt="Club Champion crest" width="136" height="136" />
           </div>
+          <span class="brand-kicker">Football Squad Draft</span>
           <h1 class="brand-title">CLUB<span>CHAMPION</span></h1>
           <p class="brand-tag">Spin a club &amp; a year. Draft the legend. <b>Can your squad go unbeaten?</b></p>
         </header>
@@ -59,22 +60,22 @@
           <h2 class="panel-label">Select mode</h2>
           <div class="mode-grid mode-grid--4" id="mode-grid">
             <button class="mode-card is-selected" data-mode="solo">
-              <span class="mode-icon">🏆</span>
+              <span class="mode-icon-chip"><svg class="mode-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M7 5H4.5A2.5 2.5 0 0 0 7 9"/><path d="M17 5h2.5A2.5 2.5 0 0 1 17 9"/><path d="M12 14v3"/><path d="M9 20h6"/><path d="M10.5 17h3l.5 2a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1l.5-2Z"/></svg></span>
               <span class="mode-name">Season</span>
               <span class="mode-desc"><b>38-0 solo.</b> Chase the perfect unbeaten league season.</span>
             </button>
             <button class="mode-card" data-mode="cpu">
-              <span class="mode-icon">🆚</span>
+              <span class="mode-icon-chip"><svg class="mode-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 3v2M12 3v2M15 3v2M9 19v2M12 19v2M15 19v2M3 9h2M3 12h2M3 15h2M19 9h2M19 12h2M19 15h2"/></svg></span>
               <span class="mode-name">Beat the CPU</span>
               <span class="mode-desc">Out-draft a rival manager, then settle it in a final.</span>
             </button>
             <button class="mode-card" data-mode="ucl">
-              <span class="mode-icon">⭐</span>
+              <span class="mode-icon-chip"><svg class="mode-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.47 5.13 5.53.63-4.06 3.9 1.02 5.6L12 15.9l-4.96 2.86 1.02-5.6-4.06-3.9 5.53-.63L12 3.5Z"/></svg></span>
               <span class="mode-name">UCL Climb</span>
               <span class="mode-desc">Knockout run  Round of 16 to the final. One squad, no second chances.</span>
             </button>
             <button class="mode-card" data-mode="wc">
-              <span class="mode-icon">🌍</span>
+              <span class="mode-icon-chip"><svg class="mode-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.7 2.3 4.2 5.3 4.2 8.5S14.7 18.2 12 20.5c-2.7-2.3-4.2-5.3-4.2-8.5S9.3 5.8 12 3.5Z"/></svg></span>
               <span class="mode-name">World Cup <span class="tag-lim">LIMITED</span></span>
               <span class="mode-desc">Draft national legends from World Cups 1990-2026. Group of 32 to the final.</span>
             </button>
@@ -87,7 +88,7 @@
 
           <div class="mode-grid mode-grid--ranked" id="mode-grid-ranked">
             <button class="mode-card mode-card--ranked" data-mode="ranked">
-              <span class="mode-icon">🏅</span>
+              <span class="mode-icon-chip"><svg class="mode-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 3h7l-2.7 6.2h-1.6L8.5 3Z"/><circle cx="12" cy="15" r="5.5"/><path d="M12 12.2l1.05 2.13 2.35.34-1.7 1.66.4 2.34L12 17.55l-2.1 1.12.4-2.34-1.7-1.66 2.35-.34L12 12.2Z"/></svg></span>
               <span class="mode-name">Ranked 1v1 <span class="tag-live">LIVE</span></span>
               <span class="mode-desc">Global matchmaking. Climb the ladder, real managers only.</span>
             </button>
@@ -238,17 +239,17 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="js/config.js?v=37"></script>
-  <script src="js/supabase.js?v=37"></script>
+  <script src="js/config.js?v=38"></script>
+  <script src="js/supabase.js?v=38"></script>
 
-  <script src="js/data.js?v=37"></script>
-  <script src="js/data-nations.js?v=37"></script>
-  <script src="js/engine.js?v=37"></script>
-  <script src="js/cpu.js?v=37"></script>
-  <script src="js/game.js?v=37"></script>
-  <script src="js/matchsim.js?v=37"></script>
-  <script src="js/app.js?v=37"></script>
-  <script src="js/ui.js?v=37"></script>
+  <script src="js/data.js?v=38"></script>
+  <script src="js/data-nations.js?v=38"></script>
+  <script src="js/engine.js?v=38"></script>
+  <script src="js/cpu.js?v=38"></script>
+  <script src="js/game.js?v=38"></script>
+  <script src="js/matchsim.js?v=38"></script>
+  <script src="js/app.js?v=38"></script>
+  <script src="js/ui.js?v=38"></script>
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {

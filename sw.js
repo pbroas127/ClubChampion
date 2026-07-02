@@ -1,19 +1,19 @@
 // Bump CACHE and the ?v= list below together with index.html's ?v= on every deploy.
-const CACHE = 'cc-shell-v37';
+const CACHE = 'cc-shell-v38';
 const SHELL = [
   '/',
   '/index.html',
-  '/css/styles.css?v=37',
-  '/js/config.js?v=37',
-  '/js/supabase.js?v=37',
-  '/js/data.js?v=37',
-  '/js/data-nations.js?v=37',
-  '/js/engine.js?v=37',
-  '/js/cpu.js?v=37',
-  '/js/game.js?v=37',
-  '/js/matchsim.js?v=37',
-  '/js/app.js?v=37',
-  '/js/ui.js?v=37',
+  '/css/styles.css?v=38',
+  '/js/config.js?v=38',
+  '/js/supabase.js?v=38',
+  '/js/data.js?v=38',
+  '/js/data-nations.js?v=38',
+  '/js/engine.js?v=38',
+  '/js/cpu.js?v=38',
+  '/js/game.js?v=38',
+  '/js/matchsim.js?v=38',
+  '/js/app.js?v=38',
+  '/js/ui.js?v=38',
 ];
 
 self.addEventListener('install', (event) => {
