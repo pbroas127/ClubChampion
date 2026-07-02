@@ -86,8 +86,10 @@
         '<label class="toggle" style="width:auto;gap:0"><input type="checkbox" id="set-pro"' + (state.profile && state.profile.pro_default ? " checked" : "") + ' /><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>' +
       '<div class="set-block"><label class="set-label set-danger-label">Danger zone</label>' +
         '<button class="btn btn--ghost btn--sm set-danger-btn" id="set-wipe">Wipe all my stats</button>' +
-        '<button class="btn btn--ghost btn--sm set-danger-btn" id="set-delete" style="margin-top:8px">Delete my account</button></div>' +
-      '<div class="auth-err" id="set-err"></div></div>';
+        '<button class="btn btn--ghost btn--sm set-danger-btn" id="set-delete" style="margin-top:8px">Delete my account</button>' +
+        '<div class="set-hint" style="margin-top:6px">Permanently deletes your account and all data. Can\'t be undone.</div></div>' +
+      '<div class="auth-err" id="set-err"></div>' +
+      '<div class="set-legal"><a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a><span>·</span><a href="/terms" target="_blank" rel="noopener">Terms of Use</a></div></div>';
     document.body.appendChild(ov);
     ov.addEventListener("click", function (e) { if (e.target === ov) ov.remove(); });
     $("set-close").onclick = function () { ov.remove(); };
@@ -181,15 +183,28 @@
         "</div>" +
         '<div class="auth-err" id="auth-err"></div>' +
         '<button class="btn btn--kickoff btn--sm" id="auth-submit">Sign in</button>' +
+        '<div class="auth-legal" id="auth-legal" hidden>By creating an account you agree to our ' +
+          '<a href="/terms" target="_blank" rel="noopener">Terms of Use</a> and ' +
+          '<a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.</div>' +
       "</div>";
     document.body.appendChild(ov);
+    // Google's OAuth consent screen refuses to load inside an embedded WebView
+    // (Capacitor's iOS/Android shell included) - it returns "disallowed_useragent"
+    // rather than a login form. Until that's wired up properly with a native
+    // browser tab + custom-URL-scheme redirect back into the app, hide the
+    // button in the native shell so users aren't offered a sign-in path that
+    // can't work, and fall back to email/password (which works everywhere).
+    if (root.Capacitor && root.Capacitor.isNativePlatform && root.Capacitor.isNativePlatform()) {
+      var gBtn = ov.querySelector("#auth-google"), gOr = ov.querySelector(".auth-or");
+      if (gBtn) gBtn.remove(); if (gOr) gOr.remove();
+    }
     ov.addEventListener("click", function (e) { if (e.target === ov) closeAuth(); });
     $("auth-close").onclick = closeAuth;
     var m = mode || "in";
     ov.querySelectorAll(".auth-seg button").forEach(function (b) {
       b.addEventListener("click", function () { setMode(b.dataset.m); });
     });
-    $("auth-google").onclick = function () { BE.auth.signInGoogle().catch(function (e) { showErr(e.message); }); };
+    if ($("auth-google")) $("auth-google").onclick = function () { BE.auth.signInGoogle().catch(function (e) { showErr(e.message); }); };
     $("auth-submit").onclick = submit;
     var unameOk = false, unameTimer;
     $("auth-username") && ($("auth-username").oninput = function () {
@@ -211,6 +226,7 @@
       $("auth-username-row").hidden = mm !== "up";
       $("auth-submit").textContent = mm === "up" ? "Create account" : "Sign in";
       $("auth-pass").autocomplete = mm === "up" ? "new-password" : "current-password";
+      $("auth-legal").hidden = mm !== "up";
       showErr("");
     }
     function showErr(t) { $("auth-err").textContent = t || ""; }
@@ -2975,6 +2991,7 @@
   function init() {
     UI = root.CC_UI;
     if (!BE) { BE = root.CC_BACKEND || { configured: false, auth: {}, profile: {}, data: {}, friends: {} }; }
+    if (root.CC_NATIVE) root.CC_NATIVE.init();
     wireNav();
     refreshAccountButton();
     if (BE.configured) {

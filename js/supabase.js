@@ -110,16 +110,14 @@
       need();
       return auth.getUser().then(function (u) { return client.from("seasons").delete().eq("user_id", u.id); });
     },
+    // True account deletion (Apple 5.1.1(v)): removes the auth user itself via
+    // a SECURITY DEFINER RPC, not just app-table rows. Every table cascades
+    // from auth.users(id) on delete, so this alone clears everything -
+    // profile, seasons, friendships, match/ranked history, collection, etc.
     deleteAccount: function () {
       need();
-      return auth.getUser().then(function (u) {
-        var id = u.id;
-        return Promise.all([
-          client.from("seasons").delete().eq("user_id", id),
-          client.from("friendships").delete().or("requester.eq." + id + ",addressee.eq." + id),
-          client.from("profiles").delete().eq("id", id),
-        ]).then(function () { return client.auth.signOut(); });
-      });
+      return client.rpc("delete_own_account")
+        .then(function (r) { if (r && r.error) throw r.error; return client.auth.signOut(); });
     },
   };
 

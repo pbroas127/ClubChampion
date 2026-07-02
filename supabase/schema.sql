@@ -595,3 +595,22 @@ begin
 end;
 $$;
 
+-- ================================================================ ACCOUNT DELETION
+-- True self-service account deletion (Apple guideline 5.1.1(v)). Deletes the
+-- caller's own auth.users row - every other table in this schema references
+-- auth.users(id) on delete cascade, so profiles/seasons/friendships/matches/
+-- ranked_queue/player_collection/etc. are all removed automatically in the
+-- same transaction. SECURITY DEFINER is required because authenticated
+-- clients don't have DELETE on auth.users directly; auth.uid() (evaluated
+-- from the caller's JWT, not a parameter) keeps this strictly self-service.
+create or replace function public.delete_own_account()
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  me uuid := auth.uid();
+begin
+  if me is null then raise exception 'not authenticated'; end if;
+  delete from auth.users where id = me;
+end;
+$$;
+grant execute on function public.delete_own_account() to authenticated;
+

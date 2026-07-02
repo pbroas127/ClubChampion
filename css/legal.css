@@ -1,0 +1,28 @@
+/* ================================================== LEGAL PAGES ========= */
+/* Privacy Policy / Terms of Use - standalone static pages, reuse the app's
+   design tokens from styles.css but keep their own simple content layout. */
+.legal-body { background: var(--bg); min-height: 100vh; }
+.legal-wrap { max-width: 720px; margin: 0 auto; padding: 40px 20px 80px; }
+.legal-back {
+  display: inline-block; margin-bottom: 24px; color: var(--muted); font-weight: 600;
+  font-size: 14px; text-decoration: none;
+}
+.legal-back:hover { color: var(--green); }
+.legal-wrap h1 { font-family: "Archivo"; font-weight: 900; font-size: clamp(28px, 6vw, 40px); color: #fff; }
+.legal-updated { color: var(--muted-2); font-size: 13px; margin-top: 6px; margin-bottom: 28px; }
+.legal-wrap h2 {
+  font-family: "Archivo"; font-weight: 800; font-size: 19px; color: var(--green);
+  margin-top: 32px; margin-bottom: 10px;
+}
+.legal-wrap p { color: var(--text); line-height: 1.65; margin-bottom: 12px; font-size: 15px; }
+.legal-wrap ul { margin: 0 0 12px 20px; color: var(--text); line-height: 1.65; font-size: 15px; }
+.legal-wrap li { margin-bottom: 6px; }
+.legal-wrap a { color: var(--green); }
+.legal-table {
+  width: 100%; border-collapse: collapse; margin: 14px 0 18px; font-size: 13.5px;
+  background: var(--panel); border-radius: var(--radius-sm); overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.3);
+}
+.legal-table th, .legal-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.legal-table th { font-family: "Archivo"; font-weight: 700; color: var(--muted); background: var(--panel-2); }
+.legal-table tr:last-child td { border-bottom: none; }

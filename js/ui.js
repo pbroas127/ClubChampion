@@ -300,6 +300,7 @@
     var before = game.squad.length;
     var res = game.pick(name);
     if (!res) return;
+    if (window.CC_NATIVE) window.CC_NATIVE.haptic("light");
     renderPitch();
     var chips = $("pitch").querySelectorAll(".slot-chip.is-filled");
     if (chips[before]) chips[before].classList.add("pop");
@@ -702,7 +703,14 @@
       "Can you go all the way? " + location.href;
     copy(lines);
   }
+  // Native share sheet when running in the iOS/Android app shell, the Web
+  // Share API on mobile browsers that support it, clipboard copy otherwise.
   function copy(text) {
+    if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins.Share) {
+      window.Capacitor.Plugins.Share.share({ text: text }).catch(function () {});
+      return;
+    }
+    if (navigator.share) { navigator.share({ text: text }).catch(function () {}); return; }
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(function () { toast("Copied to clipboard"); }, function () { toast("Couldn't copy"); });
     } else { toast("Clipboard unavailable"); }

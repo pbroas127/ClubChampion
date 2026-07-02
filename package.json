@@ -1,0 +1,24 @@
+{
+  "name": "clubchampion",
+  "version": "1.0.0",
+  "description": "Spin a club and an exact year, draft the legend, and find out if your squad can go a whole season unbeaten.",
+  "private": true,
+  "scripts": {
+    "ios:web": "bash scripts/ios-build-web.sh",
+    "ios:sync": "npm run ios:web && npx cap sync ios",
+    "ios:open": "npx cap open ios"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/cli": "^8.4.1",
+    "@capacitor/core": "^8.4.1",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.4.1",
+    "@capacitor/share": "^8.0.1",
+    "@capacitor/splash-screen": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.2"
+  }
+}

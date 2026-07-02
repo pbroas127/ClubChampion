@@ -917,6 +917,7 @@
 
     function celebrate(b) {
       celebrating = true; celebrateUntil = performance.now() + 2000; flash = 1;
+      if (root.CC_NATIVE) root.CC_NATIVE.haptic(b.posSide === "A" ? "success" : "light");
       var who = b.scorer ? lastName(b.scorer.name) : "";
       if (overlay) {
         overlay.style.setProperty("--goalcol", b.posSide === "A" ? colorA : colorB);

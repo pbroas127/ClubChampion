@@ -1,0 +1,14 @@
+node_modules
+ios
+android
+.git
+.claude
+testing
+supabase
+scripts
+README.md
+package.json
+package-lock.json
+capacitor.config.json
+.capacitorignore
+.gitignore
