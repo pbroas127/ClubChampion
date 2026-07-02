@@ -91,7 +91,7 @@ body[data-screen="home"] .topnav {
 }
 .brand { text-align: center; margin-bottom: 30px; }
 .brand-mark {
-  width: 116px; height: 116px; margin: 0 auto 8px;
+  width: 136px; height: 136px; margin: 0 auto 8px;
   display: grid; place-items: center;
   filter: drop-shadow(0 14px 28px rgba(0,0,0,.55));
 }
@@ -423,16 +423,44 @@ body[data-screen="home"] .topnav {
 .confetti { position: fixed; top: -12px; width: 9px; height: 14px; z-index: 40; pointer-events: none; border-radius: 2px; }
 
 /* ========================================================= MATCH SIM ==== */
-.sim-wrap { max-width: 920px; margin: 0 auto; padding: 18px 16px 30px; }
-.sim-head { text-align: center; font-family: "Archivo"; font-weight: 700; color: var(--gold);
-  font-style: italic; margin-bottom: 12px; font-size: 14px; }
+/* Full-viewport immersive pitch: the stage IS the screen, not a card on it. */
+.sim-wrap { padding: 0; margin: 0; }
 .sim-stage {
-  position: relative;
-  width: 100%; aspect-ratio: 3 / 2; border-radius: var(--radius); overflow: hidden;
-  border: 2px solid #1c6b3e; box-shadow: var(--shadow); background: #0f3f25;
+  position: fixed; inset: 0;
+  width: 100vw; height: 100dvh; overflow: hidden;
+  background: #0f3f25;
 }
 .sim-stage canvas { width: 100%; height: 100%; display: block; }
-.sim-skip { max-width: 280px; margin: 16px auto 0; }
+
+/* iPhone-notch-style cutouts holding the live score (top) and skip action
+   (bottom) so the grass can run edge-to-edge with no boxed "window" feel. */
+.sim-notch {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  z-index: 4; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 2px;
+  background: linear-gradient(180deg, #0c2417, #081910);
+  border: 1px solid rgba(255,255,255,.09); border-top: none;
+  box-shadow: 0 10px 26px rgba(0,0,0,.5);
+}
+.sim-notch--top { top: 0; min-width: min(90vw, 460px); padding: 9px 26px 10px; border-radius: 0 0 20px 20px; }
+.sim-notch--bottom { bottom: 0; padding: 8px 10px; border-radius: 20px 20px 0 0; border-top: 1px solid rgba(255,255,255,.09); border-bottom: none; }
+.sn-kicker:empty { display: none; }
+.sn-kicker { font-family: "Archivo"; font-size: 9.5px; font-weight: 700; color: var(--gold);
+  text-transform: uppercase; letter-spacing: .07em; }
+.sn-row { display: flex; align-items: center; gap: 10px; }
+.sn-team { font-family: "Archivo"; font-weight: 800; font-size: clamp(12px, 3.4vw, 15px);
+  max-width: 34vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sn-team--a { color: var(--green); text-align: right; }
+.sn-team--b { color: var(--red); text-align: left; }
+.sn-score { font-family: "Archivo"; font-weight: 900; font-size: clamp(17px, 4.6vw, 21px); color: #fff; min-width: 46px; text-align: center; }
+.sn-sub:empty { display: none; }
+.sn-sub { font-size: 10.5px; font-weight: 700; color: #9fcfb4; letter-spacing: .04em; }
+.sn-skip {
+  font-family: "Archivo"; font-weight: 700; font-size: 13px; letter-spacing: .02em;
+  color: var(--text); background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 999px; padding: 9px 20px; transition: .15s;
+}
+.sn-skip:hover { border-color: var(--green); color: var(--green); }
 
 /* goal celebration overlay */
 .goal-overlay {
@@ -841,9 +869,6 @@ body[data-screen="stats"] .screen--page::before {
 
 /* --------------------------------------------------------- Responsive -- */
 @media (max-width: 760px) {
-  /* portrait stage → matchsim renders its vertical (mobile) pitch */
-  .sim-stage { aspect-ratio: 2 / 3; max-height: 80vh; }
-
   /* draft: keep the pitch up top but with smaller slot chips so all positions
      fit compactly and the players stay close below */
   .draft-body { grid-template-columns: 1fr; gap: 10px; }

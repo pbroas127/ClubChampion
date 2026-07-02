@@ -383,24 +383,42 @@
     var colorA = opts.colorA || "#2ee87f", colorB = opts.colorB || "#ff5d73";
     var nameA = opts.teamAName || "Your XI", nameB = opts.teamBName || "CPU";
     var onDone = opts.onDone || function () {};
+    var onTick = opts.onTick || function () {};
     var squads = { A: opts.squadA, B: opts.squadB };
 
     var stage = canvas.parentNode || canvas;
     var overlay = stage.querySelector ? stage.querySelector(".goal-overlay") : null;
     if (!overlay && stage.appendChild) { overlay = document.createElement("div"); overlay.className = "goal-overlay"; stage.appendChild(overlay); }
+    var notchTop = stage.querySelector ? stage.querySelector(".sim-notch--top") : null;
+    var notchBottom = stage.querySelector ? stage.querySelector(".sim-notch--bottom") : null;
 
     var W = 0, H = 0, dpr = Math.min(3, root.devicePixelRatio || 1);
     var FL = 0, FR = 1, FT = 0, FB = 1;
     var vertical = false;
     var fieldScale = 1;
+    var notchTopH = 56, notchBotH = 44;
     function resize() {
       var rect = canvas.getBoundingClientRect();
       W = rect.width; H = rect.height;
       canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       vertical = H > W;
-      if (vertical) { FL = W * 0.04; FR = W * 0.96; FT = H * 0.045; FB = H * 0.955; }
-      else          { FL = W * 0.075; FR = W * 0.925; FT = H * 0.07; FB = H * 0.93; }
+      // The notches are real DOM elements sitting on top of the canvas -
+      // measure them so the pitch margin always clears them, on any screen.
+      notchTopH = notchTop ? notchTop.getBoundingClientRect().height : notchTopH;
+      notchBotH = notchBottom ? notchBottom.getBoundingClientRect().height : notchBotH;
+      if (vertical) {
+        FL = W * 0.04; FR = W * 0.96;
+        // In portrait the goal mouths are drawn ABOVE/BELOW the touchline (in
+        // this same margin) - their depth scales with field height, so the
+        // margin has to clear the notch AND that goal graphic, not just the notch.
+        var goalDepth = Math.max(10, H * 0.78 * 0.035);
+        FT = Math.max(H * 0.12, notchTopH + goalDepth + 14);
+        FB = H - Math.max(H * 0.11, notchBotH + goalDepth + 14);
+      } else {
+        FL = W * 0.075; FR = W * 0.925;
+        FT = Math.max(H * 0.075, notchTopH + 10); FB = H - Math.max(H * 0.07, notchBotH + 10);
+      }
       // Keep time-to-cross-the-pitch roughly constant across canvas sizes.
       // Uncapped, this hit 2.0x on phones (field ~400px), literally doubling
       // every ball speed on mobile - the single biggest "pinball" factor.
@@ -580,7 +598,7 @@
         : { _pensA: b._pensAPre, _pensB: b._pensBPre, _kicksA: b._kicksAPre, _kicksB: b._kicksBPre };
 
       var panelW = clamp(W * 0.66, 230, 400), panelH = 76;
-      var bx0 = W / 2 - panelW / 2, by0 = 36;
+      var bx0 = W / 2 - panelW / 2, by0 = Math.max(36, FT + 6);
 
       ctx.save();
       ctx.fillStyle = "rgba(7,20,13,.88)";
@@ -928,7 +946,7 @@
         updateBall(dt); updatePlayers(dt);
         if (dwell > 0) { dwell -= dt; if (dwell <= 0) enterBeat(bi + 1); }
         draw(); raf = requestAnimationFrame(loop);
-      } catch (e) { finish(); }
+      } catch (e) { if (root.console) root.console.error("matchsim loop error:", e); finish(); }
     }
 
     function updateBall(dt) {
@@ -1163,20 +1181,12 @@
     }
 
     function drawHud() {
+      // The live score/minute now live in the DOM notch above the canvas
+      // (see .sim-notch--top), not painted on the canvas itself.
       var beat = tl.beats[Math.max(0, Math.min(bi, tl.beats.length - 1))];
-      ctx.fillStyle = "rgba(7,20,13,.78)"; ctx.fillRect(0, 0, W, 30);
-      ctx.textBaseline = "middle"; ctx.font = "800 14px Archivo, Inter, sans-serif";
-      ctx.textAlign = "left"; ctx.fillStyle = colorA; ctx.fillText(nameA, 12, 15);
-      ctx.textAlign = "right"; ctx.fillStyle = colorB; ctx.fillText(nameB, W - 12, 15);
-      ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.font = "900 16px Archivo, Inter, sans-serif";
-      ctx.fillText(beat.scoreA + " - " + beat.scoreB, W / 2, 15);
-      // Minute clock is meaningless once penalties start (frozen at 90'+) and
-      // sits right where the penalty scoreboard panel begins - drop it so it
-      // never overlaps that panel's "PENALTIES" title.
-      if (!penaltyMode) {
-        ctx.font = "700 11px Inter, sans-serif"; ctx.fillStyle = "#9fcfb4";
-        ctx.fillText(getDisplayMinute() + "'", W / 2, 40);
-      }
+      // Minute clock is meaningless once penalties start (frozen at 90'+) -
+      // report null so the caller can blank it out.
+      onTick({ scoreA: beat.scoreA, scoreB: beat.scoreB, minute: penaltyMode ? null : getDisplayMinute() });
     }
 
     function drawBanner(text, icon, a) {
@@ -1185,7 +1195,7 @@
       var label = (icon ? icon + "  " : "") + text;
       ctx.font = "800 14px Archivo, Inter, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       var w = ctx.measureText(label).width + 28;
-      var x = W / 2 - w / 2, y = 50;
+      var x = W / 2 - w / 2, y = Math.max(50, FT - 22);
       ctx.fillStyle = "rgba(20,40,28,.92)";
       ctx.strokeStyle = "rgba(255,210,74,.9)"; ctx.lineWidth = 1.5;
       roundRect(ctx, x, y, w, 28, 14); ctx.fill(); ctx.stroke();

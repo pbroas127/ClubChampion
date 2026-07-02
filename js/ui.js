@@ -353,7 +353,11 @@
   /* ======================================================= MATCH SIM ===== */
   function runSim(cfg) {
     showScreen("sim");
-    $("sim-head").textContent = cfg.head;
+    $("sim-kicker").textContent = cfg.head || "";
+    $("sim-name-a").textContent = "Your XI";
+    $("sim-name-b").textContent = cfg.nameB || "CPU";
+    $("sim-score").textContent = "0-0";
+    $("sim-sub").textContent = "";
     var canvas = $("sim-canvas");
     if (activeSim) { activeSim.destroy(); activeSim = null; }
     activeSim = MATCHSIM.create(canvas, {
@@ -361,6 +365,10 @@
       teamAName: "Your XI", teamBName: cfg.nameB || "CPU",
       colorA: "#2ee87f", colorB: "#ff5d73", seed: cfg.seed || 1,
       onDone: function (out) { activeSim = null; cfg.onDone(out); },
+      onTick: function (t) {
+        $("sim-score").textContent = t.scoreA + "-" + t.scoreB;
+        $("sim-sub").textContent = t.minute == null ? "" : t.minute + "'";
+      },
     });
     $("btn-skip-sim").onclick = function () { if (activeSim) activeSim.skip(); };
     activeSim.start();

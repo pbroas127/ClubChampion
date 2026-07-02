@@ -2607,12 +2607,23 @@
 
   function runMpSim() {
     var wrap = $("mpl-wrap"); if (!wrap) return;
-    // Full-size, in a real .sim-wrap/.sim-stage like solo so the canvas fills the screen.
+    // Full-viewport, in a real .sim-wrap/.sim-stage like solo so the pitch fills the screen.
     wrap.innerHTML =
       '<div class="sim-wrap">' +
-        '<div class="sim-head">' + esc(mpMatch.hostName) + " vs " + esc(mpMatch.guestName) + "</div>" +
-        '<div class="sim-stage"><canvas id="mp-canvas"></canvas></div>' +
-        '<button class="btn btn--ghost btn--sm sim-skip" id="mp-sim-skip">Skip to result →</button>' +
+        '<div class="sim-stage">' +
+          '<canvas id="mp-canvas"></canvas>' +
+          '<div class="sim-notch sim-notch--top">' +
+            '<div class="sn-row">' +
+              '<span class="sn-team sn-team--a" id="mp-name-a">' + esc(mpMatch.hostName) + '</span>' +
+              '<span class="sn-score" id="mp-score">0-0</span>' +
+              '<span class="sn-team sn-team--b" id="mp-name-b">' + esc(mpMatch.guestName) + '</span>' +
+            '</div>' +
+            '<div class="sn-sub" id="mp-sub"></div>' +
+          '</div>' +
+          '<div class="sim-notch sim-notch--bottom">' +
+            '<button class="sn-skip" id="mp-sim-skip">Skip to result →</button>' +
+          '</div>' +
+        '</div>' +
       '</div>';
     var canvas = $("mp-canvas");
     if (mpMatch.sim) { try { mpMatch.sim.destroy(); } catch (e) {} mpMatch.sim = null; }
@@ -2623,6 +2634,10 @@
         teamAName: mpMatch.hostName, teamBName: mpMatch.guestName,
         colorA: "#2ee87f", colorB: "#ff5d73", seed: (mpMatch.row.seed >>> 0) || 1,
         onDone: function (out) { mpMatch.sim = null; mpMatch.out = out; showMpResults(out); },
+        onTick: function (t) {
+          var sc = $("mp-score"); if (sc) sc.textContent = t.scoreA + "-" + t.scoreB;
+          var sub = $("mp-sub"); if (sub) sub.textContent = t.minute == null ? "" : t.minute + "'";
+        },
       });
       var sk = $("mp-sim-skip"); if (sk) sk.onclick = function () { if (mpMatch.sim) mpMatch.sim.skip(); };
       mpMatch.sim.start();

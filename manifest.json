@@ -1,0 +1,19 @@
+{
+  "name": "Club Champion",
+  "short_name": "Club Champion",
+  "description": "Draft a 7-player squad from football's greatest sides and chase an unbeaten season.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0a1f14",
+  "theme_color": "#0a1f14",
+  "icons": [
+    {
+      "src": "https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260702_035455_4c04ba83-71c8-4399-ac00-1f4a3547de92.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
