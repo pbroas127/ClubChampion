@@ -42,6 +42,7 @@
   --bg-friends-m: url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260627_201823_aea85db7-f698-4583-9f9a-34c6036005b7_min.webp");
   --bg-stats:     url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260627_201709_47286a14-35c3-493f-b80e-83685c3acb81_min.webp");
   --bg-stats-m:   url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260627_201829_4d325072-c1dd-4872-be25-aef380310695_min.webp");
+  --bg-banner:    url("https://d8j0ntlcm91z4.cloudfront.net/user_3DIHRL4hfIamgJ8ncr9DUxS5zcC/hf_20260702_153638_1212638a-9d10-4a17-92ae-d536363c4c70_min.webp");
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -119,11 +120,12 @@ body[data-screen="home"] .topnav {
 
 .panel {
   background: linear-gradient(180deg, var(--panel), var(--bg-2));
-  border: 1px solid var(--hairline);
+  border: 0; background-clip: padding-box;
   border-radius: var(--radius);
   padding: 20px;
   margin-bottom: 16px;
-  box-shadow: var(--shadow-md);
+  /* Crisp dark ring + a faint top sheen — no full-perimeter white hairline. */
+  box-shadow: 0 0 0 1px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.04), var(--shadow-md);
 }
 .panel--row { display: flex; align-items: center; }
 .panel-label {
@@ -135,10 +137,14 @@ body[data-screen="home"] .topnav {
 .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .mode-card {
   position: relative; text-align: left; padding: 14px 14px 15px; border-radius: var(--radius-sm);
-  background-color: var(--panel-2); border: 1px solid var(--hairline);
+  background-color: var(--panel-2);
+  /* No translucent-white border: it let the image bleed under it and read as a
+     bright rim. Instead clip the image to the padding box and define the edge
+     with a soft dark ring + elevation shadow, so the art meets a crisp edge. */
+  border: 0; background-clip: padding-box;
   background-size: cover; background-position: center; background-repeat: no-repeat;
-  display: flex; flex-direction: column; gap: 4px; transition: transform .2s var(--ease), border-color .2s var(--ease), box-shadow .2s var(--ease);
-  box-shadow: var(--shadow-sm);
+  display: flex; flex-direction: column; gap: 4px; transition: transform .2s var(--ease), box-shadow .2s var(--ease);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.35), var(--shadow-sm);
 }
 /* Per-mode cinematic backgrounds. The dark gradient keeps the text crisp on top. */
 .mode-card[data-mode="solo"]   { background-image: linear-gradient(165deg, rgba(7,20,13,.62), rgba(7,20,13,.9)), var(--bg-season); }
@@ -146,10 +152,9 @@ body[data-screen="home"] .topnav {
 .mode-card[data-mode="ucl"]    { background-image: linear-gradient(165deg, rgba(7,20,13,.62), rgba(7,20,13,.9)), var(--bg-ucl); }
 .mode-card[data-mode="wc"]     { background-image: linear-gradient(165deg, rgba(7,20,13,.62), rgba(7,20,13,.9)), var(--bg-wc); }
 .mode-card[data-mode="ranked"] { background-image: linear-gradient(165deg, rgba(7,20,13,.62), rgba(7,20,13,.9)), var(--bg-ranked); }
-.mode-card:hover { border-color: rgba(255,255,255,.16); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.mode-card:hover { transform: translateY(-2px); box-shadow: 0 0 0 1px rgba(0,0,0,.4), var(--shadow-md); }
 .mode-card.is-selected {
-  border-color: rgba(46,232,127,.55);
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 0 0 1.5px var(--green), var(--shadow-md);
 }
 .mode-card.is-selected::after {
   content: "✓"; position: absolute; top: 10px; right: 10px;
@@ -286,8 +291,11 @@ body[data-screen="home"] .topnav {
 }
 .reel--club span { color: var(--text); }
 .reel--year span { color: var(--green); }
-.reel.is-spinning span { animation: reelblur .35s linear infinite; }
-@keyframes reelblur { 0%{ filter: blur(0); opacity:1 } 50%{ filter: blur(3px); opacity:.55 } 100%{ filter: blur(0); opacity:1 } }
+.reel.is-spinning span { animation: reelblur .18s linear infinite; }
+@keyframes reelblur { 0%{ filter: blur(0); opacity:1; transform: translateY(-2px) } 50%{ filter: blur(4px); opacity:.5 } 100%{ filter: blur(0); opacity:1; transform: translateY(2px) } }
+/* Snap "thunk" when a reel lands on its final value. */
+.reel-land { animation: reelland .3s var(--ease); }
+@keyframes reelland { 0%{ transform: scale(1) } 30%{ transform: scale(1.05) } 60%{ transform: scale(.985) } 100%{ transform: scale(1) } }
 .slot-era { margin-top: 10px; font-size: 13px; color: var(--gold); font-weight: 600; font-style: italic; min-height: 18px; }
 
 .need-line { font-family: "Archivo"; font-weight: 700; font-size: 15px; color: var(--muted); margin: 4px 2px 12px; }
@@ -302,6 +310,9 @@ body[data-screen="home"] .topnav {
 }
 .pcard:hover { border-color: var(--green); transform: translateX(3px); background: var(--panel-2); }
 .pcard:active { transform: scale(.99); }
+/* Staggered deal-in once the reels settle (delay set inline per card). */
+.pcard--enter { opacity: 0; animation: pcardIn .34s var(--ease) both; }
+@keyframes pcardIn { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
 .pos-badge {
   width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center;
   font-family: "Archivo"; font-weight: 800; font-size: 13px; color: #05140c; flex: none;
@@ -803,18 +814,26 @@ body[data-screen="stats"] .screen--page::before {
 .btn.is-disabled, .btn:disabled { opacity: .5; cursor: not-allowed; filter: grayscale(.4); box-shadow: none; }
 .btn.is-disabled:hover, .btn:disabled:hover { transform: none; box-shadow: none; }
 
-/* -- Ranked season banner: separates the 4 casual modes from Ranked ------- */
+/* -- Ranked season banner: a premium textured strip separating the 4 casual
+      modes from Ranked. The generated backdrop sits over a CSS fallback gradient
+      (so it still looks good if the image is slow/unavailable) under a legibility
+      wash; the season number and countdown are crisp DOM text, not baked art. -- */
 .ranked-banner {
-  display: flex; align-items: center; justify-content: center; gap: 10px;
-  margin: 16px 0; padding: 9px 16px; border-radius: 999px;
-  background: rgba(255,255,255,.03);
-  border: 1px solid var(--hairline);
-  font-family: "Archivo"; font-size: 12px; letter-spacing: .02em;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 18px 0; padding: 13px 18px; border-radius: 14px; overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(7,20,13,.74) 0%, rgba(7,20,13,.40) 42%, rgba(7,20,13,.80) 100%),
+    var(--bg-banner) center/cover no-repeat,
+    linear-gradient(90deg, #123a24, #07140d);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.35), var(--shadow-sm);
 }
-.ranked-banner-season { color: var(--muted); font-weight: 600; }
-.ranked-banner-season b { color: var(--text); font-weight: 700; }
-.ranked-banner-cd { color: var(--muted-2); font-weight: 600; }
-.ranked-banner-cd::before { content: "· "; color: var(--muted-2); }
+.rb-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.rb-kicker { font-family: "Archivo"; font-size: 9.5px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--green); }
+.rb-title { font-family: "Archivo"; font-weight: 800; font-size: 18px; color: #fff; line-height: 1; letter-spacing: -.01em; }
+.rb-title b { color: var(--green); font-weight: 800; }
+.rb-cd { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; text-align: right; flex: none; }
+.rb-cd-label { font-family: "Archivo"; font-size: 9px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--muted-2); }
+.ranked-banner-cd { font-family: "Archivo"; font-weight: 700; font-size: 14px; color: var(--gold); letter-spacing: .01em; }
 
 /* -- Ranked card: alone, centered below the banner ------------------------- */
 .mode-grid--ranked { display: flex; justify-content: center; }
@@ -875,8 +894,24 @@ body[data-screen="stats"] .screen--page::before {
 .run-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
 .run-round { font-family: "Archivo"; font-weight: 900; font-size: 20px; color: var(--gold); }
 .run-meta { font-size: 12.5px; color: var(--muted); }
-.stats-seg { display: flex; width: 100%; margin-bottom: 14px; flex-wrap: wrap; gap: 2px; }
-.stats-seg button { flex: 1; min-width: 84px; padding: 8px 6px; font-size: 13px; }
+/* Stats mode switcher: a real segmented grid (not the wrap-prone pill), so on
+   mobile it lays out as a tidy 2x2 instead of overflowing/overlapping. */
+.stats-seg {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; width: 100%;
+  margin-bottom: 14px; padding: 4px; border-radius: 12px;
+  background: rgba(0,0,0,.28); border: 0;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.3);
+}
+.stats-seg button {
+  padding: 9px 6px; font-size: 13px; font-weight: 600; border-radius: 8px;
+  color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: background-color .15s, color .15s;
+}
+.stats-seg button:hover { color: var(--text); }
+.stats-seg button.is-selected { background: var(--green); color: #052914; font-weight: 700; }
+@media (max-width: 560px) {
+  .stats-seg { grid-template-columns: repeat(2, 1fr); }
+}
 
 /* lineup action buttons (Watch / Sim) */
 .lineup-actions { display: flex; gap: 12px; margin-top: 4px; }
@@ -929,8 +964,7 @@ body[data-screen="stats"] .screen--page::before {
   .stat-tiles { grid-template-columns: 1fr 1fr; }
   .stat-tile b { font-size: 19px; }
   .motm-info b { font-size: 15px; }
-  .ranked-banner { flex-direction: column; gap: 2px; padding: 8px 12px; text-align: center; }
-  .ranked-banner-cd::before { content: ""; }
+  .ranked-banner { padding: 11px 15px; }
   .skip-btn { padding: 7px 9px; }
   .skip-hint { display: none; }
   .skip-main { font-size: 11.5px; }

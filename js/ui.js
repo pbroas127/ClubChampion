@@ -190,16 +190,25 @@
     if (!spin) return;
     var reelClub = $("reel-club"), reelYear = $("reel-year"), era = $("slot-era");
     var playersBox = $("players");
+    // Keep the choices blank the entire time the reels are spinning so the roll
+    // has real suspense — nothing to peek at until the club & year land.
     playersBox.innerHTML = "";
     era.innerHTML = "&nbsp;";
 
-    function settle() {
+    function landReels() {
       $("slot").querySelectorAll(".reel").forEach(function (r) { r.classList.remove("is-spinning"); });
       reelClub.textContent = spin.short || spin.club;
       reelYear.textContent = spin.year;
-      era.textContent = "“" + spin.label + "”";
       reelClub.style.color = "";
-      renderPlayers();
+      // A tiny "thunk" pulse as each reel snaps into place.
+      $("slot").querySelectorAll(".reel").forEach(function (r) {
+        r.classList.remove("reel-land"); void r.offsetWidth; r.classList.add("reel-land");
+      });
+    }
+
+    function reveal() {
+      era.textContent = "“" + spin.label + "”";
+      renderPlayers(true);        // staggered animate-in
       spinning = false;
     }
 
@@ -207,7 +216,7 @@
       spinning = true;
       $("slot").querySelectorAll(".reel").forEach(function (r) { r.classList.add("is-spinning"); });
       var nation = game.pool === "nation" && NATIONS;
-      var ticks = 0, iv = setInterval(function () {
+      function roll() {
         if (nation) {
           reelClub.textContent = NATIONS.COMBOS[Math.floor(Math.random() * NATIONS.COMBOS.length)].short;
           reelYear.textContent = NATIONS.YEARS[Math.floor(Math.random() * NATIONS.YEARS.length)];
@@ -215,12 +224,21 @@
           reelClub.textContent = DATA.CLUBS[Math.floor(Math.random() * DATA.CLUBS.length)].short;
           reelYear.textContent = 1990 + Math.floor(Math.random() * 37);
         }
-        if (++ticks > 12) { clearInterval(iv); settle(); }
-      }, 70);
-    } else { settle(); }
+      }
+      // Decelerating roll (slot-machine ease-out): fast at first, slowing to the
+      // stop, then a beat before the choices are dealt.
+      var ticks = 0, TOTAL = 15;
+      (function step() {
+        roll();
+        if (++ticks >= TOTAL) { landReels(); setTimeout(reveal, 260); return; }
+        var t = ticks / TOTAL;
+        var delay = 45 + t * t * 150;   // ~45ms → ~195ms
+        setTimeout(step, delay);
+      })();
+    } else { landReels(); reveal(); }
   }
 
-  function renderPlayers() {
+  function renderPlayers(animateIn) {
     var box = $("players"); box.innerHTML = "";
     var openSummary = game.openList().reduce(function (m, p) { m[p] = (m[p] || 0) + 1; return m; }, {});
     var sumTxt = Object.keys(openSummary).map(function (p) { return openSummary[p] + " " + p; }).join(" · ");
@@ -232,9 +250,10 @@
       ? function (a, b) { return order[a.pos] - order[b.pos] || a.n.localeCompare(b.n); }
       : function (a, b) { return ovrOf(b) - ovrOf(a); });
 
-    list.forEach(function (pl) {
+    list.forEach(function (pl, i) {
       var ovr = ovrOf(pl);
-      var card = el("button", "pcard" + (sel.hideRatings ? " is-pro" : ""));
+      var card = el("button", "pcard" + (sel.hideRatings ? " is-pro" : "") + (animateIn ? " pcard--enter" : ""));
+      if (animateIn) card.style.animationDelay = (i * 55) + "ms";
       var stats = statsFor(pl).map(function (s) {
         return '<div class="stat"><div class="stat-k">' + s[0] + '</div><div class="stat-bar"><i style="width:' + s[1] + '%"></i></div></div>';
       }).join("");
